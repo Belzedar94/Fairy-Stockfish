@@ -562,7 +562,56 @@ void Position::set_castling_right(Color c, Square rfrom) {
 /// Position::set_check_info() sets king attacks to detect if a move gives check
 
 void Position::set_check_info(StateInfo* si) const {
+  // Check cache first
+  if (check_info_cache.valid && check_info_cache.key == st->key)
+  {
+      *si = check_info_cache.state;
+      return;
+  }
 
+  // Fast path for standard chess pieces
+  if (var->fastAttacks && !var->extinctionPseudoRoyal && !var->bikjangRule && !var->chasingRule)
+  {
+      Square whiteKing = count<KING>(WHITE) ? square<KING>(WHITE) : SQ_NONE;
+      Square blackKing = count<KING>(BLACK) ? square<KING>(BLACK) : SQ_NONE;
+      Square ksq = count<KING>(~sideToMove) ? square<KING>(~sideToMove) : SQ_NONE;
+
+      // Calculate blockers and pinners
+      si->blockersForKing[WHITE] = slider_blockers(pieces(BLACK), whiteKing, si->pinners[BLACK], BLACK);
+      si->blockersForKing[BLACK] = slider_blockers(pieces(WHITE), blackKing, si->pinners[WHITE], WHITE);
+
+      // Pre-calculate check squares for standard pieces
+      if (ksq != SQ_NONE)
+      {
+          si->checkSquares[PAWN] = pawn_attacks_bb(sideToMove, ksq);
+          si->checkSquares[KNIGHT] = attacks_bb<KNIGHT>(ksq);
+          si->checkSquares[BISHOP] = attacks_bb<BISHOP>(ksq, pieces());
+          si->checkSquares[ROOK] = attacks_bb<ROOK>(ksq, pieces());
+          si->checkSquares[QUEEN] = si->checkSquares[BISHOP] | si->checkSquares[ROOK];
+          si->checkSquares[KING] = attacks_bb<KING>(ksq);
+      }
+      else
+      {
+          si->checkSquares[PAWN] = si->checkSquares[KNIGHT] = si->checkSquares[BISHOP] = 
+          si->checkSquares[ROOK] = si->checkSquares[QUEEN] = si->checkSquares[KING] = 0;
+      }
+
+      si->nonSlidingRiders = 0;  // Standard chess has no non-sliding riders
+      si->shak = 0;  // No shak in standard chess
+      si->bikjang = false;
+      si->chased = 0;
+      si->legalCapture = NO_VALUE;
+      si->pseudoRoyalCandidates = 0;
+      si->pseudoRoyals = 0;
+
+      // Cache the result
+      check_info_cache.key = st->key;
+      check_info_cache.state = *si;
+      check_info_cache.valid = true;
+      return;
+  }
+
+  // General case for fairy chess variants
   si->blockersForKing[WHITE] = slider_blockers(pieces(BLACK), count<KING>(WHITE) ? square<KING>(WHITE) : SQ_NONE, si->pinners[BLACK], BLACK);
   si->blockersForKing[BLACK] = slider_blockers(pieces(WHITE), count<KING>(BLACK) ? square<KING>(BLACK) : SQ_NONE, si->pinners[WHITE], WHITE);
 
@@ -579,10 +628,13 @@ void Position::set_check_info(StateInfo* si) const {
       if (AttackRiderTypes[movePt] & NON_SLIDING_RIDERS)
           si->nonSlidingRiders |= pieces(pt);
   }
+
   si->shak = si->checkersBB & (byTypeBB[KNIGHT] | byTypeBB[ROOK] | byTypeBB[BERS]);
   si->bikjang = var->bikjangRule && ksq != SQ_NONE ? bool(attacks_bb(sideToMove, ROOK, ksq, pieces()) & pieces(sideToMove, KING)) : false;
   si->chased = var->chasingRule ? chased() : Bitboard(0);
   si->legalCapture = NO_VALUE;
+
+  // Optimize pseudo-royal calculation by pre-calculating piece counts
   if (var->extinctionPseudoRoyal)
   {
       si->pseudoRoyalCandidates = 0;
@@ -590,13 +642,24 @@ void Position::set_check_info(StateInfo* si) const {
       for (PieceSet ps = extinction_piece_types(); ps;)
       {
           PieceType pt = pop_lsb(ps);
-          si->pseudoRoyalCandidates |= pieces(pt);
-          if (count(sideToMove, pt) <= var->extinctionPieceCount + 1)
-              si->pseudoRoyals |= pieces(sideToMove, pt);
-          if (count(~sideToMove, pt) <= var->extinctionPieceCount + 1)
-              si->pseudoRoyals |= pieces(~sideToMove, pt);
+          Bitboard pieces_pt = pieces(pt);
+          si->pseudoRoyalCandidates |= pieces_pt;
+          
+          // Calculate piece counts once
+          int whitePieces = popcount(pieces_pt & pieces(WHITE));
+          int blackPieces = popcount(pieces_pt & pieces(BLACK));
+          
+          if (whitePieces <= var->extinctionPieceCount + 1)
+              si->pseudoRoyals |= pieces_pt & pieces(WHITE);
+          if (blackPieces <= var->extinctionPieceCount + 1)
+              si->pseudoRoyals |= pieces_pt & pieces(BLACK);
       }
   }
+
+  // Cache the result
+  check_info_cache.key = st->key;
+  check_info_cache.state = *si;
+  check_info_cache.valid = true;
 }
 
 
@@ -1540,6 +1603,9 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
   newSt.previous = st;
   st = &newSt;
   st->move = m;
+
+  // Invalidate caches
+  check_info_cache.valid = false;
 
   // Increment ply counters. In particular, rule50 will be reset to zero later on
   // in case of a capture or a pawn move.

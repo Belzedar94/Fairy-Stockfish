@@ -343,6 +343,13 @@ private:
   // Initialization helpers (used while setting up a position)
   void set_castling_right(Color c, Square rfrom);
   void set_state(StateInfo* si) const;
+  // Cache for set_check_info results
+  mutable struct CheckInfoCache {
+    Key key;  // Position hash key
+    StateInfo state;
+    bool valid;
+  } check_info_cache;
+
   void set_check_info(StateInfo* si) const;
 
   // Other helpers
