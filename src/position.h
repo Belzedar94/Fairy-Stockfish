@@ -267,6 +267,16 @@ public:
   Bitboard attackers_to(Square s, Bitboard occupied, Color c, Bitboard janggiCannons) const;
   Bitboard attacks_from(Color c, PieceType pt, Square s) const;
   Bitboard moves_from(Color c, PieceType pt, Square s) const;
+  // Cache for slider_blockers results
+  mutable struct BlockersCache {
+    Square square;
+    Bitboard sliders;
+    Color color;
+    Bitboard blockers;
+    Bitboard pinners;
+    bool valid;
+  } blockers_cache[2];  // One for each color
+
   Bitboard slider_blockers(Bitboard sliders, Square s, Bitboard& pinners, Color c) const;
 
   // Properties of moves

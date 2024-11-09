@@ -833,12 +833,56 @@ string Position::fen(bool sfen, bool showPromoted, int countStarted, std::string
 /// or the same of the color of the slider.
 
 Bitboard Position::slider_blockers(Bitboard sliders, Square s, Bitboard& pinners, Color c) const {
+  // Check cache first
+  BlockersCache& cache = blockers_cache[c];
+  if (cache.valid && cache.square == s && cache.sliders == sliders && cache.color == c)
+  {
+      pinners = cache.pinners;
+      return cache.blockers;
+  }
 
   Bitboard blockers = 0;
   pinners = 0;
 
   if (s == SQ_NONE || !sliders)
       return blockers;
+
+  // Fast path for standard chess pieces
+  if (var->fastAttacks && !diagonal_lines())
+  {
+      // Check if we only have standard sliding pieces (ROOK, BISHOP, QUEEN)
+      Bitboard standardSliders = sliders & (pieces(ROOK) | pieces(BISHOP) | pieces(QUEEN));
+      if (standardSliders == sliders)
+      {
+          // Pre-calculate common blocker patterns for standard pieces
+          Bitboard rookBlockers = attacks_bb<ROOK>(s) & pieces(c, ROOK, QUEEN);
+          Bitboard bishopBlockers = attacks_bb<BISHOP>(s) & pieces(c, BISHOP, QUEEN);
+          Bitboard snipers = (rookBlockers | bishopBlockers) & sliders;
+          Bitboard occupancy = pieces() ^ snipers;
+
+          while (snipers)
+          {
+              Square sniperSq = pop_lsb(snipers);
+              Bitboard b = between_bb(s, sniperSq, type_of(piece_on(sniperSq))) & occupancy;
+              if (b && !more_than_one(b))
+              {
+                  blockers |= b;
+                  if (b & pieces(~c))
+                      pinners |= sniperSq;
+              }
+          }
+
+          // Cache the result
+          cache.square = s;
+          cache.sliders = sliders;
+          cache.color = c;
+          cache.blockers = blockers;
+          cache.pinners = pinners;
+          cache.valid = true;
+
+          return blockers;
+      }
+  }
 
   // Snipers are sliders that attack 's' when a piece and other snipers are removed
   Bitboard snipers = 0;
@@ -1540,6 +1584,10 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
   newSt.previous = st;
   st = &newSt;
   st->move = m;
+
+  // Invalidate caches
+  blockers_cache[WHITE].valid = false;
+  blockers_cache[BLACK].valid = false;
 
   // Increment ply counters. In particular, rule50 will be reset to zero later on
   // in case of a capture or a pawn move.
@@ -2249,6 +2297,10 @@ void Position::undo_move(Move m) {
   // Finally point our state pointer back to the previous state
   st = st->previous;
   --gamePly;
+
+  // Invalidate caches
+  blockers_cache[WHITE].valid = false;
+  blockers_cache[BLACK].valid = false;
 
   assert(pos_is_ok());
 }
