@@ -943,6 +943,35 @@ Bitboard Position::attackers_to(Square s, Bitboard occupied, Color c, Bitboard j
   }
 
   Bitboard b = 0;
+
+  // Fast path for common piece combinations in non-fairy variants
+  if (!var->fastAttacks && !var->fastAttacks2)
+  {
+      // Check if we only have standard chess pieces
+      PieceSet ps = piece_types();
+      bool onlyStandardPieces = true;
+      for (PieceSet psCopy = ps; psCopy;)
+      {
+          PieceType pt = pop_lsb(psCopy);
+          if (pt > KING || AttackRiderTypes[pt] & ASYMMETRICAL_RIDERS)
+          {
+              onlyStandardPieces = false;
+              break;
+          }
+      }
+
+      if (onlyStandardPieces)
+      {
+          // Use optimized path for standard chess pieces
+          return (pawn_attacks_bb(~c, s)          & pieces(c, PAWN))
+               | (attacks_bb<KNIGHT>(s)           & pieces(c, KNIGHT))
+               | (attacks_bb<  ROOK>(s, occupied) & pieces(c, ROOK, QUEEN))
+               | (attacks_bb<BISHOP>(s, occupied) & pieces(c, BISHOP, QUEEN))
+               | (attacks_bb<KING>(s)             & pieces(c, KING));
+      }
+  }
+
+  // General case for fairy pieces and complex variants
   for (PieceSet ps = piece_types(); ps;)
   {
       PieceType pt = pop_lsb(ps);
