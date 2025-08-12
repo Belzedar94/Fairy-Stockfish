@@ -1010,6 +1010,8 @@ class TestPyffish(unittest.TestCase):
     def test_dead_pieces(self):
         fen = "4k3/8/8/8/8/3^4/3Q4/4K3 w - - 0 1"
         self.assertEqual(sf.validate_fen(fen, "chess"), sf.FEN_OK)
+        # Round-trip FEN output preserves dead piece marker
+        self.assertEqual(sf.get_fen("chess", fen, []), fen)
         moves = sf.legal_moves("chess", fen, [])
         self.assertIn("d2d3", moves)
         self.assertTrue(sf.is_capture("chess", fen, [], "d2d3"))
