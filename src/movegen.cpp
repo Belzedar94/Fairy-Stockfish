@@ -149,7 +149,8 @@ namespace {
 
     const Bitboard pawns      = pos.pieces(Us, PAWN);
     const Bitboard movable    = pos.board_bb(Us, PAWN) & ~pos.pieces();
-    const Bitboard capturable = pos.board_bb(Us, PAWN) &  pos.pieces(Them);
+    const Bitboard capturable = pos.board_bb(Us, PAWN)
+                               & (pos.pieces(Them) | pos.dead_pieces());
 
     target = Type == EVASIONS ? target : AllSquares;
 
