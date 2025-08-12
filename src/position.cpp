@@ -637,7 +637,7 @@ void Position::set_state(StateInfo* si) const {
 
   set_check_info(si);
 
-  for (Bitboard b = pieces(); b; )
+  for (Bitboard b = pieces() | si->deadSquares; b; )
   {
       Square s = pop_lsb(b);
       Piece pc = piece_on(s);
