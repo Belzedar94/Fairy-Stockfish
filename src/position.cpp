@@ -2383,6 +2383,7 @@ Key Position::key_after(Move m) const {
   Square to = to_sq(m);
   Piece pc = moved_piece(m);
   Piece captured = piece_on(to);
+  bool dead = !captured && (st->deadSquares & to);
   Key k = st->key ^ Zobrist::side;
 
   if (captured)
@@ -2390,11 +2391,15 @@ Key Position::key_after(Move m) const {
       k ^= Zobrist::psq[captured][to];
       if (captures_to_hand())
       {
-          Piece removeFromHand = !drop_loop() && is_promoted(to) ? make_piece(~color_of(captured), promotion_pawn_type(color_of(captured))) : ~captured;
+          Piece removeFromHand = !drop_loop() && is_promoted(to)
+                                 ? make_piece(~color_of(captured), promotion_pawn_type(color_of(captured)))
+                                 : ~captured;
           k ^= Zobrist::inHand[removeFromHand][pieceCountInHand[color_of(removeFromHand)][type_of(removeFromHand)] + 1]
               ^ Zobrist::inHand[removeFromHand][pieceCountInHand[color_of(removeFromHand)][type_of(removeFromHand)]];
       }
   }
+  else if (dead)
+      k ^= Zobrist::dead[to];
   if (type_of(m) == DROP)
   {
       Piece pc_hand = make_piece(sideToMove, in_hand_piece_type(m));
