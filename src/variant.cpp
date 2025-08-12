@@ -1958,9 +1958,30 @@ void VariantMap::init() {
 Variant* Variant::conclude() {
     // Enforce consistency to allow runtime optimizations
     if (!doubleStep)
+    {
         doubleStepRegion[WHITE] = doubleStepRegion[BLACK] = 0;
+        for (Color c : {WHITE, BLACK})
+            for (PieceType pt = NO_PIECE_TYPE; pt < PIECE_TYPE_NB; ++pt)
+                initialStepRegion[c][pt] = 0;
+    }
     if (!doubleStepRegion[WHITE] && !doubleStepRegion[BLACK])
         doubleStep = false;
+
+    for (Color c : {WHITE, BLACK})
+    {
+        for (PieceType pt = NO_PIECE_TYPE; pt < PIECE_TYPE_NB; ++pt)
+        {
+            if (!initialStepRegion[c][pt])
+                initialStepRegion[c][pt] = doubleStepRegion[c];
+            if (!promotionRegionByPiece[c][pt])
+                promotionRegionByPiece[c][pt] = promotionRegion[c];
+        }
+        if (!dropRegion[c][ALL_PIECES])
+            dropRegion[c][ALL_PIECES] = c == WHITE ? whiteDropRegion : blackDropRegion;
+        for (PieceType pt = PAWN; pt < PIECE_TYPE_NB; ++pt)
+            if (!dropRegion[c][pt])
+                dropRegion[c][pt] = dropRegion[c][ALL_PIECES];
+    }
 
     // Determine optimizations
     bool restrictedMobility = false;

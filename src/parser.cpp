@@ -304,6 +304,9 @@ Variant* VariantParser<DoCheck>::parse(Variant* v) {
         {
             std::string color = c == WHITE ? "White" : "Black";
             parse_attribute("mobilityRegion" + color + capitalizedPiece, v->mobilityRegion[c][pt]);
+            parse_attribute("doubleStepRegion" + color + capitalizedPiece, v->initialStepRegion[c][pt]);
+            parse_attribute("promotionRegion" + color + capitalizedPiece, v->promotionRegionByPiece[c][pt]);
+            parse_attribute("dropRegion" + color + capitalizedPiece, v->dropRegion[c][pt]);
         }
     }
     // piece values
