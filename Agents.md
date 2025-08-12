@@ -1,3 +1,41 @@
+# Fairy-Stockfish Development Notes
+
+## Repository Overview
+
+- Fairy-Stockfish is a C++17 engine supporting 90+ chess variants and multiple protocols (UCI, UCCI, USI, XBoard).
+- Python (`pyffish`) and JavaScript (`ffish.js`) bindings are available for library use.
+
+## Build System & Requirements
+
+- Run build and test commands from the `src/` directory.
+- Requires GCC, Clang, or MSVC with C++17 support. Python 3.7+ and Node.js are needed for bindings.
+- Common commands:
+    - `make -j2 ARCH=x86-64 build` – release build.
+    - `make -j2 ARCH=x86-64 debug=yes build` – debug build.
+    - `make -j2 ARCH=x86-64 largeboards=yes build` – large board support.
+    - `make -j2 ARCH=x86-64 largeboards=yes all=yes build` – enable all variants.
+    - `make -j2 ARCH=x86-64 nnue=yes build` – use NNUE evaluation.
+- Architecture options include `x86-64-modern`, `x86-64-avx2`, `x86-64`, `armv8`, and `apple-silicon`.
+- Python bindings: `python3 setup.py build_ext --inplace` then `python3 setup.py install`.
+- JavaScript bindings: `cd tests/js` and `npm install`.
+
+## Testing & Validation
+
+- `./stockfish bench` verifies engine functionality; append a variant name for variant-specific benchmarks.
+- Validate variant definitions with `./stockfish check variants.ini`.
+- Protocol tests: `../tests/protocol.sh`.
+- Move generation tests: `../tests/perft.sh all`, `../tests/perft.sh chess`, or `../tests/perft.sh largeboard`.
+- Additional scripts: `../tests/regression.sh`, `../tests/reprosearch.sh`, `../tests/signature.sh`.
+- Test scripts require the `expect` utility.
+
+## Project Structure
+
+- `src/` – core engine source files (`main.cpp`, `movegen.cpp`, `search.cpp`, `evaluate.cpp`, `variant.cpp`, etc.).
+- `tests/` – test scripts and data.
+- `.github/workflows/` – CI configurations.
+- `setup.py` – Python package configuration.
+- `tests/js/package.json` – JavaScript bindings configuration.
+
 1. For most variants, you will only have to add a new entry to variants.ini
 2. Check to see if the options to create your variant already exist.
    * For rule variants, see variants.ini -> "Rule definition options"
@@ -32,11 +70,7 @@
     15. Comments should be appropriate for experienced developers. Don't change copyright year in comments.
     16. Bitwise operators are overloaded between Squares and Bitboards in bitboard.h; you don't have to explicitly convert in most cases.
 5. Testing your variant
-    1. Compile using “make”. Type “make help” to see important options. Remember that you need to run "make" from the "src" folder, the executable will be created there, and the default location for "variants.ini" is in there.
-        1. A simple compile looks like: "make -j build ARCH=x86-64-modern"
-        2. “largeboards=yes” if your board is greater than 8x8. Boards greater than 10x12 are not supported.
-        3. “all=yes” if your variant has a large branching factor such as “Duck Chess” or “Game of the Amazons”
-        4. “debug=yes” and “optimize=no” if you’re troubleshooting
+    1. Compile using `make` from the `src` folder (see "Build System & Requirements" for options). The executable and default `variants.ini` are produced there.
     2. Once you launch the executable, here are useful options:
         1. “setoption name VariantPath value variants.ini”
         2. “setoption name UCI_Variant value [your_variant]”
