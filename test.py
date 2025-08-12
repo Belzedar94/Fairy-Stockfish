@@ -339,7 +339,7 @@ class TestPyffish(unittest.TestCase):
         self.assertIn("i10h10", result)
 
         result = sf.legal_moves("shogun", SHOGUN, ["c2c4", "b8c6", "b2b4", "b7b5", "c4b5", "c6b8"])
-        self.assertIn("b5b6+", result)
+        self.assertIn("b5b6", result)
 
         # Seirawan gating but no castling
         fen = "rnbq3r/pp2bkpp/8/2p1p2K/2p1P3/8/PPPP1PPP/RNB4R[EHeh] b ABCHabcdh - 0 10"
@@ -937,8 +937,8 @@ class TestPyffish(unittest.TestCase):
         result = sf.get_san_moves("xiangqi", XIANGQI, UCI_moves, False, sf.NOTATION_XIANGQI_WXF)
         self.assertEqual(result, SAN_moves)
 
-        UCI_moves = ["e2e4", "d7d5", "f1a6+", "d8d6"]
-        SAN_moves = ["e4", "d5", "Ba6=A", "Qd6"]
+        UCI_moves = ["e2e4", "d7d5", "f1a6", "d8d6"]
+        SAN_moves = ["e4", "d5", "Ba6", "Qd6"]
         result = sf.get_san_moves("shogun", SHOGUN, UCI_moves)
         self.assertEqual(result, SAN_moves)
 
