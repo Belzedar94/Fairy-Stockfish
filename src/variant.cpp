@@ -1969,10 +1969,10 @@ Variant* Variant::conclude() {
 
     for (Color c : {WHITE, BLACK})
     {
-        for (PieceType pt = NO_PIECE_TYPE; pt < PIECE_TYPE_NB; ++pt)
+        for (PieceType pt = PAWN; pt < PIECE_TYPE_NB; ++pt)
         {
             if (!initialStepRegion[c][pt])
-                initialStepRegion[c][pt] = doubleStepRegion[c];
+                initialStepRegion[c][pt] = pt == PAWN ? doubleStepRegion[c] : 0;
             if (!promotionRegionByPiece[c][pt])
                 promotionRegionByPiece[c][pt] = promotionRegion[c];
         }
