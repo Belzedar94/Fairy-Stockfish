@@ -1234,7 +1234,7 @@ bool Position::legal(Move m) const {
       if (is_gating(m) && (gating_square(m) == to || gating_square(m) == rto))
           return false;
 
-      // Non-royal, non-pseudo-royal pieces can not be impeded from castling
+      // Non-royal pieces that are not pseudo-royal cannot be impeded from castling
       if (   type_of(piece_on(from)) != castling_king_piece(us)
           && !(st->pseudoRoyals & from))
           return true;
