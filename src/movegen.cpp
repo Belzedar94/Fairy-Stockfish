@@ -386,7 +386,7 @@ namespace {
     {
         target = Type == EVASIONS     ?  between_bb(ksq, lsb(pos.checkers()))
                : Type == NON_EVASIONS ? ~pos.pieces( Us)
-               : Type == CAPTURES     ?  pos.pieces(~Us)
+               : Type == CAPTURES     ?  (pos.pieces(~Us) | pos.dead_pieces())
                                       : ~pos.pieces(   ); // QUIETS || QUIET_CHECKS
 
         if (Type == EVASIONS)

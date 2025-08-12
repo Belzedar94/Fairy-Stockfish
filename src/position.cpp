@@ -45,6 +45,7 @@ namespace Zobrist {
   Key inHand[PIECE_NB][SQUARE_NB];
   Key checks[COLOR_NB][CHECKS_NB];
   Key wall[SQUARE_NB];
+  Key dead[SQUARE_NB];
   Key endgame[EG_EVAL_NB];
 }
 
@@ -63,6 +64,8 @@ std::ostream& operator<<(std::ostream& os, const Position& pos) {
       for (File f = FILE_A; f <= pos.max_file(); ++f)
           if (pos.state()->wallSquares & make_square(f, r))
               os << " | *";
+          else if (pos.state()->deadSquares & make_square(f, r))
+              os << " | ^";
           else if (pos.unpromoted_piece_on(make_square(f, r)))
               os << " |+" << pos.piece_to_char()[pos.unpromoted_piece_on(make_square(f, r))];
           else
@@ -178,6 +181,9 @@ void Position::init() {
 
   for (Square s = SQ_A1; s <= SQ_MAX; ++s)
       Zobrist::wall[s] = rng.rand<Key>();
+
+  for (Square s = SQ_A1; s <= SQ_MAX; ++s)
+      Zobrist::dead[s] = rng.rand<Key>();
 
   for (int i = NO_EG_EVAL; i < EG_EVAL_NB; ++i)
       Zobrist::endgame[i] = rng.rand<Key>();
@@ -309,6 +315,14 @@ Position& Position::set(const Variant* v, const string& fenStr, bool isChess960,
       else if (token == '*')
       {
           st->wallSquares |= sq;
+          byTypeBB[ALL_PIECES] |= sq;
+          ++sq;
+      }
+
+      // Dead piece
+      else if (token == '^')
+      {
+          st->deadSquares |= sq;
           byTypeBB[ALL_PIECES] |= sq;
           ++sq;
       }
@@ -630,7 +644,7 @@ void Position::set_state(StateInfo* si) const {
       si->key ^= Zobrist::psq[pc][s];
 
       if (!pc)
-          si->key ^= Zobrist::wall[s];
+          si->key ^= (si->deadSquares & s) ? Zobrist::dead[s] : Zobrist::wall[s];
 
       else if (type_of(pc) == PAWN)
           si->pawnKey ^= Zobrist::psq[pc][s];
@@ -706,7 +720,9 @@ string Position::fen(bool sfen, bool showPromoted, int countStarted, std::string
 
           if (f <= max_file())
           {
-              if (empty(make_square(f, r)) || fogArea & make_square(f, r))
+              if (state()->deadSquares & make_square(f, r))
+                  ss << "^";
+              else if (empty(make_square(f, r)) || fogArea & make_square(f, r))
                   // Wall square
                   ss << "*";
               else if (unpromoted_piece_on(make_square(f, r)))
@@ -1569,6 +1585,15 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
   Square to = to_sq(m);
   Piece pc = moved_piece(m);
   Piece captured = piece_on(type_of(m) == EN_PASSANT ? capture_square(to) : to);
+  bool capturedDead = false;
+  if (captured == NO_PIECE && (st->deadSquares & to))
+  {
+      capturedDead = true;
+      st->deadSquares ^= to;
+      byTypeBB[ALL_PIECES] ^= to;
+      k ^= Zobrist::dead[to];
+      st->rule50 = 0;
+  }
   if (to == from)
   {
       assert((type_of(m) == PROMOTION && sittuyin_promotion()) || (is_pass(m) && (pass(us) || var->wallOrMove )));
@@ -1577,6 +1602,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
   st->capturedpromoted = is_promoted(to);
   st->unpromotedCapturedPiece = captured ? unpromoted_piece_on(to) : NO_PIECE;
   st->pass = is_pass(m);
+  st->capturedDead = capturedDead;
 
   assert(color_of(pc) == us);
   assert(captured == NO_PIECE || color_of(captured) == (type_of(m) != CASTLING ? them : us));
@@ -1977,7 +2003,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
 
 
   // Remove the blast pieces
-  if (captured && (blast_on_capture() || var->petrifyOnCaptureTypes))
+  if ((captured || capturedDead) && (blast_on_capture() || var->petrifyOnCaptureTypes))
   {
       std::memset(st->unpromotedBycatch, 0, sizeof(st->unpromotedBycatch));
       st->demotedBycatch = st->promotedBycatch = 0;
@@ -2146,9 +2172,10 @@ void Position::undo_move(Move m) {
 
   // Reset wall squares
   byTypeBB[ALL_PIECES] ^= st->wallSquares ^ st->previous->wallSquares;
+  byTypeBB[ALL_PIECES] ^= st->deadSquares ^ st->previous->deadSquares;
 
   // Add the blast pieces
-  if (st->capturedPiece && (blast_on_capture() || var->petrifyOnCaptureTypes))
+  if ((st->capturedPiece || st->capturedDead) && (blast_on_capture() || var->petrifyOnCaptureTypes))
   {
       Bitboard blast = attacks_bb<KING>(to) | to;
       while (blast)
@@ -2308,6 +2335,8 @@ void Position::do_null_move(StateInfo& newSt) {
 
   newSt.previous = st;
   st = &newSt;
+  st->capturedDead = false;
+  st->capturedPiece = NO_PIECE;
 
   st->dirtyPiece.dirty_num = 0;
   st->dirtyPiece.piece[0] = NO_PIECE; // Avoid checks in UpdateAccumulator()

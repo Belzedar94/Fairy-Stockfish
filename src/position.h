@@ -55,6 +55,7 @@ struct StateInfo {
   Bitboard epSquares;
   Square castlingKingSquare[COLOR_NB];
   Bitboard wallSquares;
+  Bitboard deadSquares;
   Bitboard gatesBB[COLOR_NB];
 
   // Not copied when making a move (will be recomputed anyhow)
@@ -77,6 +78,7 @@ struct StateInfo {
   Bitboard   pseudoRoyals;
   OptBool    legalCapture;
   bool       capturedpromoted;
+  bool       capturedDead;
   bool       shak;
   bool       bikjang;
   Bitboard   chased;
@@ -125,6 +127,7 @@ public:
   bool two_boards() const;
   Bitboard board_bb() const;
   Bitboard board_bb(Color c, PieceType pt) const;
+  Bitboard dead_pieces() const;
   PieceSet piece_types() const;
   const std::string& piece_to_char() const;
   const std::string& piece_to_char_synonyms() const;
@@ -420,6 +423,10 @@ inline Bitboard Position::board_bb() const {
 inline Bitboard Position::board_bb(Color c, PieceType pt) const {
   assert(var != nullptr);
   return var->mobilityRegion[c][pt] ? var->mobilityRegion[c][pt] & board_bb() : board_bb();
+}
+
+inline Bitboard Position::dead_pieces() const {
+  return st->deadSquares;
 }
 
 inline PieceSet Position::piece_types() const {
@@ -1115,7 +1122,7 @@ inline Piece Position::piece_on(Square s) const {
 }
 
 inline bool Position::empty(Square s) const {
-  return piece_on(s) == NO_PIECE;
+  return piece_on(s) == NO_PIECE && !(st->deadSquares & s);
 }
 
 inline Piece Position::unpromoted_piece_on(Square s) const {

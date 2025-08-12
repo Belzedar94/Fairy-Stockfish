@@ -1007,6 +1007,14 @@ class TestPyffish(unittest.TestCase):
         result = sf.is_capture("sittuyin", "8/2k5/8/4P3/4P1N1/5K2/8/8[] w - - 0 1", [], "e5e5f")
         self.assertFalse(result)
 
+    def test_dead_pieces(self):
+        fen = "4k3/8/8/8/8/3^4/3Q4/4K3 w - - 0 1"
+        self.assertEqual(sf.validate_fen(fen, "chess"), sf.FEN_OK)
+        moves = sf.legal_moves("chess", fen, [])
+        self.assertIn("d2d3", moves)
+        self.assertTrue(sf.is_capture("chess", fen, [], "d2d3"))
+        self.assertNotIn("^", sf.get_fen("chess", fen, ["d2d3"]))
+
     def test_piece_to_partner(self):
         # take the rook and promote to queen
         result = sf.piece_to_partner("bughouse", "r2qkbnr/1Ppppppp/2n5/8/8/8/1PPPPPPP/RNBQKBNR[] w KQkq - 0 1", ["b7a8q"])
