@@ -154,7 +154,7 @@ if [[ $1 == "all" || $1 == "variant" ]]; then
   expect perft.exp atomic "fen r3k1rR/5K2/8/8/8/8/8/8 b kq - 0 1" 4 91522 true > /dev/null
   expect perft.exp atomic "fen Rr2k1rR/3K4/3p4/8/8/8/7P/8 w kq - 0 1" 4 229648 true > /dev/null
   expect perft.exp atomic "fen 1R4kr/4K3/8/8/8/8/8/8 b k - 0 1" 4 17915 true > /dev/null
-  expect perft.exp extinction "fen rnbqb1kr/pppppppp/8/8/8/8/PPPPPPPP/RNBQB1KR w AHah - 0 1" 4 195284 true > /dev/null
+  expect perft.exp extinction "fen rnbqb1kr/pppppppp/8/8/8/8/PPPPPPPP/RNBQB1KR w AHah - 0 1" 4 195286 true > /dev/null
   expect perft.exp seirawan "fen qbbrnkrn/pppppppp/8/8/8/8/PPPPPPPP/QBBRNKRN[HEhe] w ABCDEFGHabcdefgh - 0 1" 3 21170 true > /dev/null
 fi
 

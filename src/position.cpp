@@ -1235,7 +1235,7 @@ bool Position::legal(Move m) const {
           return false;
 
       // Non-royal pieces that are not pseudo-royal cannot be impeded from castling
-      if (   type_of(piece_on(from)) != castling_king_piece(us)
+      if (   type_of(piece_on(from)) != KING
           && !(st->pseudoRoyals & from))
           return true;
 
