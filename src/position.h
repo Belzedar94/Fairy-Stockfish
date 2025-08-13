@@ -129,6 +129,7 @@ public:
   const std::string& piece_to_char() const;
   const std::string& piece_to_char_synonyms() const;
   Bitboard promotion_zone(Color c) const;
+  Bitboard promotion_zone(Color c, PieceType pt) const;
   Square promotion_square(Color c, Square s) const;
   PieceType promotion_pawn_type(Color c) const;
   PieceSet promotion_piece_types(Color c) const;
@@ -144,7 +145,9 @@ public:
   PieceSet mutually_immune_types() const;
   EndgameEval endgame_eval() const;
   Bitboard double_step_region(Color c) const;
+  Bitboard double_step_region(Color c, PieceType pt) const;
   Bitboard triple_step_region(Color c) const;
+  Bitboard triple_step_region(Color c, PieceType pt) const;
   bool castling_enabled() const;
   bool castling_dropped_piece() const;
   File castling_kingside_file() const;
@@ -438,13 +441,18 @@ inline const std::string& Position::piece_to_char_synonyms() const {
 }
 
 inline Bitboard Position::promotion_zone(Color c) const {
+  return promotion_zone(c, promotion_pawn_type(c));
+}
+
+inline Bitboard Position::promotion_zone(Color c, PieceType pt) const {
   assert(var != nullptr);
-  return var->promotionRegion[c];
+  Bitboard b = var->promotionRegionPiece[c][pt];
+  return b ? b : var->promotionRegion[c];
 }
 
 inline Square Position::promotion_square(Color c, Square s) const {
   assert(var != nullptr);
-  Bitboard b = promotion_zone(c) & forward_file_bb(c, s) & board_bb();
+  Bitboard b = promotion_zone(c, promotion_pawn_type(c)) & forward_file_bb(c, s) & board_bb();
   return !b ? SQ_NONE : c == WHITE ? lsb(b) : msb(b);
 }
 
@@ -514,13 +522,23 @@ inline EndgameEval Position::endgame_eval() const {
 }
 
 inline Bitboard Position::double_step_region(Color c) const {
+  return double_step_region(c, promotion_pawn_type(c));
+}
+
+inline Bitboard Position::double_step_region(Color c, PieceType pt) const {
   assert(var != nullptr);
-  return var->doubleStepRegion[c];
+  Bitboard b = var->doubleStepRegionPiece[c][pt];
+  return b ? b : var->doubleStepRegion[c];
 }
 
 inline Bitboard Position::triple_step_region(Color c) const {
+  return triple_step_region(c, promotion_pawn_type(c));
+}
+
+inline Bitboard Position::triple_step_region(Color c, PieceType pt) const {
   assert(var != nullptr);
-  return var->tripleStepRegion[c];
+  Bitboard b = var->tripleStepRegionPiece[c][pt];
+  return b ? b : var->tripleStepRegion[c];
 }
 
 inline bool Position::castling_enabled() const {
@@ -664,13 +682,16 @@ inline Bitboard Position::drop_region(Color c) const {
 }
 
 inline Bitboard Position::drop_region(Color c, PieceType pt) const {
-  Bitboard b = drop_region(c) & board_bb(c, pt);
+  Bitboard b = var->dropRegion[c][pt];
+  if (!b)
+      b = drop_region(c);
+  b &= board_bb(c, pt);
 
   // Pawns on back ranks
   if (pt == PAWN)
   {
       if (!var->promotionZonePawnDrops)
-          b &= ~promotion_zone(c);
+          b &= ~promotion_zone(c, pt);
       if (!first_rank_pawn_drops())
           b &= ~rank_bb(relative_rank(c, RANK_1, max_rank()));
   }
@@ -1256,7 +1277,7 @@ inline Bitboard Position::moves_from(Color c, PieceType pt, Square s) const {
   PieceType movePt = pt == KING ? king_type() : pt;
   Bitboard b = moves_bb(c, movePt, s, byTypeBB[ALL_PIECES]);
   // Add initial moves
-  if (double_step_region(c) & s)
+  if (double_step_region(c, pt) & s)
       b |= moves_bb<true>(c, movePt, s, byTypeBB[ALL_PIECES]);
   // Xiangqi soldier
   if (pt == SOLDIER && !(promoted_soldiers(c) & s))

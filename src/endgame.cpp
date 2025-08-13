@@ -208,7 +208,7 @@ Value Endgame<KPK>::operator()(const Position& pos) const {
   Color us = strongSide == pos.side_to_move() ? WHITE : BLACK;
 
   // Non-standard promotion, evaluation unclear
-  if (   pos.promotion_zone(us) != rank_bb(relative_rank(us, RANK_8, pos.max_rank()))
+  if (   pos.promotion_zone(us, pos.promotion_pawn_type(us)) != rank_bb(relative_rank(us, RANK_8, pos.max_rank()))
       || RANK_MAX != RANK_8
       || !(pos.promotion_piece_types(us) & QUEEN))
   {
@@ -998,7 +998,7 @@ ScaleFactor Endgame<KPKP>::operator()(const Position& pos) const {
 
   // Probe the KPK bitbase with the weakest side's pawn removed. If it's a draw,
   // it's probably at least a draw even with the pawn.
-  if (   pos.promotion_zone(us) != rank_bb(relative_rank(us, RANK_8, pos.max_rank()))
+  if (   pos.promotion_zone(us, pos.promotion_pawn_type(us)) != rank_bb(relative_rank(us, RANK_8, pos.max_rank()))
       || RANK_MAX != RANK_8
       || !(pos.promotion_piece_types(us) & QUEEN))
       return SCALE_FACTOR_NONE;
