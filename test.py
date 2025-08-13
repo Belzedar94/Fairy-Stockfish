@@ -424,6 +424,12 @@ class TestPyffish(unittest.TestCase):
         result = sf.legal_moves("shako", "c8c/ernbqkbnre/pppppppppp/10/10/10/10/PPPPPPPPPP/RR3K4/10 w Qkq - 0 1", [])
         self.assertIn("f2d2", result)
 
+    def test_atomic960_castling_in_check(self):
+        fen = "7k/8/8/8/8/8/2PP4/1RK4q w Q - 0 1"
+        result = sf.legal_moves("atomic", fen, [], True)
+        self.assertIn("c1b2", result)
+        self.assertNotIn("c1b1", result)
+
     def test_get_fen(self):
         result = sf.get_fen("chess", CHESS, [])
         self.assertEqual(result, CHESS)
