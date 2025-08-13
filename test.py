@@ -335,6 +335,23 @@ class TestPyffish(unittest.TestCase):
         result = sf.legal_moves("xiangqi", XIANGQI, ["h3h10"])
         self.assertIn("i10h10", result)
 
+        # Capturing a dead piece is legal and treated as a capture
+        fen = "k7/8/8/8/8/8/4^3/4K3 w - - 0 1"
+        result = sf.legal_moves("chess", fen, [])
+        self.assertIn("e1e2", result)
+        self.assertTrue(sf.is_capture("chess", fen, [], "e1e2"))
+        new_fen = sf.get_fen("chess", fen, ["e1e2"])
+        self.assertNotIn("^", new_fen.split()[0])
+
+        # Sliders cannot move through dead pieces
+        fen = "4k3/8/8/r7/8/^7/8/Q6K w - - 0 1"
+        result = sf.legal_moves("chess", fen, [])
+        self.assertIn("a1a3", result)
+        self.assertNotIn("a1a5", result)
+        self.assertTrue(sf.is_capture("chess", fen, [], "a1a3"))
+        result = sf.legal_moves("chess", fen, ["a1a3", "e8d7"])
+        self.assertIn("a3a5", result)
+
         result = sf.legal_moves("xiangqi", XIANGQI, ["h3h10"])
         self.assertIn("i10h10", result)
 
