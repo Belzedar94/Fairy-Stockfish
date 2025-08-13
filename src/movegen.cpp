@@ -149,7 +149,8 @@ namespace {
 
     const Bitboard pawns      = pos.pieces(Us, PAWN);
     const Bitboard movable    = pos.board_bb(Us, PAWN) & ~pos.pieces();
-    const Bitboard capturable = pos.board_bb(Us, PAWN) &  pos.pieces(Them);
+    const Bitboard capturable = pos.board_bb(Us, PAWN)
+                               & (pos.pieces(Them) | pos.state()->deadSquares);
 
     target = Type == EVASIONS ? target : AllSquares;
 
@@ -297,10 +298,12 @@ namespace {
     {
         Square from = pop_lsb(bb);
 
+        Bitboard dead = pos.state()->deadSquares;
+        Bitboard occ = pos.pieces() | dead;
         Bitboard attacks = pos.attacks_from(Us, Pt, from);
         Bitboard quiets = pos.moves_from(Us, Pt, from);
-        Bitboard b = (  (attacks & pos.pieces())
-                       | (quiets & ~pos.pieces()));
+        Bitboard b = (  (attacks & occ)
+                       | (quiets & ~occ));
         Bitboard b1 = b & target;
         Bitboard promotion_zone = pos.promotion_zone(Us);
         PieceType promPt = pos.promoted_piece_type(Pt);
@@ -386,7 +389,7 @@ namespace {
     {
         target = Type == EVASIONS     ?  between_bb(ksq, lsb(pos.checkers()))
                : Type == NON_EVASIONS ? ~pos.pieces( Us)
-               : Type == CAPTURES     ?  pos.pieces(~Us)
+               : Type == CAPTURES     ? (pos.pieces(~Us) | pos.state()->deadSquares)
                                       : ~pos.pieces(   ); // QUIETS || QUIET_CHECKS
 
         if (Type == EVASIONS)

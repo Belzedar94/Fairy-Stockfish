@@ -55,6 +55,7 @@ struct StateInfo {
   Bitboard epSquares;
   Square castlingKingSquare[COLOR_NB];
   Bitboard wallSquares;
+  Bitboard deadSquares;
   Bitboard gatesBB[COLOR_NB];
 
   // Not copied when making a move (will be recomputed anyhow)
@@ -77,6 +78,7 @@ struct StateInfo {
   Bitboard   pseudoRoyals;
   OptBool    legalCapture;
   bool       capturedpromoted;
+  bool       capturedDead;
   bool       shak;
   bool       bikjang;
   Bitboard   chased;
@@ -414,7 +416,7 @@ inline bool Position::two_boards() const {
 
 inline Bitboard Position::board_bb() const {
   assert(var != nullptr);
-  return board_size_bb(var->maxFile, var->maxRank) & ~st->wallSquares;
+  return board_size_bb(var->maxFile, var->maxRank) & ~(st->wallSquares & ~st->deadSquares);
 }
 
 inline Bitboard Position::board_bb(Color c, PieceType pt) const {
@@ -1383,13 +1385,18 @@ inline bool Position::is_chess960() const {
 
 inline bool Position::capture_or_promotion(Move m) const {
   assert(is_ok(m));
-  return type_of(m) == PROMOTION || type_of(m) == EN_PASSANT || (type_of(m) != CASTLING && !empty(to_sq(m)));
+  return type_of(m) == PROMOTION || type_of(m) == EN_PASSANT
+      || (type_of(m) != CASTLING
+          && (  !empty(to_sq(m))
+             || (st->deadSquares & to_sq(m))));
 }
 
 inline bool Position::capture(Move m) const {
   assert(is_ok(m));
   // Castling is encoded as "king captures rook"
-  return (!empty(to_sq(m)) && type_of(m) != CASTLING && from_sq(m) != to_sq(m)) || type_of(m) == EN_PASSANT;
+  return (type_of(m) != CASTLING && from_sq(m) != to_sq(m)
+          && (!empty(to_sq(m)) || (st->deadSquares & to_sq(m))))
+      || type_of(m) == EN_PASSANT;
 }
 
 inline Square Position::capture_square(Square to) const {

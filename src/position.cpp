@@ -313,6 +313,14 @@ Position& Position::set(const Variant* v, const string& fenStr, bool isChess960,
           ++sq;
       }
 
+      // Dead piece
+      else if (token == '^')
+      {
+          st->deadSquares |= sq;
+          byTypeBB[ALL_PIECES] |= sq;
+          ++sq;
+      }
+
       else if ((idx = piece_to_char().find(token)) != string::npos || (idx = piece_to_char_synonyms().find(token)) != string::npos)
       {
           if (ss.peek() == '~')
@@ -706,18 +714,22 @@ string Position::fen(bool sfen, bool showPromoted, int countStarted, std::string
 
           if (f <= max_file())
           {
-              if (empty(make_square(f, r)) || fogArea & make_square(f, r))
-                  // Wall square
+              Square sq = make_square(f, r);
+              if (fogArea & sq)
                   ss << "*";
-              else if (unpromoted_piece_on(make_square(f, r)))
+              else if (st->deadSquares & sq)
+                  ss << "^";
+              else if (st->wallSquares & sq)
+                  ss << "*";
+              else if (unpromoted_piece_on(sq))
                   // Promoted shogi pieces, e.g., +r for dragon
-                  ss << "+" << piece_to_char()[unpromoted_piece_on(make_square(f, r))];
+                  ss << "+" << piece_to_char()[unpromoted_piece_on(sq)];
               else
               {
-                  ss << piece_to_char()[piece_on(make_square(f, r))];
+                  ss << piece_to_char()[piece_on(sq)];
 
                   // Set promoted pieces
-                  if (((captures_to_hand() && !drop_loop()) || two_boards() ||  showPromoted) && is_promoted(make_square(f, r)))
+                  if (((captures_to_hand() && !drop_loop()) || two_boards() ||  showPromoted) && is_promoted(sq))
                       ss << "~";
               }
           }
@@ -1567,8 +1579,9 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
   Color them = ~us;
   Square from = from_sq(m);
   Square to = to_sq(m);
+  Square capsq = type_of(m) == EN_PASSANT ? capture_square(to) : to;
   Piece pc = moved_piece(m);
-  Piece captured = piece_on(type_of(m) == EN_PASSANT ? capture_square(to) : to);
+  Piece captured = piece_on(capsq);
   if (to == from)
   {
       assert((type_of(m) == PROMOTION && sittuyin_promotion()) || (is_pass(m) && (pass(us) || var->wallOrMove )));
@@ -1577,6 +1590,17 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
   st->capturedpromoted = is_promoted(to);
   st->unpromotedCapturedPiece = captured ? unpromoted_piece_on(to) : NO_PIECE;
   st->pass = is_pass(m);
+
+  if (!captured && (st->deadSquares & capsq))
+  {
+      st->deadSquares ^= capsq;
+      byTypeBB[ALL_PIECES] ^= capsq;
+      k ^= Zobrist::wall[capsq];
+      st->capturedDead = true;
+      st->rule50 = 0;
+  }
+  else
+      st->capturedDead = false;
 
   assert(color_of(pc) == us);
   assert(captured == NO_PIECE || color_of(captured) == (type_of(m) != CASTLING ? them : us));
@@ -1599,11 +1623,8 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
 
   if (captured)
   {
-      Square capsq = to;
-
       if (type_of(m) == EN_PASSANT)
       {
-          capsq = capture_square(to);
           st->captureSquare = capsq;
 
           assert(st->epSquares & to);
@@ -2220,25 +2241,33 @@ void Position::undo_move(Move m) {
       else
           move_piece(to, from); // Put the piece back at the source square
 
-      if (st->capturedPiece)
+  if (st->capturedPiece)
+  {
+      Square capsq = to;
+
+      if (type_of(m) == EN_PASSANT)
       {
-          Square capsq = to;
+          capsq = st->captureSquare;
 
-          if (type_of(m) == EN_PASSANT)
-          {
-              capsq = st->captureSquare;
+          assert(st->previous->epSquares & to);
+          assert(var->enPassantRegion & to);
+          assert(piece_on(capsq) == NO_PIECE);
+      }
 
-              assert(st->previous->epSquares & to);
-              assert(var->enPassantRegion & to);
-              assert(piece_on(capsq) == NO_PIECE);
-          }
-
-          put_piece(st->capturedPiece, capsq, st->capturedpromoted, st->unpromotedCapturedPiece); // Restore the captured piece
-          if (captures_to_hand())
-              remove_from_hand(!drop_loop() && st->capturedpromoted ? (st->unpromotedCapturedPiece ? ~st->unpromotedCapturedPiece
+      put_piece(st->capturedPiece, capsq, st->capturedpromoted, st->unpromotedCapturedPiece); // Restore the captured piece
+      if (captures_to_hand())
+          remove_from_hand(!drop_loop() && st->capturedpromoted ? (st->unpromotedCapturedPiece ? ~st->unpromotedCapturedPiece
                                                                                                    : make_piece(~color_of(st->capturedPiece), promotion_pawn_type(us)))
                                                                     : ~st->capturedPiece);
-      }
+  }
+  else if (st->capturedDead)
+  {
+      Square capsq = to;
+      if (type_of(m) == EN_PASSANT)
+          capsq = st->captureSquare;
+      st->deadSquares ^= capsq;
+      byTypeBB[ALL_PIECES] ^= capsq;
+  }
   }
 
   if (flip_enclosed_pieces())
