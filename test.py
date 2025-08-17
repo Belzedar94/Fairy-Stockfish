@@ -3,6 +3,7 @@
 import faulthandler
 import unittest
 import pyffish as sf
+import io, os
 
 faulthandler.enable()
 
@@ -21,6 +22,33 @@ GRANDHOUSE = "r8r/1nbqkcabn1/pppppppppp/10/10/10/10/PPPPPPPPPP/1NBQKCABN1/R8R[] 
 XIANGQI = "rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w - - 0 1"
 SHOGUN = "rnb+fkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNB+FKBNR[] w KQkq - 0 1"
 JANGGI = "rnba1abnr/4k4/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/4K4/RNBA1ABNR w - - 0 1"
+
+
+class TestIronPieces(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        # Load runtime variant config (includes our [iron-pawns] entry)
+        ini_path = os.path.join(os.path.dirname(__file__), "src", "variants.ini")
+        with io.open(ini_path, "r", encoding="utf8") as fh:
+            sf.load_variant_config(fh.read())
+
+    def test_capturing_iron_pawn_is_illegal(self):
+        # White bishop would normally capture the pawn on e5, but pawns are iron here.
+        fen = "4k3/8/8/4p3/8/6B1/8/4K3 w - - 0 1"
+        moves = sf.legal_moves("iron-pawns", fen, [])
+        self.assertNotIn("g3e5", moves)
+
+    def test_iron_pawn_can_capture_normally(self):
+        # Iron pawns are only uncapturable; they can still capture other pieces.
+        fen = "4k3/8/5n2/4P3/8/8/8/4K3 w - - 0 1"
+        moves = sf.legal_moves("iron-pawns", fen, [])
+        self.assertIn("e5f6", moves)
+
+    def test_en_passant_against_iron_pawn_is_illegal(self):
+        # EP square d6 indicates last move ...d7-d5; EP capture e5xd6 would hit an iron pawn.
+        fen = "4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 1"
+        moves = sf.legal_moves("iron-pawns", fen, [])
+        self.assertNotIn("e5d6", moves)
 
 
 ini_text = """
