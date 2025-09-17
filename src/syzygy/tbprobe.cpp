@@ -25,7 +25,6 @@
 #include <iostream>
 #include <list>
 #include <vector>
-#include <unordered_map>
 #include <sstream>
 #include <type_traits>
 #include <mutex>
@@ -103,14 +102,22 @@ const VariantTBConfig SuicideTBConfig{
     { 0xBC, 0x55, 0xBC, 0x21 }
 };
 
-std::unordered_map<const Variant*, const VariantTBConfig*> VariantConfigMap;
-
 const VariantTBConfig* tb_config(const Variant* variant) {
     if (!variant)
         return nullptr;
 
-    auto it = VariantConfigMap.find(variant);
-    return it != VariantConfigMap.end() ? it->second : nullptr;
+    switch (variant->tablebaseVariant) {
+    case TB_VARIANT_CHESS:
+        return &ChessTBConfig;
+    case TB_VARIANT_GIVEAWAY:
+        return &AntichessTBConfig;
+    case TB_VARIANT_SUICIDE:
+        return &SuicideTBConfig;
+    case TB_VARIANT_ATOMIC:
+        return &AtomicTBConfig;
+    default:
+        return nullptr;
+    }
 }
 
 bool is_atomic_variant(const Variant* variant) {
@@ -1604,23 +1611,11 @@ void Tablebases::init(const std::string& paths) {
         }
 
     std::vector<const Variant*> tbVariants;
-    VariantConfigMap.clear();
 
-    auto registerVariant = [&](const char* name, const VariantTBConfig& cfg) {
-        auto it = variants.find(name);
-        if (it != variants.end()) {
-            VariantConfigMap[it->second] = &cfg;
-            tbVariants.push_back(it->second);
-        }
-    };
-
-    registerVariant("chess", ChessTBConfig);
-    registerVariant("giveaway", AntichessTBConfig);
-    registerVariant("antichess", AntichessTBConfig);
-    registerVariant("suicide", SuicideTBConfig);
-    registerVariant("atomic", AtomicTBConfig);
-    registerVariant("nocheckatomic", AtomicTBConfig);
-    registerVariant("atomar", AtomicTBConfig);
+    for (const auto& entry : variants) {
+        if (tb_config(entry.second))
+            tbVariants.push_back(entry.second);
+    }
     // Add entries in TB tables if the corresponding files exist for supported variants
     for (const Variant* variant : tbVariants) {
         for (PieceType p1 = PAWN; p1 <= QUEEN; ++p1) {

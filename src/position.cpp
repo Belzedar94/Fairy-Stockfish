@@ -47,6 +47,7 @@ namespace Zobrist {
   Key checks[COLOR_NB][CHECKS_NB];
   Key wall[SQUARE_NB];
   Key endgame[EG_EVAL_NB];
+  Key tablebase[TB_VARIANT_NB];
 }
 
 
@@ -182,6 +183,10 @@ void Position::init() {
 
   for (int i = NO_EG_EVAL; i < EG_EVAL_NB; ++i)
       Zobrist::endgame[i] = rng.rand<Key>();
+
+  for (int i = 0; i < TB_VARIANT_NB; ++i)
+      Zobrist::tablebase[i] = rng.rand<Key>();
+  Zobrist::tablebase[TB_VARIANT_NONE] = Key(0);
 
   // Prepare the cuckoo tables
   std::memset(cuckoo, 0, sizeof(cuckoo));
@@ -664,8 +669,7 @@ void Position::set_state(StateInfo* si) const {
       for (Color c : {WHITE, BLACK})
           si->key ^= Zobrist::checks[c][si->checksRemaining[c]];
 
-  if (var)
-      si->materialKey ^= Key(reinterpret_cast<uintptr_t>(var));
+  si->materialKey ^= Zobrist::tablebase[var ? var->tablebaseVariant : TB_VARIANT_NONE];
 }
 
 
