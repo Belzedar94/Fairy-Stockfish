@@ -578,14 +578,120 @@ void Position::set_check_info(StateInfo* si) const {
 
   // For unused piece types, the check squares are left uninitialized
   si->nonSlidingRiders = 0;
-  for (PieceSet ps = piece_types(); ps;)
+  PieceSet types = piece_types();
+  if (var->fastAttacks && king_type() == KING)
   {
-      PieceType pt = pop_lsb(ps);
-      PieceType movePt = pt == KING ? king_type() : pt;
-      si->checkSquares[pt] = ksq != SQ_NONE ? attacks_bb(~sideToMove, movePt, ksq, pieces()) : Bitboard(0);
-      // Collect special piece types that require slower check and evasion detection
-      if (AttackRiderTypes[movePt] & NON_SLIDING_RIDERS)
-          si->nonSlidingRiders |= pieces(pt);
+      Bitboard occ = pieces();
+      Bitboard pawnChecks    = ksq != SQ_NONE ? pawn_attacks_bb(~sideToMove, ksq) : Bitboard(0);
+      Bitboard knightChecks  = ksq != SQ_NONE ? attacks_bb<KNIGHT>(ksq) : Bitboard(0);
+      Bitboard bishopChecks  = Bitboard(0);
+      Bitboard rookChecks    = Bitboard(0);
+      Bitboard rookChecksH   = Bitboard(0);
+      Bitboard rookChecksV   = Bitboard(0);
+      if (ksq != SQ_NONE)
+      {
+          bishopChecks = attacks_bb<BISHOP>(ksq, occ);
+          rookChecks   = attacks_bb<ROOK>(ksq, occ);
+          rookChecksH  = rookChecks & rank_bb(ksq);
+          rookChecksV  = rookChecks & file_bb(ksq);
+      }
+      Bitboard kingChecks    = ksq != SQ_NONE ? attacks_bb<KING>(ksq) : Bitboard(0);
+      Bitboard queenChecks   = bishopChecks | rookChecks;
+      Bitboard archChecks    = bishopChecks | knightChecks;
+      Bitboard chancellorChecks = rookChecks | knightChecks;
+
+      auto markNonSliding = [&](PieceType pt) {
+          if (AttackRiderTypes[pt] & NON_SLIDING_RIDERS)
+              si->nonSlidingRiders |= pieces(pt);
+      };
+
+      PieceSet handled = PieceSet(0);
+      auto assignChecks = [&](PieceType pt, Bitboard mask) {
+          si->checkSquares[pt] = mask;
+          markNonSliding(pt);
+          handled |= piece_set(pt);
+      };
+
+      if (types & piece_set(PAWN))
+          assignChecks(PAWN, pawnChecks);
+      if (types & piece_set(KNIGHT))
+          assignChecks(KNIGHT, knightChecks);
+      if (types & piece_set(BISHOP))
+          assignChecks(BISHOP, bishopChecks);
+      if (types & piece_set(ROOK))
+          assignChecks(ROOK, rookChecks);
+      if (types & piece_set(QUEEN))
+          assignChecks(QUEEN, queenChecks);
+      if (types & piece_set(AMAZON))
+          assignChecks(AMAZON, queenChecks | knightChecks);
+      if (types & piece_set(KING))
+          assignChecks(KING, kingChecks);
+      if (types & piece_set(COMMONER))
+          assignChecks(COMMONER, kingChecks);
+      if (types & piece_set(CENTAUR))
+          assignChecks(CENTAUR, kingChecks | knightChecks);
+      if (types & piece_set(IMMOBILE_PIECE))
+          assignChecks(IMMOBILE_PIECE, Bitboard(0));
+      if (types & piece_set(ARCHBISHOP))
+          assignChecks(ARCHBISHOP, archChecks);
+      if (types & piece_set(CHANCELLOR))
+          assignChecks(CHANCELLOR, chancellorChecks);
+
+      auto tryAssignRider = [&](PieceType pt, Bitboard& mask) {
+          PieceType movePt = pt == KING ? king_type() : pt;
+          if (ksq == SQ_NONE)
+          {
+              mask = Bitboard(0);
+              return true;
+          }
+
+          RiderType riders = AttackRiderTypes[movePt];
+          if (riders & ~(RIDER_BISHOP | RIDER_ROOK_H | RIDER_ROOK_V))
+              return false;
+
+          Bitboard attacks = LeaperAttacks[~sideToMove][movePt][ksq];
+          if (riders & RIDER_BISHOP)
+              attacks |= bishopChecks;
+          if (riders & RIDER_ROOK_H)
+              attacks |= rookChecksH;
+          if (riders & RIDER_ROOK_V)
+              attacks |= rookChecksV;
+
+          mask = attacks & PseudoAttacks[~sideToMove][movePt][ksq];
+          return true;
+      };
+
+      PieceSet fallback = PieceSet(0);
+      for (PieceSet ps = types & ~handled; ps;)
+      {
+          PieceType pt = pop_lsb(ps);
+          Bitboard mask;
+          if (tryAssignRider(pt, mask))
+              assignChecks(pt, mask);
+          else
+              fallback |= piece_set(pt);
+      }
+
+      for (PieceSet ps = fallback; ps;)
+      {
+          PieceType pt = pop_lsb(ps);
+          PieceType movePt = pt == KING ? king_type() : pt;
+          si->checkSquares[pt] = ksq != SQ_NONE ? attacks_bb(~sideToMove, movePt, ksq, occ) : Bitboard(0);
+          if (AttackRiderTypes[movePt] & NON_SLIDING_RIDERS)
+              si->nonSlidingRiders |= pieces(pt);
+      }
+  }
+  else
+  {
+      for (PieceSet ps = types; ps;)
+      {
+          PieceType pt = pop_lsb(ps);
+          PieceType movePt = pt == KING ? king_type() : pt;
+          si->checkSquares[pt] = ksq != SQ_NONE ? attacks_bb(~sideToMove, movePt, ksq, pieces()) : Bitboard(0);
+          // Collect special piece types that require slower check and evasion detection
+          if (AttackRiderTypes[movePt] & NON_SLIDING_RIDERS)
+              si->nonSlidingRiders |= pieces(pt);
+      }
   }
   si->shak = si->checkersBB & (byTypeBB[KNIGHT] | byTypeBB[ROOK] | byTypeBB[BERS]);
   si->bikjang = var->bikjangRule && ksq != SQ_NONE ? bool(attacks_bb(sideToMove, ROOK, ksq, pieces()) & pieces(sideToMove, KING)) : false;
@@ -854,8 +960,10 @@ Bitboard Position::slider_blockers(Bitboard sliders, Square s, Bitboard& pinners
 
   if (var->fastAttacks)
   {
-      snipers = (  (attacks_bb<  ROOK>(s) & pieces(c, QUEEN, ROOK, CHANCELLOR))
-                 | (attacks_bb<BISHOP>(s) & pieces(c, QUEEN, BISHOP, ARCHBISHOP))) & sliders;
+      Bitboard rookSliders = pieces(c, QUEEN, ROOK, CHANCELLOR) | pieces(c, AMAZON);
+      Bitboard bishopSliders = pieces(c, QUEEN, BISHOP, ARCHBISHOP) | pieces(c, AMAZON);
+      snipers = (  (attacks_bb<  ROOK>(s) & rookSliders)
+                 | (attacks_bb<BISHOP>(s) & bishopSliders)) & sliders;
       slidingSnipers = snipers;
   }
   else
@@ -928,11 +1036,19 @@ Bitboard Position::attackers_to(Square s, Bitboard occupied, Color c, Bitboard j
   // Use a faster version for variants with moderate rule variations
   if (var->fastAttacks)
   {
+      Bitboard knightAttackers =  pieces(c, KNIGHT, ARCHBISHOP, CHANCELLOR)
+                                | pieces(c, AMAZON) | pieces(c, CENTAUR);
+      Bitboard rookAttackers   =  pieces(c, ROOK, QUEEN, CHANCELLOR)
+                                | pieces(c, AMAZON);
+      Bitboard bishopAttackers =  pieces(c, BISHOP, QUEEN, ARCHBISHOP)
+                                | pieces(c, AMAZON);
+      Bitboard kingAttackers   =  pieces(c, KING, COMMONER)
+                                | pieces(c, CENTAUR);
       return  (pawn_attacks_bb(~c, s)          & pieces(c, PAWN))
-            | (attacks_bb<KNIGHT>(s)           & pieces(c, KNIGHT, ARCHBISHOP, CHANCELLOR))
-            | (attacks_bb<  ROOK>(s, occupied) & pieces(c, ROOK, QUEEN, CHANCELLOR))
-            | (attacks_bb<BISHOP>(s, occupied) & pieces(c, BISHOP, QUEEN, ARCHBISHOP))
-            | (attacks_bb<KING>(s)             & pieces(c, KING, COMMONER));
+            | (attacks_bb<KNIGHT>(s)           & knightAttackers)
+            | (attacks_bb<  ROOK>(s, occupied) & rookAttackers)
+            | (attacks_bb<BISHOP>(s, occupied) & bishopAttackers)
+            | (attacks_bb<KING>(s)             & kingAttackers);
   }
 
   // Use a faster version for selected fairy pieces
