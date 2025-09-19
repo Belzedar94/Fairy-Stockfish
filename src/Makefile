@@ -95,6 +95,7 @@ endif
 
 ### 2.1. General and architecture defaults
 largeboards = no
+verylargeboards = no
 all = no
 precomputedmagics = yes
 nnue = no
@@ -336,11 +337,15 @@ CXXFLAGS += -Wno-profile-instr-out-of-date
 
 # Compile version with support for large board variants
 # Use precomputed magics by default if pext is not available
+ifneq ($(verylargeboards),no)
+        largeboards = no
+        CXXFLAGS += -DVERY_LARGE_BOARDS
+endif
 ifneq ($(largeboards),no)
-	CXXFLAGS += -DLARGEBOARDS
-	ifeq ($(precomputedmagics),yes)
-		CXXFLAGS += -DPRECOMPUTED_MAGICS
-	endif
+        CXXFLAGS += -DLARGEBOARDS
+        ifeq ($(precomputedmagics),yes)
+                CXXFLAGS += -DPRECOMPUTED_MAGICS
+        endif
 endif
 
 # Embed and enable NNUE
@@ -361,9 +366,11 @@ ifeq ($(COMP),gcc)
 	comp=gcc
 	CXX=g++
 	CXXFLAGS += -Wextra -Wshadow
-	ifeq ($(largeboards),no)
-		CXXFLAGS += -pedantic
-	endif
+        ifeq ($(largeboards),no)
+                ifeq ($(verylargeboards),no)
+                        CXXFLAGS += -pedantic
+                endif
+        endif
 
 	ifeq ($(arch),$(filter $(arch),armv7 armv8))
 		ifeq ($(OS),Android)
@@ -775,14 +782,18 @@ else
 	@echo "make build ARCH=x86-64 nnue=yes"
 	@echo ""
 	@echo "-------------------------------"
-	@echo "Version for large boards: "
-	@echo ""
-	@echo "make build ARCH=x86-64 COMP=gcc largeboards=yes"
-	@echo ""
-	@echo "Include all variants (adds Game of the Amazons): "
-	@echo ""
-	@echo "make build ARCH=x86-64 largeboards=yes all=yes"
-	@echo ""
+        @echo "Version for large boards: "
+        @echo ""
+        @echo "make build ARCH=x86-64 COMP=gcc largeboards=yes"
+        @echo ""
+        @echo "Version for very large boards: "
+        @echo ""
+        @echo "make build ARCH=x86-64 COMP=gcc verylargeboards=yes"
+        @echo ""
+        @echo "Include all variants (adds Game of the Amazons): "
+        @echo ""
+        @echo "make build ARCH=x86-64 largeboards=yes all=yes"
+        @echo ""
 endif
 
 
@@ -900,9 +911,10 @@ config-sanity: $(load_net)
 	@echo "vnni512: '$(vnni512)'"
 	@echo "neon: '$(neon)'"
 	@echo ""
-	@echo "Fairy-Stockfish specific:"
-	@echo "largeboards: '$(largeboards)'"
-	@echo "all: '$(all)'"
+        @echo "Fairy-Stockfish specific:"
+        @echo "largeboards: '$(largeboards)'"
+        @echo "verylargeboards: '$(verylargeboards)'"
+        @echo "all: '$(all)'"
 	@echo "precomputedmagics: '$(precomputedmagics)'"
 	@echo "nnue: '$(nnue)'"
 	@echo ""

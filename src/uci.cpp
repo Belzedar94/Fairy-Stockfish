@@ -351,7 +351,7 @@ void UCI::loop(int argc, char* argv[]) {
                            : token == "ucci" ? UCCI
                            : XBOARD;
           string defaultVariant = string(
-#ifdef LARGEBOARDS
+#if defined(LARGEBOARDS) || defined(VERY_LARGE_BOARDS)
                                            CurrentProtocol == USI  ? "shogi"
                                          : CurrentProtocol == UCCI || CurrentProtocol == UCI_CYCLONE ? "xiangqi"
 #else
@@ -403,7 +403,7 @@ void UCI::loop(int argc, char* argv[]) {
       // UCI-Cyclone omits the "position" keyword
       else if (token == "fen" || token == "startpos")
       {
-#ifdef LARGEBOARDS
+#if defined(LARGEBOARDS) || defined(VERY_LARGE_BOARDS)
           if (CurrentProtocol == UCI_GENERAL && Options["UCI_Variant"] == "chess")
           {
               CurrentProtocol = UCI_CYCLONE;
@@ -472,7 +472,7 @@ string UCI::wdl(Value v, int ply) {
 /// UCI::square() converts a Square to a string in algebraic notation (g1, a7, etc.)
 
 std::string UCI::square(const Position& pos, Square s) {
-#ifdef LARGEBOARDS
+#if defined(LARGEBOARDS) || defined(VERY_LARGE_BOARDS)
   if (CurrentProtocol == USI)
       return rank_of(s) < RANK_10 ? std::string{ char('1' + pos.max_file() - file_of(s)), char('a' + pos.max_rank() - rank_of(s)) }
                                   : std::string{ char('0' + (pos.max_file() - file_of(s) + 1) / 10),
