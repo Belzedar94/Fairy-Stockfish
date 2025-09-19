@@ -163,7 +163,7 @@ variant_positions = {
         "k7/q7/8/8/8/8/8/K7 w - - 0 1": (True, False),  # K vs KQ
     },
     "crazyhouse": {
-        "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR/ w KQkq - 0 1": (False, False),  # lichess style startpos
+        "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR[] w KQkq - 0 1": (False, False),  # explicit empty pocket
     },
     "3check": {
         "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 3+3 0 1": (False, False),  # startpos

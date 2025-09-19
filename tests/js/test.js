@@ -815,8 +815,8 @@ describe('ffish.validateFen(fen, uciVariant)', function () {
         board.delete();
       }
       // alternative or skipped pocket formulation
-      chai.expect(ffish.validateFen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR/RB w KQkq - 3+3 0 1", "3check-crazyhouse")).to.equal(1);
-      chai.expect(ffish.validateFen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR/ w KQkq - 3+3 0 1", "3check-crazyhouse")).to.equal(1);
+      chai.expect(ffish.validateFen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR[RB] w KQkq - 3+3 0 1", "3check-crazyhouse")).to.equal(1);
+      chai.expect(ffish.validateFen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR[] w KQkq - 3+3 0 1", "3check-crazyhouse")).to.equal(1);
       chai.expect(ffish.validateFen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 3+3 0 1", "3check-crazyhouse")).to.equal(1);
       chai.expect(ffish.validateFen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR[-] w KQkq - 3+3 0 1", "3check-crazyhouse")).to.equal(1);
 
