@@ -167,6 +167,8 @@ extern Bitboard BoardSizeBB[FILE_NB][RANK_NB];
 extern RiderType AttackRiderTypes[PIECE_TYPE_NB];
 extern RiderType MoveRiderTypes[2][PIECE_TYPE_NB];
 
+int popcount(Bitboard b);
+
 /// Magic holds all magic bitboards relevant data for a single square
 struct Magic {
   Bitboard  mask;
@@ -222,8 +224,6 @@ extern Magic GrasshopperMagicsV[SQUARE_NB];
 extern Magic GrasshopperMagicsD[SQUARE_NB];
 
 extern Magic* magics[];
-
-int popcount(Bitboard b);
 
 #if defined(VERY_LARGE_BOARDS) && defined(USE_PEXT)
 inline unsigned pext256(Bitboard b, Bitboard m) {
@@ -305,6 +305,23 @@ constexpr bool opposite_colors(Square s1, Square s2) {
 /// rank_bb() and file_bb() return a bitboard representing all the squares on
 /// the given file or rank.
 
+#if defined(VERY_LARGE_BOARDS)
+inline Bitboard rank_bb(Rank r) {
+  return Rank1BB << (FILE_NB * r);
+}
+
+inline Bitboard rank_bb(Square s) {
+  return rank_bb(rank_of(s));
+}
+
+inline Bitboard file_bb(File f) {
+  return FileABB << f;
+}
+
+inline Bitboard file_bb(Square s) {
+  return file_bb(file_of(s));
+}
+#else
 constexpr Bitboard rank_bb(Rank r) {
   return Rank1BB << (FILE_NB * r);
 }
@@ -320,10 +337,31 @@ constexpr Bitboard file_bb(File f) {
 constexpr Bitboard file_bb(Square s) {
   return file_bb(file_of(s));
 }
+#endif
 
 
 /// shift() moves a bitboard one or two steps as specified by the direction D
 
+#if defined(VERY_LARGE_BOARDS)
+template<Direction D>
+inline Bitboard shift(Bitboard b) {
+  return  D == NORTH      ?  b                       << NORTH      : D == SOUTH      ?  b             >> NORTH
+        : D == NORTH+NORTH?  b                       <<(2 * NORTH) : D == SOUTH+SOUTH?  b             >> (2 * NORTH)
+        : D == EAST       ? (b & ~file_bb(FILE_MAX)) << EAST       : D == WEST       ? (b & ~FileABB) >> EAST
+        : D == NORTH_EAST ? (b & ~file_bb(FILE_MAX)) << NORTH_EAST : D == NORTH_WEST ? (b & ~FileABB) << NORTH_WEST
+        : D == SOUTH_EAST ? (b & ~file_bb(FILE_MAX)) >> NORTH_WEST : D == SOUTH_WEST ? (b & ~FileABB) >> NORTH_EAST
+        : Bitboard(0);
+}
+
+inline Bitboard shift(Direction D, Bitboard b) {
+  return  D == NORTH      ?  b                       << NORTH      : D == SOUTH      ?  b             >> NORTH
+        : D == NORTH+NORTH?  b                       <<(2 * NORTH) : D == SOUTH+SOUTH?  b             >> (2 * NORTH)
+        : D == EAST       ? (b & ~file_bb(FILE_MAX)) << EAST       : D == WEST       ? (b & ~FileABB) >> EAST
+        : D == NORTH_EAST ? (b & ~file_bb(FILE_MAX)) << NORTH_EAST : D == NORTH_WEST ? (b & ~FileABB) << NORTH_WEST
+        : D == SOUTH_EAST ? (b & ~file_bb(FILE_MAX)) >> NORTH_WEST : D == SOUTH_WEST ? (b & ~FileABB) >> NORTH_EAST
+        : Bitboard(0);
+}
+#else
 template<Direction D>
 constexpr Bitboard shift(Bitboard b) {
   return  D == NORTH      ?  b                       << NORTH      : D == SOUTH      ?  b             >> NORTH
@@ -333,7 +371,6 @@ constexpr Bitboard shift(Bitboard b) {
         : D == SOUTH_EAST ? (b & ~file_bb(FILE_MAX)) >> NORTH_WEST : D == SOUTH_WEST ? (b & ~FileABB) >> NORTH_EAST
         : Bitboard(0);
 }
-
 
 /// shift() moves a bitboard one step along direction D (mainly for pawns)
 
@@ -345,16 +382,25 @@ constexpr Bitboard shift(Direction D, Bitboard b) {
         : D == SOUTH_EAST ? (b & ~file_bb(FILE_MAX)) >> NORTH_WEST : D == SOUTH_WEST ? (b & ~FileABB) >> NORTH_EAST
         : Bitboard(0);
 }
+#endif
 
 
 /// pawn_attacks_bb() returns the squares attacked by pawns of the given color
 /// from the squares in the given bitboard.
 
+#if defined(VERY_LARGE_BOARDS)
+template<Color C>
+inline Bitboard pawn_attacks_bb(Bitboard b) {
+  return C == WHITE ? shift<NORTH_WEST>(b) | shift<NORTH_EAST>(b)
+                    : shift<SOUTH_WEST>(b) | shift<SOUTH_EAST>(b);
+}
+#else
 template<Color C>
 constexpr Bitboard pawn_attacks_bb(Bitboard b) {
   return C == WHITE ? shift<NORTH_WEST>(b) | shift<NORTH_EAST>(b)
                     : shift<SOUTH_WEST>(b) | shift<SOUTH_EAST>(b);
 }
+#endif
 
 inline Bitboard pawn_attacks_bb(Color c, Square s) {
 
@@ -366,19 +412,33 @@ inline Bitboard pawn_attacks_bb(Color c, Square s) {
 /// pawn_double_attacks_bb() returns the squares doubly attacked by pawns of the
 /// given color from the squares in the given bitboard.
 
+#if defined(VERY_LARGE_BOARDS)
+template<Color C>
+inline Bitboard pawn_double_attacks_bb(Bitboard b) {
+  return C == WHITE ? shift<NORTH_WEST>(b) & shift<NORTH_EAST>(b)
+                    : shift<SOUTH_WEST>(b) & shift<SOUTH_EAST>(b);
+}
+#else
 template<Color C>
 constexpr Bitboard pawn_double_attacks_bb(Bitboard b) {
   return C == WHITE ? shift<NORTH_WEST>(b) & shift<NORTH_EAST>(b)
                     : shift<SOUTH_WEST>(b) & shift<SOUTH_EAST>(b);
 }
+#endif
 
 
 /// adjacent_files_bb() returns a bitboard representing all the squares on the
 /// adjacent files of a given square.
 
+#if defined(VERY_LARGE_BOARDS)
+inline Bitboard adjacent_files_bb(Square s) {
+  return shift<EAST>(file_bb(s)) | shift<WEST>(file_bb(s));
+}
+#else
 constexpr Bitboard adjacent_files_bb(Square s) {
   return shift<EAST>(file_bb(s)) | shift<WEST>(file_bb(s));
 }
+#endif
 
 
 /// line_bb() returns a bitboard representing an entire line (from board edge
@@ -424,6 +484,17 @@ inline Bitboard between_bb(Square s1, Square s2, PieceType pt) {
 /// front of the given one, from the point of view of the given color. For instance,
 /// forward_ranks_bb(BLACK, SQ_D3) will return the 16 squares on ranks 1 and 2.
 
+#if defined(VERY_LARGE_BOARDS)
+inline Bitboard forward_ranks_bb(Color c, Square s) {
+  return c == WHITE ? (AllSquares ^ Rank1BB) << FILE_NB * relative_rank(WHITE, s, RANK_MAX)
+                    : (AllSquares ^ rank_bb(RANK_MAX)) >> FILE_NB * relative_rank(BLACK, s, RANK_MAX);
+}
+
+inline Bitboard forward_ranks_bb(Color c, Rank r) {
+  return c == WHITE ? (AllSquares ^ Rank1BB) << FILE_NB * (r - RANK_1)
+                    : (AllSquares ^ rank_bb(RANK_MAX)) >> FILE_NB * (RANK_MAX - r);
+}
+#else
 constexpr Bitboard forward_ranks_bb(Color c, Square s) {
   return c == WHITE ? (AllSquares ^ Rank1BB) << FILE_NB * relative_rank(WHITE, s, RANK_MAX)
                     : (AllSquares ^ rank_bb(RANK_MAX)) >> FILE_NB * relative_rank(BLACK, s, RANK_MAX);
@@ -433,6 +504,7 @@ constexpr Bitboard forward_ranks_bb(Color c, Rank r) {
   return c == WHITE ? (AllSquares ^ Rank1BB) << FILE_NB * (r - RANK_1)
                     : (AllSquares ^ rank_bb(RANK_MAX)) >> FILE_NB * (RANK_MAX - r);
 }
+#endif
 
 
 /// zone_bb() returns a bitboard representing the squares on all the ranks
@@ -447,26 +519,44 @@ inline Bitboard zone_bb(Color c, Rank r, Rank maxRank) {
 /// forward_file_bb() returns a bitboard representing all the squares along the
 /// line in front of the given one, from the point of view of the given color.
 
+#if defined(VERY_LARGE_BOARDS)
+inline Bitboard forward_file_bb(Color c, Square s) {
+  return forward_ranks_bb(c, s) & file_bb(s);
+}
+#else
 constexpr Bitboard forward_file_bb(Color c, Square s) {
   return forward_ranks_bb(c, s) & file_bb(s);
 }
+#endif
 
 
 /// pawn_attack_span() returns a bitboard representing all the squares that can
 /// be attacked by a pawn of the given color when it moves along its file, starting
 /// from the given square.
 
+#if defined(VERY_LARGE_BOARDS)
+inline Bitboard pawn_attack_span(Color c, Square s) {
+  return forward_ranks_bb(c, s) & adjacent_files_bb(s);
+}
+#else
 constexpr Bitboard pawn_attack_span(Color c, Square s) {
   return forward_ranks_bb(c, s) & adjacent_files_bb(s);
 }
+#endif
 
 
 /// passed_pawn_span() returns a bitboard which can be used to test if a pawn of
 /// the given color and on the given square is a passed pawn.
 
+#if defined(VERY_LARGE_BOARDS)
+inline Bitboard passed_pawn_span(Color c, Square s) {
+  return pawn_attack_span(c, s) | forward_file_bb(c, s);
+}
+#else
 constexpr Bitboard passed_pawn_span(Color c, Square s) {
   return pawn_attack_span(c, s) | forward_file_bb(c, s);
 }
+#endif
 
 
 /// aligned() returns true if the squares s1, s2 and s3 are aligned either on a
