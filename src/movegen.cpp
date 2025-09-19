@@ -66,6 +66,25 @@ namespace {
 
     *moveList++ = make<T>(from, to, pt);
 
+    if (pos.spell_chess())
+    {
+        PieceType freezePt = pos.freeze_potion_type();
+        if (   freezePt != NO_PIECE_TYPE
+            && pos.freeze_cd(us) == 0
+            && pos.count_in_hand(us, freezePt) > 0)
+        {
+            Bitboard origins = square_bb(from);
+            for (Bitboard centers = pos.board_bb(); centers; )
+            {
+                Square center = pop_lsb(centers);
+                Bitboard zone = (attacks_bb<KING>(center) | square_bb(center)) & pos.board_bb();
+                if (zone & origins)
+                    continue;
+                *moveList++ = make_gating<T>(from, to, freezePt, center);
+            }
+        }
+    }
+
     // Gating moves
     if (pos.seirawan_gating() && (pos.gates(us) & from))
         for (PieceSet ps = pos.piece_types(); ps;)
@@ -147,7 +166,7 @@ namespace {
     const Bitboard doubleStepRegion = pos.double_step_region(Us);
     const Bitboard tripleStepRegion = pos.triple_step_region(Us);
 
-    const Bitboard pawns      = pos.pieces(Us, PAWN);
+    const Bitboard pawns      = pos.pieces(Us, PAWN) & ~pos.freeze_zone(Us);
     const Bitboard movable    = pos.board_bb(Us, PAWN) & ~pos.pieces();
     const Bitboard capturable = pos.board_bb(Us, PAWN) &  pos.pieces(Them);
 
@@ -291,7 +310,31 @@ namespace {
 
     assert(Pt != KING && Pt != PAWN);
 
-    Bitboard bb = pos.pieces(Us, Pt);
+    Bitboard bb = pos.pieces(Us, Pt) & ~pos.freeze_zone(Us);
+    Bitboard boardMask = pos.board_bb();
+    Bitboard occupiedAll = pos.pieces();
+    Bitboard ourPieces = pos.pieces(Us);
+
+    auto advance = [&](Square sq, Direction dir) -> Square {
+        Square next = Square(int(sq) + int(dir));
+        if (!is_ok(next) || !(boardMask & square_bb(next)))
+            return SQ_NONE;
+        int fileDelta = file_of(next) - file_of(sq);
+        int rankDelta = rank_of(next) - rank_of(sq);
+        switch (dir)
+        {
+        case NORTH:      if (fileDelta != 0 || rankDelta != 1)  return SQ_NONE; break;
+        case SOUTH:      if (fileDelta != 0 || rankDelta != -1) return SQ_NONE; break;
+        case EAST:       if (rankDelta != 0 || fileDelta != 1)  return SQ_NONE; break;
+        case WEST:       if (rankDelta != 0 || fileDelta != -1) return SQ_NONE; break;
+        case NORTH_EAST: if (fileDelta != 1 || rankDelta != 1)  return SQ_NONE; break;
+        case NORTH_WEST: if (fileDelta != -1 || rankDelta != 1) return SQ_NONE; break;
+        case SOUTH_EAST: if (fileDelta != 1 || rankDelta != -1) return SQ_NONE; break;
+        case SOUTH_WEST: if (fileDelta != -1 || rankDelta != -1) return SQ_NONE; break;
+        default: break;
+        }
+        return next;
+    };
 
     while (bb)
     {
@@ -366,6 +409,56 @@ namespace {
         if (Type == CAPTURES || Type == EVASIONS || Type == NON_EVASIONS)
             while (epSquares)
                 moveList = make_move_and_gating<EN_PASSANT>(pos, moveList, Us, from, pop_lsb(epSquares));
+
+        if (   pos.spell_chess()
+            && pos.jump_potion_type() != NO_PIECE_TYPE
+            && pos.jump_cd(Us) == 0
+            && pos.count_in_hand(Us, pos.jump_potion_type()) > 0
+            && (Pt == ROOK || Pt == BISHOP || Pt == QUEEN))
+        {
+            PieceType jumpPt = pos.jump_potion_type();
+            Bitboard captureTargets = target;
+            if constexpr (Type != QUIETS && Type != QUIET_CHECKS)
+                captureTargets |= pos.pieces(~Us);
+            auto generate_jump = [&](Direction dir) {
+                Square sq = advance(from, dir);
+                Square blocker = SQ_NONE;
+                while (sq != SQ_NONE)
+                {
+                    Bitboard sqBB = square_bb(sq);
+                    if (occupiedAll & sqBB)
+                    {
+                        if (blocker == SQ_NONE)
+                        {
+                            blocker = sq;
+                            sq = advance(sq, dir);
+                            continue;
+                        }
+                        if (!(ourPieces & sqBB) && (captureTargets & sqBB))
+                            *moveList++ = make_gating<NORMAL>(from, sq, jumpPt, blocker);
+                        break;
+                    }
+                    if (blocker != SQ_NONE && (target & sqBB))
+                        *moveList++ = make_gating<NORMAL>(from, sq, jumpPt, blocker);
+                    sq = advance(sq, dir);
+                }
+            };
+
+            if (Pt == ROOK || Pt == QUEEN)
+            {
+                generate_jump(NORTH);
+                generate_jump(SOUTH);
+                generate_jump(EAST);
+                generate_jump(WEST);
+            }
+            if (Pt == BISHOP || Pt == QUEEN)
+            {
+                generate_jump(NORTH_EAST);
+                generate_jump(NORTH_WEST);
+                generate_jump(SOUTH_EAST);
+                generate_jump(SOUTH_WEST);
+            }
+        }
     }
 
     return moveList;
@@ -416,7 +509,12 @@ namespace {
             Square from = pos.castling_king_square(Us);
             for(CastlingRights cr : { Us & KING_SIDE, Us & QUEEN_SIDE } )
                 if (!pos.castling_impeded(cr) && pos.can_castle(cr))
-                    moveList = make_move_and_gating<CASTLING>(pos, moveList, Us, from, pos.castling_rook_square(cr));
+                {
+                    Square rookFrom = pos.castling_rook_square(cr);
+                    if (pos.freeze_zone(Us) & (square_bb(from) | square_bb(rookFrom)))
+                        continue;
+                    moveList = make_move_and_gating<CASTLING>(pos, moveList, Us, from, rookFrom);
+                }
         }
 
         // Special moves
@@ -453,7 +551,9 @@ namespace {
     }
 
     // King moves
-    if (pos.count<KING>(Us) && (!Checks || pos.blockers_for_king(~Us) & ksq))
+    if (pos.count<KING>(Us)
+        && !(pos.freeze_zone(Us) & square_bb(ksq))
+        && (!Checks || pos.blockers_for_king(~Us) & ksq))
     {
         Bitboard b = (  (pos.attacks_from(Us, KING, ksq) & pos.pieces())
                       | (pos.moves_from(Us, KING, ksq) & ~pos.pieces())) & (Type == EVASIONS ? ~pos.pieces(Us) : target);
@@ -467,7 +567,12 @@ namespace {
         if ((Type == QUIETS || Type == NON_EVASIONS) && pos.can_castle(Us & ANY_CASTLING))
             for (CastlingRights cr : { Us & KING_SIDE, Us & QUEEN_SIDE } )
                 if (!pos.castling_impeded(cr) && pos.can_castle(cr))
-                    moveList = make_move_and_gating<CASTLING>(pos, moveList, Us,ksq, pos.castling_rook_square(cr));
+                {
+                    Square rookFrom = pos.castling_rook_square(cr);
+                    if (pos.freeze_zone(Us) & (square_bb(ksq) | square_bb(rookFrom)))
+                        continue;
+                    moveList = make_move_and_gating<CASTLING>(pos, moveList, Us,ksq, rookFrom);
+                }
     }
 
     return moveList;

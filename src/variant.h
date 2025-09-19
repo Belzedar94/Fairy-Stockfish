@@ -111,6 +111,9 @@ struct Variant {
   Bitboard wallingRegion[COLOR_NB] = {AllSquares, AllSquares};
   bool wallOrMove = false;
   bool seirawanGating = false;
+  bool spellChess = false;
+  PieceType freezePotionPT = NO_PIECE_TYPE;
+  PieceType jumpPotionPT = NO_PIECE_TYPE;
   bool cambodianMoves = false;
   Bitboard diagonalLines = 0;
   bool pass[COLOR_NB] = {false, false};

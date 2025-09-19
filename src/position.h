@@ -56,6 +56,10 @@ struct StateInfo {
   Square castlingKingSquare[COLOR_NB];
   Bitboard wallSquares;
   Bitboard gatesBB[COLOR_NB];
+  Bitboard freezeZone[COLOR_NB];
+  Bitboard jumpIgnore[COLOR_NB];
+  int freezeCD[COLOR_NB];
+  int jumpCD[COLOR_NB];
 
   // Not copied when making a move (will be recomputed anyhow)
   Key        key;
@@ -234,6 +238,13 @@ public:
   int count_with_hand(Color c, PieceType pt) const;
   bool bikjang() const;
   bool allow_virtual_drop(Color c, PieceType pt) const;
+  bool spell_chess() const;
+  PieceType freeze_potion_type() const;
+  PieceType jump_potion_type() const;
+  Bitboard freeze_zone(Color c) const;
+  Bitboard jump_ignore(Color c) const;
+  int freeze_cd(Color c) const;
+  int jump_cd(Color c) const;
 
   // Position representation
   Bitboard pieces(PieceType pt = ALL_PIECES) const;
@@ -361,6 +372,8 @@ private:
   void move_piece(Square from, Square to);
   template<bool Do>
   void do_castling(Color us, Square from, Square& to, Square& rfrom, Square& rto);
+  void expire_spell_effects(Color c);
+  void tick_spell_cooldowns(Color c);
 
   // Data members
   Piece board[SQUARE_NB];
@@ -1579,6 +1592,34 @@ inline int Position::count_with_hand(Color c, PieceType pt) const {
 
 inline bool Position::bikjang() const {
   return st->bikjang;
+}
+
+inline bool Position::spell_chess() const {
+  return var->spellChess;
+}
+
+inline PieceType Position::freeze_potion_type() const {
+  return var->freezePotionPT;
+}
+
+inline PieceType Position::jump_potion_type() const {
+  return var->jumpPotionPT;
+}
+
+inline Bitboard Position::freeze_zone(Color c) const {
+  return st->freezeZone[c];
+}
+
+inline Bitboard Position::jump_ignore(Color c) const {
+  return st->jumpIgnore[c];
+}
+
+inline int Position::freeze_cd(Color c) const {
+  return st->freezeCD[c];
+}
+
+inline int Position::jump_cd(Color c) const {
+  return st->jumpCD[c];
 }
 
 inline bool Position::allow_virtual_drop(Color c, PieceType pt) const {

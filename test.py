@@ -21,6 +21,7 @@ GRANDHOUSE = "r8r/1nbqkcabn1/pppppppppp/10/10/10/10/PPPPPPPPPP/1NBQKCABN1/R8R[] 
 XIANGQI = "rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w - - 0 1"
 SHOGUN = "rnb+fkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNB+FKBNR[] w KQkq - 0 1"
 JANGGI = "rnba1abnr/4k4/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/4K4/RNBA1ABNR w - - 0 1"
+SPELL_CHESS = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR[JJFFFFFjjfffff] w KQkq - 0 1"
 
 
 ini_text = """
@@ -338,6 +339,111 @@ class TestPyffish(unittest.TestCase):
 
         result = sf.start_fen("shogun")
         self.assertEqual(result, SHOGUN)
+
+        result = sf.start_fen("spell-chess")
+        self.assertEqual(result, SPELL_CHESS)
+
+    def test_spell_chess_freeze_gating_centers(self):
+        moves = sf.legal_moves("spell-chess", SPELL_CHESS, [])
+
+        def parse_square(token):
+            return ord(token[0]) - ord('a'), int(token[1]) - 1
+
+        def on_line(frm, to, mid):
+            fx, fy = frm
+            tx, ty = to
+            mx, my = mid
+            dx = tx - fx
+            dy = ty - fy
+            if dx == 0 and mx == fx:
+                return (min(fy, ty) < my < max(fy, ty))
+            if dy == 0 and my == fy:
+                return (min(fx, tx) < mx < max(fx, tx))
+            if abs(dx) == abs(dy) and abs(mx - fx) == abs(my - fy):
+                step_x = 1 if dx > 0 else -1
+                step_y = 1 if dy > 0 else -1
+                steps = abs(dx)
+                for i in range(1, steps):
+                    if (fx + step_x * i, fy + step_y * i) == (mx, my):
+                        return True
+            return False
+
+        found_freeze = False
+        for move in moves:
+            if len(move) < 7:
+                continue
+            gate = move[4].lower()
+            if gate != 'f':
+                continue
+            center = move[5:7]
+            if len(center) != 2:
+                continue
+            frm = parse_square(move[:2])
+            to = parse_square(move[2:4])
+            mid = parse_square(center)
+            if on_line(frm, to, mid):
+                continue  # jump spell
+            found_freeze = True
+            if abs(mid[0] - frm[0]) <= 1 and abs(mid[1] - frm[1]) <= 1:
+                self.fail(f"freeze center would freeze origin for move {move}")
+
+        self.assertTrue(found_freeze)
+
+    def test_spell_chess_jump_spell_lines(self):
+        fen = "r5k1/8/8/8/8/8/P7/R6K[JJFFFFFjjfffff] w - - 0 1"
+        moves = sf.legal_moves("spell-chess", fen, [])
+
+        def parse_square(token):
+            return ord(token[0]) - ord('a'), int(token[1]) - 1
+
+        def is_jump(move):
+            if len(move) < 7 or move[4].lower() != 'j':
+                return False
+            center = move[5:7]
+            if len(center) != 2:
+                return False
+            frm = parse_square(move[:2])
+            to = parse_square(move[2:4])
+            mid = parse_square(center)
+            fx, fy = frm
+            tx, ty = to
+            mx, my = mid
+            dx = tx - fx
+            dy = ty - fy
+            if dx == 0 and mx == fx and min(fy, ty) < my < max(fy, ty):
+                return True
+            if dy == 0 and my == fy and min(fx, tx) < mx < max(fx, tx):
+                return True
+            if abs(dx) == abs(dy) and abs(mx - fx) == abs(my - fy):
+                step_x = 1 if dx > 0 else -1
+                step_y = 1 if dy > 0 else -1
+                steps = abs(dx)
+                for i in range(1, steps):
+                    if (fx + step_x * i, fy + step_y * i) == (mx, my):
+                        return True
+            return False
+
+        jump_moves = [m for m in moves if m.startswith("a1") and is_jump(m)]
+        destinations = {m[2:4] for m in jump_moves if m[5:7] == "a2"}
+        self.assertTrue({"a3", "a4", "a5", "a6", "a7"}.issubset(destinations))
+
+    def test_custom_variant_potions_parsed_from_ini(self):
+        config = """
+[spell-from-ini:chess]
+checking = false
+extinctionPieceTypes = k
+extinctionValue = -mate
+freezePotion = f
+jumpPotion = j
+startFen = rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR[JJFFFFFjjfffff] w KQkq - 0 1
+pieceDrops = false
+capturesToHand = false
+"""
+        sf.load_variant_config(config)
+        moves = sf.legal_moves("spell-from-ini", SPELL_CHESS, [])
+        self.assertTrue(moves)
+        spell_moves = [m for m in moves if len(m) >= 5 and m[4] in {"f", "F", "j", "J"}]
+        self.assertTrue(spell_moves, "Expected spell-gated moves in custom variant")
 
     def test_legal_moves(self):
         fen = "10/10/10/10/10/k9/10/K9 w - - 0 1"
