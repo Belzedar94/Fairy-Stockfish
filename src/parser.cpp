@@ -18,6 +18,7 @@
 
 #include <string>
 #include <sstream>
+#include <cctype>
 
 #include "apiutil.h"
 #include "parser.h"
@@ -480,6 +481,49 @@ Variant* VariantParser<DoCheck>::parse(Variant* v) {
     parse_attribute("wallingRegion", v->wallingRegion[BLACK]);
     parse_attribute("wallOrMove", v->wallOrMove);
     parse_attribute("seirawanGating", v->seirawanGating);
+    auto parsePotion = [&](const char* option, PieceType& target) {
+        if (const auto it = config.find(option); it != config.end())
+        {
+            if (it->second.size() != 1)
+            {
+                if (DoCheck)
+                    std::cerr << option << " - Invalid piece code: " << it->second << std::endl;
+                return;
+            }
+
+            char token = it->second[0];
+            char upper = toupper(token);
+            if (!isalpha(upper))
+            {
+                if (DoCheck)
+                    std::cerr << option << " - Invalid piece code: " << it->second << std::endl;
+                return;
+            }
+            size_t idx = v->pieceToChar.find(upper);
+            if (idx == std::string::npos)
+                idx = v->pieceToCharSynonyms.find(upper);
+
+            if (idx != std::string::npos)
+            {
+                target = type_of(Piece(idx));
+                return;
+            }
+
+            for (PieceType pt = CUSTOM_PIECES; pt <= CUSTOM_PIECES_END; ++pt)
+                if (!(v->pieceTypes & piece_set(pt)))
+                {
+                    v->add_piece(pt, upper, "");
+                    target = pt;
+                    return;
+                }
+
+            if (DoCheck)
+                std::cerr << option << " - Unable to allocate piece letter: " << token << std::endl;
+        }
+    };
+
+    parsePotion("freezePotion", v->freezePotionPT);
+    parsePotion("jumpPotion", v->jumpPotionPT);
     parse_attribute("cambodianMoves", v->cambodianMoves);
     parse_attribute("diagonalLines", v->diagonalLines);
     parse_attribute("pass", v->pass[WHITE]);

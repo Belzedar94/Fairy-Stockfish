@@ -36,6 +36,12 @@ using std::string;
 
 namespace Stockfish {
 
+namespace {
+
+constexpr int SpellCooldownTurns = 3;
+
+}
+
 namespace Zobrist {
 
   Key psq[PIECE_NB][SQUARE_NB];
@@ -746,7 +752,7 @@ string Position::fen(bool sfen, bool showPromoted, int countStarted, std::string
   }
 
   // pieces in hand
-  if (!free_drops() && (piece_drops() || seirawan_gating()))
+  if (!free_drops() && (piece_drops() || seirawan_gating() || spell_chess()))
   {
       ss << '[';
       if (holdings != "-")
@@ -1949,26 +1955,64 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
   if (is_gating(m))
   {
       Square gate = gating_square(m);
-      Piece gating_piece = make_piece(us, gating_type(m));
+      PieceType gatingType = gating_type(m);
+      Piece gating_piece = make_piece(us, gatingType);
 
-      if (Eval::useNNUE)
+      if (   spell_chess()
+          && (gatingType == freeze_potion_type() || gatingType == jump_potion_type()))
       {
-          // Add gating piece
-          dp.piece[dp.dirty_num] = gating_piece;
-          dp.handPiece[dp.dirty_num] = gating_piece;
-          dp.handCount[dp.dirty_num] = pieceCountInHand[us][gating_type(m)];
-          dp.from[dp.dirty_num] = SQ_NONE;
-          dp.to[dp.dirty_num] = gate;
-          dp.dirty_num++;
+          int before = pieceCountInHand[us][gatingType];
+
+          if (Eval::useNNUE && nnue_use_pockets())
+          {
+              dp.piece[dp.dirty_num] = NO_PIECE;
+              dp.handPiece[dp.dirty_num] = gating_piece;
+              dp.handCount[dp.dirty_num] = before;
+              dp.from[dp.dirty_num] = SQ_NONE;
+              dp.to[dp.dirty_num] = SQ_NONE;
+              dp.dirty_num++;
+          }
+
+          if (!variant()->freeDrops && before > 0)
+              k ^=  Zobrist::inHand[gating_piece][before - 1]
+                  ^ Zobrist::inHand[gating_piece][before];
+
+          remove_from_hand(gating_piece);
+
+          if (gatingType == freeze_potion_type())
+          {
+              Bitboard zone = (attacks_bb<KING>(gate) | square_bb(gate)) & board_bb();
+              st->freezeZone[them] = zone;
+              st->freezeCD[us] = SpellCooldownTurns;
+              st->jumpIgnore[us] = 0;
+          }
+          else
+          {
+              st->jumpCD[us] = SpellCooldownTurns;
+              st->jumpIgnore[us] = square_bb(gate);
+          }
       }
+      else
+      {
+          if (Eval::useNNUE)
+          {
+              // Add gating piece
+              dp.piece[dp.dirty_num] = gating_piece;
+              dp.handPiece[dp.dirty_num] = gating_piece;
+              dp.handCount[dp.dirty_num] = pieceCountInHand[us][gatingType];
+              dp.from[dp.dirty_num] = SQ_NONE;
+              dp.to[dp.dirty_num] = gate;
+              dp.dirty_num++;
+          }
 
-      put_piece(gating_piece, gate);
-      remove_from_hand(gating_piece);
+          put_piece(gating_piece, gate);
+          remove_from_hand(gating_piece);
 
-      st->gatesBB[us] ^= gate;
-      k ^= Zobrist::psq[gating_piece][gate];
-      st->materialKey ^= Zobrist::psq[gating_piece][pieceCount[gating_piece]];
-      st->nonPawnMaterial[us] += PieceValue[MG][gating_piece];
+          st->gatesBB[us] ^= gate;
+          k ^= Zobrist::psq[gating_piece][gate];
+          st->materialKey ^= Zobrist::psq[gating_piece][pieceCount[gating_piece]];
+          st->nonPawnMaterial[us] += PieceValue[MG][gating_piece];
+      }
   }
 
   // Remove gates
@@ -2097,6 +2141,12 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
 
   sideToMove = ~sideToMove;
 
+  if (spell_chess())
+  {
+      expire_spell_effects(us);
+      tick_spell_cooldowns(sideToMove);
+  }
+
   if (counting_rule())
   {
       if (counting_rule() != ASEAN_COUNTING && type_of(captured) == PAWN && count<ALL_PIECES>(~sideToMove) == 1 && !count<PAWN>() && count_limit(~sideToMove))
@@ -2188,11 +2238,19 @@ void Position::undo_move(Move m) {
   // Remove gated piece
   if (is_gating(m))
   {
-      Piece gating_piece = make_piece(us, gating_type(m));
-      remove_piece(gating_square(m));
-      board[gating_square(m)] = NO_PIECE;
-      add_to_hand(gating_piece);
-      st->gatesBB[us] |= gating_square(m);
+      PieceType gatingType = gating_type(m);
+      Piece gating_piece = make_piece(us, gatingType);
+      if (spell_chess() && (gatingType == freeze_potion_type() || gatingType == jump_potion_type()))
+      {
+          add_to_hand(gating_piece);
+      }
+      else
+      {
+          remove_piece(gating_square(m));
+          board[gating_square(m)] = NO_PIECE;
+          add_to_hand(gating_piece);
+          st->gatesBB[us] |= gating_square(m);
+      }
   }
 
   if (type_of(m) == PROMOTION)
@@ -2309,6 +2367,20 @@ void Position::do_castling(Color us, Square from, Square& to, Square& rfrom, Squ
 }
 
 
+void Position::expire_spell_effects(Color c) {
+  st->freezeZone[c] = 0;
+  st->jumpIgnore[c] = 0;
+}
+
+
+void Position::tick_spell_cooldowns(Color c) {
+  if (st->freezeCD[c] > 0)
+      --st->freezeCD[c];
+  if (st->jumpCD[c] > 0)
+      --st->jumpCD[c];
+}
+
+
 /// Position::do_null_move() is used to do a "null move": it flips
 /// the side to move without executing any move on the board.
 
@@ -2316,6 +2388,8 @@ void Position::do_null_move(StateInfo& newSt) {
 
   assert(!checkers());
   assert(&newSt != st);
+
+  Color us = sideToMove;
 
   std::memcpy(&newSt, st, offsetof(StateInfo, accumulator));
 
@@ -2337,6 +2411,12 @@ void Position::do_null_move(StateInfo& newSt) {
   st->pliesFromNull = 0;
 
   sideToMove = ~sideToMove;
+
+  if (spell_chess())
+  {
+      expire_spell_effects(us);
+      tick_spell_cooldowns(sideToMove);
+  }
 
   set_check_info(st);
 

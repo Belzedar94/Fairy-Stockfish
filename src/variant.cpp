@@ -737,6 +737,21 @@ namespace {
         v->promotionPieceTypes[BLACK] = piece_set(ARCHBISHOP) | CHANCELLOR | QUEEN | ROOK | BISHOP | KNIGHT;
         return v;
     }
+    // Spell Chess (Chess.com / Supercell)
+    // Players carry freeze and jump potions and may cast a spell before moving.
+    Variant* spell_chess_variant() {
+        Variant* v = chess_variant()->init();
+        v->startFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR[JJFFFFFjjfffff] w KQkq - 0 1";
+        v->checking = false;
+        v->extinctionPieceTypes = piece_set(KING);
+        v->extinctionValue = -VALUE_MATE;
+        v->add_piece(CUSTOM_PIECE_1, 'f', "");
+        v->add_piece(CUSTOM_PIECE_2, 'j', "");
+        v->freezePotionPT = CUSTOM_PIECE_1;
+        v->jumpPotionPT = CUSTOM_PIECE_2;
+        v->nnueAlias = "nn-";
+        return v;
+    }
     // S-House
     // A hybrid variant of S-Chess and Crazyhouse.
     // Pieces in the pocket can either be gated or dropped.
@@ -1887,6 +1902,7 @@ void VariantMap::init() {
     add("placement", placement_variant());
     add("sittuyin", sittuyin_variant());
     add("seirawan", seirawan_variant());
+    add("spell-chess", spell_chess_variant());
     add("shouse", shouse_variant());
     add("dragon", dragon_variant());
     add("paradigm", paradigm_variant());
@@ -2094,6 +2110,7 @@ Variant* Variant::conclude() {
         }
 
     connectDirections.clear();
+    spellChess = (freezePotionPT != NO_PIECE_TYPE) && (jumpPotionPT != NO_PIECE_TYPE);
     if (connectHorizontal)
     {
         connectDirections.push_back(EAST);

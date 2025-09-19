@@ -984,7 +984,7 @@ inline std::string get_valid_special_chars(const Variant* v) {
         validSpecialCharactersFirstField += '+';
     if (v->promotionPieceTypes[WHITE] || v->promotionPieceTypes[BLACK])
         validSpecialCharactersFirstField += '~';
-    if (!v->freeDrops && (v->pieceDrops || v->seirawanGating))
+    if (!v->freeDrops && (v->pieceDrops || v->seirawanGating || v->spellChess))
         validSpecialCharactersFirstField += "[-]";
     return validSpecialCharactersFirstField;
 }
@@ -1032,7 +1032,7 @@ inline FenValidation validate_fen(const std::string& fen, const Variant* v, bool
 
     // check for pocket
     std::string pocket = "";
-    if (v->pieceDrops || v->seirawanGating)
+    if (v->pieceDrops || v->seirawanGating || v->spellChess)
     {
         if (check_pocket_info(fenParts[0], nbRanks, v, pocket) == NOK)
             return FEN_INVALID_POCKET_INFO;
