@@ -237,18 +237,24 @@ Entry* probe(const Position& pos) {
 
       if (npm_w + npm_b == VALUE_ZERO && pos.pieces(PAWN)) // Only pawns on the board
       {
-          if (!pos.count<PAWN>(BLACK))
-          {
-              assert(pos.count<PAWN>(WHITE) >= 2);
+          int whitePawns = pos.count<PAWN>(WHITE);
+          int blackPawns = pos.count<PAWN>(BLACK);
 
-              e->scalingFunction[WHITE] = &ScaleKPsK[WHITE];
-          }
-          else if (!pos.count<PAWN>(WHITE))
+          if (!blackPawns)
           {
-              assert(pos.count<PAWN>(BLACK) >= 2);
-
-              e->scalingFunction[BLACK] = &ScaleKPsK[BLACK];
+              if (whitePawns >= 2)
+                  e->scalingFunction[WHITE] = &ScaleKPsK[WHITE];
+              else
+                  e->factor[WHITE] = SCALE_FACTOR_DRAW;
           }
+          else if (!whitePawns)
+          {
+              if (blackPawns >= 2)
+                  e->scalingFunction[BLACK] = &ScaleKPsK[BLACK];
+              else
+                  e->factor[BLACK] = SCALE_FACTOR_DRAW;
+          }
+
           else if (pos.count<PAWN>(WHITE) == 1 && pos.count<PAWN>(BLACK) == 1)
           {
               // This is a special case because we set scaling functions

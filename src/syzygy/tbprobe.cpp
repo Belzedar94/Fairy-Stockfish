@@ -24,9 +24,11 @@
 #include <fstream>
 #include <iostream>
 #include <list>
+#include <vector>
 #include <sstream>
 #include <type_traits>
 #include <mutex>
+#include <array>
 
 #include "../bitboard.h"
 #include "../movegen.h"
@@ -57,6 +59,75 @@ int Stockfish::Tablebases::MaxCardinality;
 namespace Stockfish {
 
 namespace {
+struct VariantTBConfig {
+    const char* wdlSuffix;
+    const char* pawnlessWdlSuffix;
+    const char* dtzSuffix;
+    const char* pawnlessDtzSuffix;
+    std::array<uint8_t, 4> wdlMagic;
+    std::array<uint8_t, 4> dtzMagic;
+    std::array<uint8_t, 4> pawnlessWdlMagic;
+    std::array<uint8_t, 4> pawnlessDtzMagic;
+};
+
+const VariantTBConfig ChessTBConfig{
+    ".rtbw", nullptr, ".rtbz", nullptr,
+    { 0xD7, 0x66, 0x0C, 0xA5 },
+    { 0x71, 0xE8, 0x23, 0x5D },
+    { 0xD7, 0x66, 0x0C, 0xA5 },
+    { 0x71, 0xE8, 0x23, 0x5D }
+};
+
+const VariantTBConfig AntichessTBConfig{
+    ".gtbw", ".gtbw", ".gtbz", ".gtbz",
+    { 0xD6, 0xF5, 0x1B, 0x50 },
+    { 0xBC, 0x55, 0xBC, 0x21 },
+    { 0xE4, 0xCF, 0xE7, 0x23 },
+    { 0x7B, 0xF6, 0x93, 0x15 }
+};
+
+const VariantTBConfig AtomicTBConfig{
+    ".atbw", nullptr, ".atbz", nullptr,
+    { 0x91, 0xA9, 0x5E, 0xEB },
+    { 0x55, 0x8D, 0xA4, 0x49 },
+    { 0x91, 0xA9, 0x5E, 0xEB },
+    { 0x55, 0x8D, 0xA4, 0x49 }
+};
+
+const VariantTBConfig SuicideTBConfig{
+    ".stbw", ".stbw", ".stbz", ".stbz",
+    { 0xE4, 0xCF, 0xE7, 0x23 },
+    { 0x7B, 0xF6, 0x93, 0x15 },
+    { 0xD6, 0xF5, 0x1B, 0x50 },
+    { 0xBC, 0x55, 0xBC, 0x21 }
+};
+
+const VariantTBConfig* tb_config(const Variant* variant) {
+    if (!variant)
+        return nullptr;
+
+    switch (variant->tablebaseVariant) {
+    case TB_VARIANT_CHESS:
+        return &ChessTBConfig;
+    case TB_VARIANT_GIVEAWAY:
+        return &AntichessTBConfig;
+    case TB_VARIANT_SUICIDE:
+        return &SuicideTBConfig;
+    case TB_VARIANT_ATOMIC:
+        return &AtomicTBConfig;
+    default:
+        return nullptr;
+    }
+}
+
+bool is_atomic_variant(const Variant* variant) {
+    return tb_config(variant) == &AtomicTBConfig;
+}
+
+bool is_antichess_variant(const Variant* variant) {
+    auto cfg = tb_config(variant);
+    return cfg == &AntichessTBConfig || cfg == &SuicideTBConfig;
+}
 
 constexpr int TBPIECES = 7; // Max number of supported pieces
 
@@ -201,7 +272,7 @@ public:
 
     // Memory map the file and check it. File should be already open and will be
     // closed after mapping.
-    uint8_t* map(void** baseAddress, uint64_t* mapping, TBType type) {
+    uint8_t* map(void** baseAddress, uint64_t* mapping, const std::array<uint8_t, 4>& magic) {
 
         assert(is_open());
 
@@ -272,10 +343,7 @@ public:
 #endif
         uint8_t* data = (uint8_t*)*baseAddress;
 
-        constexpr uint8_t Magics[][4] = { { 0xD7, 0x66, 0x0C, 0xA5 },
-                                          { 0x71, 0xE8, 0x23, 0x5D } };
-
-        if (memcmp(data, Magics[type == WDL], 4))
+        if (memcmp(data, magic.data(), 4))
         {
             std::cerr << "Corrupted table in file " << fname << std::endl;
             unmap(*baseAddress, *mapping);
@@ -342,15 +410,21 @@ struct TBTable {
     int pieceCount;
     bool hasPawns;
     bool hasUniquePieces;
+    int numUniquePieces;
+    int minLikeMan;
     uint8_t pawnCount[2]; // [Lead color / other color]
     PairsData items[Sides][4]; // [wtm / btm][FILE_A..FILE_D or 0]
+    const VariantTBConfig* config;
+    const Variant* variant;
 
     PairsData* get(int stm, int f) {
         return &items[stm % Sides][hasPawns ? f : 0];
     }
 
-    TBTable() : ready(false), baseAddress(nullptr) {}
-    explicit TBTable(const std::string& code);
+    TBTable() : ready(false), baseAddress(nullptr), map(nullptr), mapping(0), key(0), key2(0), pieceCount(0), hasPawns(false), hasUniquePieces(false), numUniquePieces(0), minLikeMan(0), config(nullptr), variant(nullptr) {
+        pawnCount[0] = pawnCount[1] = 0;
+    }
+    explicit TBTable(const Variant* v, const std::string& code);
     explicit TBTable(const TBTable<WDL>& wdl);
 
     ~TBTable() {
@@ -360,23 +434,32 @@ struct TBTable {
 };
 
 template<>
-TBTable<WDL>::TBTable(const std::string& code) : TBTable() {
+TBTable<WDL>::TBTable(const Variant* v, const std::string& code) : TBTable() {
+
+    variant = v;
+    config = tb_config(variant);
 
     StateInfo st;
     Position pos;
 
-    key = pos.set(code, WHITE, &st).material_key();
+    key = pos.set(variant, code, WHITE, &st).material_key();
     pieceCount = pos.count<ALL_PIECES>();
     hasPawns = pos.pieces(PAWN);
 
     hasUniquePieces = false;
+    numUniquePieces = 0;
+    minLikeMan = 0;
     for (Color c : { WHITE, BLACK })
-        for (PieceType pt = PAWN; pt < KING; ++pt)
-            if (popcount(pos.pieces(c, pt)) == 1)
+        for (PieceType pt = PAWN; pt <= KING; ++pt) {
+            int count = popcount(pos.pieces(c, pt));
+            if (pt < KING && count == 1)
                 hasUniquePieces = true;
+            if (count == 1)
+                numUniquePieces++;
+            if (count >= 2 && (count < minLikeMan || !minLikeMan))
+                minLikeMan = count;
+        }
 
-    // Set the leading color. In case both sides have pawns the leading color
-    // is the side with less pawns because this leads to better compression.
     bool c =   !pos.count<PAWN>(BLACK)
             || (   pos.count<PAWN>(WHITE)
                 && pos.count<PAWN>(BLACK) >= pos.count<PAWN>(WHITE));
@@ -384,18 +467,22 @@ TBTable<WDL>::TBTable(const std::string& code) : TBTable() {
     pawnCount[0] = pos.count<PAWN>(c ? WHITE : BLACK);
     pawnCount[1] = pos.count<PAWN>(c ? BLACK : WHITE);
 
-    key2 = pos.set(code, BLACK, &st).material_key();
+    key2 = pos.set(variant, code, BLACK, &st).material_key();
 }
 
 template<>
 TBTable<DTZ>::TBTable(const TBTable<WDL>& wdl) : TBTable() {
 
-    // Use the corresponding WDL table to avoid recalculating all from scratch
+    variant = wdl.variant;
+    config = wdl.config;
+
     key = wdl.key;
     key2 = wdl.key2;
     pieceCount = wdl.pieceCount;
     hasPawns = wdl.hasPawns;
     hasUniquePieces = wdl.hasUniquePieces;
+    numUniquePieces = wdl.numUniquePieces;
+    minLikeMan = wdl.minLikeMan;
     pawnCount[0] = wdl.pawnCount[0];
     pawnCount[1] = wdl.pawnCount[1];
 }
@@ -465,33 +552,56 @@ public:
         dtzTable.clear();
     }
     size_t size() const { return wdlTable.size(); }
-    void add(const std::vector<PieceType>& pieces);
+    void add(const Variant* variant, const std::vector<PieceType>& pieces);
 };
 
 TBTables TBTables;
 
 // If the corresponding file exists two new objects TBTable<WDL> and TBTable<DTZ>
 // are created and added to the lists and hash table. Called at init time.
-void TBTables::add(const std::vector<PieceType>& pieces) {
+void TBTables::add(const Variant* variant, const std::vector<PieceType>& pieces) {
+
+    const VariantTBConfig* cfg = tb_config(variant);
+    if (!cfg || !cfg->wdlSuffix)
+        return;
 
     std::string code;
 
     for (PieceType pt : pieces)
         code += PieceToChar[pt];
 
-    TBFile file(code.insert(code.find('K', 1), "v") + ".rtbw"); // KRK -> KRvK
+    size_t vPos = code.find('K', 1);
+    if (vPos != std::string::npos)
+        code.insert(vPos, "v");
+    else
+        code += 'v';
 
-    if (!file.is_open()) // Only WDL file is checked
+    bool hasFile = false;
+
+    if (cfg->wdlSuffix) {
+        TBFile file(code + cfg->wdlSuffix);
+        if (file.is_open()) {
+            file.close();
+            hasFile = true;
+        }
+    }
+
+    if (!hasFile && cfg->pawnlessWdlSuffix && code.find('P') == std::string::npos) {
+        TBFile pawnlessFile(code + cfg->pawnlessWdlSuffix);
+        if (pawnlessFile.is_open()) {
+            pawnlessFile.close();
+            hasFile = true;
+        }
+    }
+
+    if (!hasFile)
         return;
-
-    file.close();
 
     MaxCardinality = std::max((int)pieces.size(), MaxCardinality);
 
-    wdlTable.emplace_back(code);
+    wdlTable.emplace_back(variant, code);
     dtzTable.emplace_back(wdlTable.back());
 
-    // Insert into the hash keys for both colors: KRvK with KR white and black
     insert(wdlTable.back().key , &wdlTable.back(), &dtzTable.back());
     insert(wdlTable.back().key2, &wdlTable.back(), &dtzTable.back());
 }
@@ -815,7 +925,7 @@ Ret do_probe_table(const Position& pos, T* entry, WDLScore wdl, ProbeState* resu
     //
     // In case we have at least 3 unique pieces (included kings) we encode them
     // together.
-    if (entry->hasUniquePieces) {
+    if (entry->hasUniquePieces && entry->numUniquePieces >= 3) {
 
         int adjust1 =  squares[1] > squares[0];
         int adjust2 = (squares[2] > squares[0]) + (squares[2] > squares[1]);
@@ -849,11 +959,31 @@ Ret do_probe_table(const Position& pos, T* entry, WDLScore wdl, ProbeState* resu
                  +  rank_of(squares[0])         * 7 * 6
                  + (rank_of(squares[1]) - adjust1)  * 6
                  + (rank_of(squares[2]) - adjust2);
-    } else
-        // We don't have at least 3 unique pieces, like in KRRvKBB, just map
-        // the kings.
-        idx = MapKK[MapA1D1D4[squares[0]]][squares[1]];
+    } else if (entry->numUniquePieces == 2) {
 
+        bool connectedKings = is_atomic_variant(entry->variant) || is_antichess_variant(entry->variant);
+
+        if (connectedKings) {
+            int adjust = squares[1] > squares[0];
+
+            if (off_A1H8(squares[0]))
+                idx =   MapA1D1D4[squares[0]] * 63
+                     + (squares[1] - adjust);
+
+            else if (off_A1H8(squares[1]))
+                idx =  6 * 63
+                     + rank_of(squares[0]) * 28
+                     + MapB1H1H7[squares[1]];
+
+            else
+                idx =   6 * 63 + 4 * 28
+                     +  rank_of(squares[0]) * 7
+                     + (rank_of(squares[1]) - adjust);
+        } else
+            idx = MapKK[MapA1D1D4[squares[0]]][squares[1]];
+
+    } else
+        idx = MapKK[MapA1D1D4[squares[0]]][squares[1]];
 encode_remaining:
     idx *= d->groupIdx[0];
     Square* groupSq = squares + d->groupLen[0];
@@ -1141,27 +1271,46 @@ void* mapped(TBTable<Type>& e, const Position& pos) {
 
     static std::mutex mutex;
 
-    // Use 'acquire' to avoid a thread reading 'ready' == true while
-    // another is still working. (compiler reordering may cause this).
     if (e.ready.load(std::memory_order_acquire))
         return e.baseAddress; // Could be nullptr if file does not exist
 
     std::scoped_lock<std::mutex> lk(mutex);
 
-    if (e.ready.load(std::memory_order_relaxed)) // Recheck under lock
+    if (e.ready.load(std::memory_order_relaxed))
         return e.baseAddress;
 
-    // Pieces strings in decreasing order for each color, like ("KPP","KR")
+    const VariantTBConfig* cfg = e.config;
+    if (!cfg) {
+        e.ready.store(true, std::memory_order_release);
+        return e.baseAddress;
+    }
+
     std::string fname, w, b;
     for (PieceType pt = KING; pt >= PAWN; --pt) {
         w += std::string(popcount(pos.pieces(WHITE, pt)), PieceToChar[pt]);
         b += std::string(popcount(pos.pieces(BLACK, pt)), PieceToChar[pt]);
     }
 
-    fname =  (e.key == pos.material_key() ? w + 'v' + b : b + 'v' + w)
-           + (Type == WDL ? ".rtbw" : ".rtbz");
+    fname = e.key == pos.material_key() ? w + 'v' + b : b + 'v' + w;
 
-    uint8_t* data = TBFile(fname).map(&e.baseAddress, &e.mapping, Type);
+    const char* suffix = Type == WDL ? cfg->wdlSuffix : cfg->dtzSuffix;
+    const char* pawnlessSuffix = Type == WDL ? cfg->pawnlessWdlSuffix : cfg->pawnlessDtzSuffix;
+    const auto& primaryMagic = Type == WDL ? cfg->wdlMagic : cfg->dtzMagic;
+    const auto& pawnlessMagic = Type == WDL ? cfg->pawnlessWdlMagic : cfg->pawnlessDtzMagic;
+
+    uint8_t* data = nullptr;
+
+    if (suffix) {
+        TBFile file(fname + suffix);
+        if (file.is_open())
+            data = file.map(&e.baseAddress, &e.mapping, primaryMagic);
+    }
+
+    if (!data && pawnlessSuffix && fname.find('P') == std::string::npos) {
+        TBFile pawnlessFile(fname + pawnlessSuffix);
+        if (pawnlessFile.is_open())
+            data = pawnlessFile.map(&e.baseAddress, &e.mapping, pawnlessMagic);
+    }
 
     if (data)
         set(e, data);
@@ -1197,8 +1346,96 @@ Ret probe_table(const Position& pos, ProbeState* result, WDLScore wdl = WDLDraw)
 // (winning capture or winning pawn move). Also DTZ store wrong values for positions
 // where the best move is an ep-move (even if losing). So in all these cases set
 // the state to ZEROING_BEST_MOVE.
+template <bool Threats = false>
+WDLScore sprobe_ab(Position& pos, WDLScore alpha, WDLScore beta, ProbeState* result);
+
+WDLScore sprobe_captures(Position& pos, WDLScore alpha, WDLScore beta, ProbeState* result) {
+
+    auto moveList = MoveList<CAPTURES>(pos);
+    StateInfo st;
+
+    *result = OK;
+
+    for (const Move move : moveList) {
+        pos.do_move(move, st);
+        WDLScore v = -sprobe_ab(pos, -beta, -alpha, result);
+        pos.undo_move(move);
+
+        if (*result == FAIL)
+            return WDLDraw;
+
+        if (v > alpha) {
+            alpha = v;
+            if (alpha >= beta) {
+                *result = ZEROING_BEST_MOVE;
+                return v;
+            }
+        }
+    }
+
+    return alpha;
+}
+
+template<bool Threats>
+WDLScore sprobe_ab(Position& pos, WDLScore alpha, WDLScore beta, ProbeState* result) {
+
+    WDLScore v;
+    bool threatFound = false;
+
+    if (popcount(pos.pieces(~pos.side_to_move())) > 1) {
+        v = sprobe_captures(pos, alpha, beta, result);
+        if (*result == ZEROING_BEST_MOVE || *result == FAIL)
+            return v;
+    } else {
+        auto moveList = MoveList<CAPTURES>(pos);
+        if (moveList.size()) {
+            *result = ZEROING_BEST_MOVE;
+            return WDLLoss;
+        }
+    }
+
+    if (Threats || popcount(pos.pieces()) >= 6) {
+        StateInfo st;
+        auto moveList = MoveList<LEGAL>(pos);
+
+        for (const Move move : moveList) {
+            pos.do_move(move, st);
+            v = -sprobe_captures(pos, -beta, -alpha, result);
+            pos.undo_move(move);
+
+            if (*result == FAIL)
+                return WDLDraw;
+            else if (*result == ZEROING_BEST_MOVE && v > alpha) {
+                threatFound = true;
+                alpha = v;
+                if (alpha >= beta) {
+                    *result = THREAT;
+                    return v;
+                }
+            }
+        }
+    }
+
+    *result = OK;
+    v = probe_table<WDL>(pos, result);
+
+    if (*result == FAIL)
+        return WDLDraw;
+
+    if (v > alpha)
+        return v;
+
+    if (threatFound)
+        *result = THREAT;
+
+    return alpha;
+}
+
 template<bool CheckZeroingMoves>
 WDLScore search(Position& pos, ProbeState* result) {
+
+    if (is_antichess_variant(pos.variant()))
+        return sprobe_ab<CheckZeroingMoves>(pos, WDLLoss, WDLWin, result);
 
     WDLScore value, bestValue = WDLLoss;
     StateInfo st;
@@ -1373,41 +1610,49 @@ void Tablebases::init(const std::string& paths) {
             LeadPawnsSize[leadPawnsCnt][f] = idx;
         }
 
-    // Add entries in TB tables if the corresponding ".rtbw" file exists
-    for (PieceType p1 = PAWN; p1 <= QUEEN; ++p1) {
-        TBTables.add({KING, p1, KING});
+    std::vector<const Variant*> tbVariants;
 
-        for (PieceType p2 = PAWN; p2 <= p1; ++p2) {
-            TBTables.add({KING, p1, p2, KING});
-            TBTables.add({KING, p1, KING, p2});
+    for (const auto& entry : variants) {
+        if (tb_config(entry.second))
+            tbVariants.push_back(entry.second);
+    }
+    // Add entries in TB tables if the corresponding files exist for supported variants
+    for (const Variant* variant : tbVariants) {
+        for (PieceType p1 = PAWN; p1 <= QUEEN; ++p1) {
+            TBTables.add(variant, {KING, p1, KING});
 
-            for (PieceType p3 = PAWN; p3 <= QUEEN; ++p3)
-                TBTables.add({KING, p1, p2, KING, p3});
+            for (PieceType p2 = PAWN; p2 <= p1; ++p2) {
+                TBTables.add(variant, {KING, p1, p2, KING});
+                TBTables.add(variant, {KING, p1, KING, p2});
 
-            for (PieceType p3 = PAWN; p3 <= p2; ++p3) {
-                TBTables.add({KING, p1, p2, p3, KING});
+                for (PieceType p3 = PAWN; p3 <= QUEEN; ++p3)
+                    TBTables.add(variant, {KING, p1, p2, KING, p3});
 
-                for (PieceType p4 = PAWN; p4 <= p3; ++p4) {
-                    TBTables.add({KING, p1, p2, p3, p4, KING});
+                for (PieceType p3 = PAWN; p3 <= p2; ++p3) {
+                    TBTables.add(variant, {KING, p1, p2, p3, KING});
 
-                    for (PieceType p5 = PAWN; p5 <= p4; ++p5)
-                        TBTables.add({KING, p1, p2, p3, p4, p5, KING});
+                    for (PieceType p4 = PAWN; p4 <= p3; ++p4) {
+                        TBTables.add(variant, {KING, p1, p2, p3, p4, KING});
 
-                    for (PieceType p5 = PAWN; p5 <= QUEEN; ++p5)
-                        TBTables.add({KING, p1, p2, p3, p4, KING, p5});
+                        for (PieceType p5 = PAWN; p5 <= p4; ++p5)
+                            TBTables.add(variant, {KING, p1, p2, p3, p4, p5, KING});
+
+                        for (PieceType p5 = PAWN; p5 <= QUEEN; ++p5)
+                            TBTables.add(variant, {KING, p1, p2, p3, p4, KING, p5});
+                    }
+
+                    for (PieceType p4 = PAWN; p4 <= QUEEN; ++p4) {
+                        TBTables.add(variant, {KING, p1, p2, p3, KING, p4});
+
+                        for (PieceType p5 = PAWN; p5 <= p4; ++p5)
+                            TBTables.add(variant, {KING, p1, p2, p3, KING, p4, p5});
+                    }
                 }
 
-                for (PieceType p4 = PAWN; p4 <= QUEEN; ++p4) {
-                    TBTables.add({KING, p1, p2, p3, KING, p4});
-
-                    for (PieceType p5 = PAWN; p5 <= p4; ++p5)
-                        TBTables.add({KING, p1, p2, p3, KING, p4, p5});
-                }
+                for (PieceType p3 = PAWN; p3 <= p1; ++p3)
+                    for (PieceType p4 = PAWN; p4 <= (p1 == p3 ? p2 : p3); ++p4)
+                        TBTables.add(variant, {KING, p1, p2, KING, p3, p4});
             }
-
-            for (PieceType p3 = PAWN; p3 <= p1; ++p3)
-                for (PieceType p4 = PAWN; p4 <= (p1 == p3 ? p2 : p3); ++p4)
-                    TBTables.add({KING, p1, p2, KING, p3, p4});
         }
     }
 
@@ -1461,6 +1706,9 @@ int Tablebases::probe_dtz(Position& pos, ProbeState* result) {
 
     if (*result == FAIL || wdl == WDLDraw) // DTZ tables don't store draws
         return 0;
+
+    if (*result == THREAT && wdl > WDLDraw)
+        return wdl == WDLWin ? 2 : 102;
 
     // DTZ stores a 'don't care' value in this case, or even a plain wrong
     // one as in case the best move is a losing ep, so it cannot be probed.
@@ -1634,3 +1882,4 @@ bool Tablebases::root_probe_wdl(Position& pos, Search::RootMoves& rootMoves) {
 }
 
 } // namespace Stockfish
+

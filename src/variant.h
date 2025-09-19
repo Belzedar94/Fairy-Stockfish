@@ -179,6 +179,7 @@ struct Variant {
   int kingSquareIndex[SQUARE_NB];
   int nnueMaxPieces;
   EndgameEval endgameEval = EG_EVAL_CHESS;
+  TablebaseVariant tablebaseVariant = TB_VARIANT_NONE;
   bool shogiStylePromotions = false;
   std::vector<Direction> connectDirections;
   PieceSet connectPieceTypesTrimmed = ~NO_PIECE_SET;
@@ -226,6 +227,7 @@ struct Variant {
   Variant* init() {
       nnueAlias = "";
       endgameEval = EG_EVAL_CHESS;
+      tablebaseVariant = TB_VARIANT_NONE;
       return this;
   }
 
