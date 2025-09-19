@@ -160,7 +160,7 @@ struct Bitboard {
         return Bitboard() - *this;
     }
 
-    friend inline Bitboard operator<<(Bitboard a, int s) {
+    friend constexpr Bitboard operator<<(Bitboard a, int s) {
         if (s <= 0)
             return a >> -s;
 
@@ -184,7 +184,7 @@ struct Bitboard {
         return result;
     }
 
-    friend inline Bitboard operator>>(Bitboard a, int s) {
+    friend constexpr Bitboard operator>>(Bitboard a, int s) {
         if (s <= 0)
             return a << -s;
 
