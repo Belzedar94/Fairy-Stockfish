@@ -1032,10 +1032,17 @@ inline FenValidation validate_fen(const std::string& fen, const Variant* v, bool
 
     // check for pocket
     std::string pocket = "";
+    bool slashPocket = false;
     if (v->pieceDrops || v->seirawanGating || v->spellChess)
     {
+        slashPocket = std::count(fenParts[0].begin(), fenParts[0].end(), '/') == nbRanks;
         if (check_pocket_info(fenParts[0], nbRanks, v, pocket) == NOK)
             return FEN_INVALID_POCKET_INFO;
+        if (slashPocket && !pocket.empty())
+        {
+            std::cerr << "Pocket specification must use brackets when listing pieces." << std::endl;
+            return FEN_INVALID_CASTLING_INFO;
+        }
     }
 
     // check for number of kings
