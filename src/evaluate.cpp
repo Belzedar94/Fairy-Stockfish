@@ -445,8 +445,13 @@ namespace {
 
     constexpr Color     Them = ~Us;
     constexpr Direction Down = -pawn_push(Us);
+#if defined(VERY_LARGE_BOARDS)
+    const Bitboard OutpostRanks = (Us == WHITE ? Rank4BB | Rank5BB | Rank6BB
+                                              : Rank5BB | Rank4BB | Rank3BB);
+#else
     constexpr Bitboard OutpostRanks = (Us == WHITE ? Rank4BB | Rank5BB | Rank6BB
                                                    : Rank5BB | Rank4BB | Rank3BB);
+#endif
     Bitboard b1 = pos.pieces(Us, Pt);
     Bitboard b, bb;
     Score score = SCORE_ZERO;
@@ -841,7 +846,11 @@ namespace {
 
     constexpr Color     Them     = ~Us;
     constexpr Direction Up       = pawn_push(Us);
+#if defined(VERY_LARGE_BOARDS)
+    const Bitboard  TRank3BB = (Us == WHITE ? Rank3BB : Rank6BB);
+#else
     constexpr Bitboard  TRank3BB = (Us == WHITE ? Rank3BB : Rank6BB);
+#endif
 
     Bitboard b, weak, defended, nonPawnEnemies, stronglyProtected, safe;
     Score score = SCORE_ZERO;
@@ -1140,9 +1149,15 @@ namespace {
 
     constexpr Color Them     = ~Us;
     constexpr Direction Down = -pawn_push(Us);
+#if defined(VERY_LARGE_BOARDS)
+    const Bitboard SpaceMask =
+      Us == WHITE ? CenterFiles & (Rank2BB | Rank3BB | Rank4BB)
+                  : CenterFiles & (Rank7BB | Rank6BB | Rank5BB);
+#else
     constexpr Bitboard SpaceMask =
       Us == WHITE ? CenterFiles & (Rank2BB | Rank3BB | Rank4BB)
                   : CenterFiles & (Rank7BB | Rank6BB | Rank5BB);
+#endif
 
     // Find the available squares for our pieces inside the area defined by SpaceMask
     Bitboard safe =   SpaceMask
@@ -1568,7 +1583,11 @@ make_v:
 
   Value fix_FRC(const Position& pos) {
 
+#if defined(VERY_LARGE_BOARDS)
+    const Bitboard Corners =  Bitboard(1ULL) << SQ_A1 | Bitboard(1ULL) << SQ_H1 | Bitboard(1ULL) << SQ_A8 | Bitboard(1ULL) << SQ_H8;
+#else
     constexpr Bitboard Corners =  Bitboard(1ULL) << SQ_A1 | Bitboard(1ULL) << SQ_H1 | Bitboard(1ULL) << SQ_A8 | Bitboard(1ULL) << SQ_H8;
+#endif
 
     if (!(pos.pieces(BISHOP) & Corners))
         return VALUE_ZERO;
