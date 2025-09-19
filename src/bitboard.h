@@ -223,6 +223,8 @@ extern Magic GrasshopperMagicsD[SQUARE_NB];
 
 extern Magic* magics[];
 
+int popcount(Bitboard b);
+
 #if defined(VERY_LARGE_BOARDS) && defined(USE_PEXT)
 inline unsigned pext256(Bitboard b, Bitboard m) {
   unsigned result = 0;
