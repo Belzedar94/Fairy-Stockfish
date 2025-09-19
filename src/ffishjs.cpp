@@ -22,6 +22,7 @@
 #include <string>
 #include <sstream>
 #include<iostream>
+#include <stdexcept>
 
 #include "misc.h"
 #include "types.h"
@@ -60,9 +61,16 @@ inline void save_pop_back(std::string& s) {
 }
 
 const Variant* get_variant(const std::string& uciVariant) {
-  if (uciVariant.size() == 0 || uciVariant == "Standard" || uciVariant == "standard")
-    return variants.find("chess")->second;
-  return variants.find(uciVariant)->second;
+  std::string key = uciVariant;
+  if (key.empty() || key == "Standard" || key == "standard")
+    key = "chess";
+
+  auto it = variants.find(key);
+  if (it == variants.end()) {
+    throw std::runtime_error("Unknown variant '" + uciVariant + "'");
+  }
+
+  return it->second;
 }
 
 template <bool isUCI>
