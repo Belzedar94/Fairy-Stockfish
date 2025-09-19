@@ -78,7 +78,7 @@ bool Bitbases::probe(Square wksq, Square wpsq, Square bksq, Color stm) {
 
 void Bitbases::init() {
 
-#ifdef LARGEBOARDS
+#if defined(LARGEBOARDS) || defined(VERY_LARGE_BOARDS)
     // Bitbases are not working for large-board version
     return;
 #endif

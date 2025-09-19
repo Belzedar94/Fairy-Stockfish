@@ -17,7 +17,10 @@
 */
 
 #include <algorithm>
+#include <array>
 #include <bitset>
+#include <map>
+#include <vector>
 
 #include "bitboard.h"
 #include "magic.h"
@@ -25,6 +28,51 @@
 #include "piece.h"
 
 namespace Stockfish {
+
+#if defined(VERY_LARGE_BOARDS)
+Bitboard AllSquares;
+Bitboard DarkSquares;
+
+Bitboard FileABB;
+Bitboard FileBBB;
+Bitboard FileCBB;
+Bitboard FileDBB;
+Bitboard FileEBB;
+Bitboard FileFBB;
+Bitboard FileGBB;
+Bitboard FileHBB;
+Bitboard FileIBB;
+Bitboard FileJBB;
+Bitboard FileKBB;
+Bitboard FileLBB;
+Bitboard FileMBB;
+Bitboard FileNBB;
+Bitboard FileOBB;
+Bitboard FilePBB;
+
+Bitboard Rank1BB;
+Bitboard Rank2BB;
+Bitboard Rank3BB;
+Bitboard Rank4BB;
+Bitboard Rank5BB;
+Bitboard Rank6BB;
+Bitboard Rank7BB;
+Bitboard Rank8BB;
+Bitboard Rank9BB;
+Bitboard Rank10BB;
+Bitboard Rank11BB;
+Bitboard Rank12BB;
+Bitboard Rank13BB;
+Bitboard Rank14BB;
+Bitboard Rank15BB;
+Bitboard Rank16BB;
+
+Bitboard QueenSide;
+Bitboard CenterFiles;
+Bitboard KingSide;
+Bitboard Center;
+Bitboard KingFlank[FILE_NB];
+#endif
 
 uint8_t PopCnt16[1 << 16];
 uint8_t SquareDistance[SQUARE_NB][SQUARE_NB];
@@ -61,39 +109,21 @@ Magic* magics[] = {BishopMagics, RookMagicsH, RookMagicsV, CannonMagicsH, Cannon
 
 namespace {
 
-// Some magics need to be split in order to reduce memory consumption.
-// Otherwise on a 12x10 board they can be >100 MB.
-#ifdef LARGEBOARDS
-  Bitboard RookTableH[0x11800];  // To store horizontal rook attacks
-  Bitboard RookTableV[0x4800];  // To store vertical rook attacks
-  Bitboard BishopTable[0x33C00]; // To store bishop attacks
-  Bitboard CannonTableH[0x11800];  // To store horizontal cannon attacks
-  Bitboard CannonTableV[0x4800];  // To store vertical cannon attacks
-  Bitboard LameDabbabaTable[0x500];  // To store lame dabbaba attacks
-  Bitboard HorseTable[0x500];  // To store horse attacks
-  Bitboard ElephantTable[0x400];  // To store elephant attacks
-  Bitboard JanggiElephantTable[0x1C000];  // To store janggi elephant attacks
-  Bitboard CannonDiagTable[0x33C00]; // To store diagonal cannon attacks
-  Bitboard NightriderTable[0x70200]; // To store nightrider attacks
-  Bitboard GrasshopperTableH[0x11800];  // To store horizontal grasshopper attacks
-  Bitboard GrasshopperTableV[0x4800];  // To store vertical grasshopper attacks
-  Bitboard GrasshopperTableD[0x33C00]; // To store diagonal grasshopper attacks
-#else
-  Bitboard RookTableH[0xA00];  // To store horizontal rook attacks
-  Bitboard RookTableV[0xA00];  // To store vertical rook attacks
-  Bitboard BishopTable[0x1480]; // To store bishop attacks
-  Bitboard CannonTableH[0xA00];  // To store horizontal cannon attacks
-  Bitboard CannonTableV[0xA00];  // To store vertical cannon attacks
-  Bitboard LameDabbabaTable[0x240];  // To store lame dabbaba attacks
-  Bitboard HorseTable[0x240];  // To store horse attacks
-  Bitboard ElephantTable[0x1A0];  // To store elephant attacks
-  Bitboard JanggiElephantTable[0x5C00];  // To store janggi elephant attacks
-  Bitboard CannonDiagTable[0x1480]; // To store diagonal cannon attacks
-  Bitboard NightriderTable[0x1840]; // To store nightrider attacks
-  Bitboard GrasshopperTableH[0xA00];  // To store horizontal grasshopper attacks
-  Bitboard GrasshopperTableV[0xA00];  // To store vertical grasshopper attacks
-  Bitboard GrasshopperTableD[0x1480]; // To store diagonal grasshopper attacks
-#endif
+// Attack tables are allocated at runtime to match the board size.
+  std::vector<Bitboard> RookTableH;  // To store horizontal rook attacks
+  std::vector<Bitboard> RookTableV;  // To store vertical rook attacks
+  std::vector<Bitboard> BishopTable; // To store bishop attacks
+  std::vector<Bitboard> CannonTableH;  // To store horizontal cannon attacks
+  std::vector<Bitboard> CannonTableV;  // To store vertical cannon attacks
+  std::vector<Bitboard> LameDabbabaTable;  // To store lame dabbaba attacks
+  std::vector<Bitboard> HorseTable;  // To store horse attacks
+  std::vector<Bitboard> ElephantTable;  // To store elephant attacks
+  std::vector<Bitboard> JanggiElephantTable;  // To store janggi elephant attacks
+  std::vector<Bitboard> CannonDiagTable; // To store diagonal cannon attacks
+  std::vector<Bitboard> NightriderTable; // To store nightrider attacks
+  std::vector<Bitboard> GrasshopperTableH;  // To store horizontal grasshopper attacks
+  std::vector<Bitboard> GrasshopperTableV;  // To store vertical grasshopper attacks
+  std::vector<Bitboard> GrasshopperTableD; // To store diagonal grasshopper attacks
 
   // Rider directions
   const std::map<Direction, int> RookDirectionsV { {NORTH, 0}, {SOUTH, 0}};
@@ -115,9 +145,9 @@ namespace {
 
   template <MovementType MT>
 #ifdef PRECOMPUTED_MAGICS
-  void init_magics(Bitboard table[], Magic magics[], std::map<Direction, int> directions, const Bitboard magicsInit[]);
+  void init_magics(std::vector<Bitboard>& table, Magic magics[], std::map<Direction, int> directions, const Bitboard magicsInit[]);
 #else
-  void init_magics(Bitboard table[], Magic magics[], std::map<Direction, int> directions);
+  void init_magics(std::vector<Bitboard>& table, Magic magics[], std::map<Direction, int> directions);
 #endif
 
   template <MovementType MT>
@@ -197,6 +227,44 @@ namespace {
     return b;
   }
 
+#if defined(VERY_LARGE_BOARDS)
+  Bitboard on_the_fly_rider_attacks_impl(RiderType R, Square s, Bitboard occupied) {
+    switch (R)
+    {
+    case RIDER_BISHOP:
+        return sliding_attack<RIDER>(BishopDirections, s, occupied);
+    case RIDER_ROOK_H:
+        return sliding_attack<RIDER>(RookDirectionsH, s, occupied);
+    case RIDER_ROOK_V:
+        return sliding_attack<RIDER>(RookDirectionsV, s, occupied);
+    case RIDER_CANNON_H:
+        return sliding_attack<HOPPER>(RookDirectionsH, s, occupied);
+    case RIDER_CANNON_V:
+        return sliding_attack<HOPPER>(RookDirectionsV, s, occupied);
+    case RIDER_CANNON_DIAG:
+        return sliding_attack<HOPPER>(BishopDirections, s, occupied);
+    case RIDER_NIGHTRIDER:
+        return sliding_attack<RIDER>(HorseDirections, s, occupied);
+    case RIDER_GRASSHOPPER_H:
+        return sliding_attack<HOPPER>(GrasshopperDirectionsH, s, occupied);
+    case RIDER_GRASSHOPPER_V:
+        return sliding_attack<HOPPER>(GrasshopperDirectionsV, s, occupied);
+    case RIDER_GRASSHOPPER_D:
+        return sliding_attack<HOPPER>(GrasshopperDirectionsD, s, occupied);
+    case RIDER_LAME_DABBABA:
+        return lame_leaper_attack(LameDabbabaDirections, s, occupied);
+    case RIDER_HORSE:
+        return lame_leaper_attack(HorseDirections, s, occupied);
+    case RIDER_ELEPHANT:
+        return lame_leaper_attack(ElephantDirections, s, occupied);
+    case RIDER_JANGGI_ELEPHANT:
+        return lame_leaper_attack(JanggiElephantDirections, s, occupied);
+    default:
+        return Bitboard(0);
+    }
+  }
+#endif
+
 }
 
 /// safe_destination() returns the bitboard of target square for the given step
@@ -213,16 +281,33 @@ inline Bitboard safe_destination(Square s, int step) {
 
 std::string Bitboards::pretty(Bitboard b) {
 
-  std::string s = "+---+---+---+---+---+---+---+---+---+---+---+---+\n";
+  std::string border;
+  for (int f = 0; f < FILE_NB; ++f)
+      border += "+---";
+  border += "+\n";
+
+  std::string s = border;
 
   for (Rank r = RANK_MAX; r >= RANK_1; --r)
   {
       for (File f = FILE_A; f <= FILE_MAX; ++f)
-          s += b & make_square(f, r) ? "| X " : "|   ";
+          s += (b & make_square(f, r)) ? "| X " : "|   ";
 
-      s += "| " + std::to_string(1 + r) + "\n+---+---+---+---+---+---+---+---+---+---+---+---+\n";
+      std::string rankStr = std::to_string(int(r) + 1);
+      if (rankStr.size() == 1)
+          rankStr = " " + rankStr;
+      s += "| " + rankStr + "\n";
+      s += border;
   }
-  s += "  a   b   c   d   e   f   g   h   i   j   k   l\n";
+
+  s += "  ";
+  for (File f = FILE_A; f <= FILE_MAX; ++f)
+  {
+      s += char('a' + f);
+      if (f != FILE_MAX)
+          s += "   ";
+  }
+  s += "\n";
 
   return s;
 }
@@ -322,6 +407,82 @@ void Bitboards::init() {
   for (Square s = SQ_A1; s <= SQ_MAX; ++s)
       SquareBB[s] = make_bitboard(s);
 
+#if defined(VERY_LARGE_BOARDS)
+  std::array<Bitboard, FILE_NB> fileMask{};
+  std::array<Bitboard, RANK_NB> rankMask{};
+  AllSquares = Bitboard(0);
+  DarkSquares = Bitboard(0);
+
+  for (File f = FILE_A; f <= FILE_MAX; ++f)
+      for (Rank r = RANK_1; r <= RANK_MAX; ++r)
+      {
+          Square sq = make_square(f, r);
+          Bitboard bb = SquareBB[sq];
+          fileMask[f] |= bb;
+          rankMask[r] |= bb;
+          AllSquares |= bb;
+          if (((int(f) ^ int(r)) & 1) == 1)
+              DarkSquares |= bb;
+      }
+
+  std::array<Bitboard*, FILE_NB> fileGlobals = { &FileABB, &FileBBB, &FileCBB, &FileDBB,
+                                                 &FileEBB, &FileFBB, &FileGBB, &FileHBB,
+                                                 &FileIBB, &FileJBB, &FileKBB, &FileLBB,
+                                                 &FileMBB, &FileNBB, &FileOBB, &FilePBB };
+  for (int f = 0; f < FILE_NB; ++f)
+      *fileGlobals[f] = fileMask[f];
+
+  std::array<Bitboard*, RANK_NB> rankGlobals = { &Rank1BB, &Rank2BB, &Rank3BB, &Rank4BB,
+                                                 &Rank5BB, &Rank6BB, &Rank7BB, &Rank8BB,
+                                                 &Rank9BB, &Rank10BB, &Rank11BB, &Rank12BB,
+                                                 &Rank13BB, &Rank14BB, &Rank15BB, &Rank16BB };
+  for (int r = 0; r < RANK_NB; ++r)
+      *rankGlobals[r] = rankMask[r];
+
+  int halfFiles = FILE_NB / 2;
+  QueenSide = Bitboard(0);
+  KingSide = Bitboard(0);
+  for (int f = 0; f < halfFiles; ++f)
+      QueenSide |= fileMask[f];
+  for (int f = halfFiles; f < FILE_NB; ++f)
+      KingSide |= fileMask[f];
+
+  int centerWidth = std::min(4, int(FILE_NB));
+  int centerStart = std::max(0, halfFiles - centerWidth / 2);
+  int centerEnd = std::min(int(FILE_NB) - 1, centerStart + centerWidth - 1);
+  CenterFiles = Bitboard(0);
+  for (int f = centerStart; f <= centerEnd; ++f)
+      CenterFiles |= fileMask[f];
+
+  int rankHalf = int(RANK_NB) / 2;
+  int centerRankStart = std::max(0, rankHalf - 1);
+  int centerRankEnd = std::min(int(RANK_NB) - 1, centerRankStart + 1);
+  Center = Bitboard(0);
+  for (int r = centerRankStart; r <= centerRankEnd; ++r)
+      Center |= rankMask[r];
+  Center &= CenterFiles;
+
+  for (int f = 0; f < FILE_NB; ++f)
+  {
+      if (f < centerStart)
+      {
+          Bitboard flank = QueenSide;
+          if (f == 0 && halfFiles > 0)
+              flank ^= fileMask[halfFiles - 1];
+          KingFlank[f] = flank;
+      }
+      else if (f <= centerEnd)
+          KingFlank[f] = CenterFiles;
+      else
+      {
+          Bitboard flank = KingSide;
+          if (f == FILE_NB - 1 && halfFiles < FILE_NB)
+              flank ^= fileMask[halfFiles];
+          KingFlank[f] = flank;
+      }
+  }
+#endif
+
   for (File f = FILE_A; f <= FILE_MAX; ++f)
       for (Rank r = RANK_1; r <= RANK_MAX; ++r)
           BoardSizeBB[f][r] = forward_file_bb(BLACK, make_square(f, r)) | SquareBB[make_square(f, r)] | (f > FILE_A ? BoardSizeBB[f - 1][r] : Bitboard(0));
@@ -330,6 +491,7 @@ void Bitboards::init() {
       for (Square s2 = SQ_A1; s2 <= SQ_MAX; ++s2)
               SquareDistance[s1][s2] = std::max(distance<File>(s1, s2), distance<Rank>(s1, s2));
 
+#if !defined(VERY_LARGE_BOARDS)
 #ifdef PRECOMPUTED_MAGICS
   init_magics<RIDER>(RookTableH, RookMagicsH, RookDirectionsH, RookMagicHInit);
   init_magics<RIDER>(RookTableV, RookMagicsV, RookDirectionsV, RookMagicVInit);
@@ -361,6 +523,7 @@ void Bitboards::init() {
   init_magics<HOPPER>(GrasshopperTableV, GrasshopperMagicsV, GrasshopperDirectionsV);
   init_magics<HOPPER>(GrasshopperTableD, GrasshopperMagicsD, GrasshopperDirectionsD);
 #endif
+#endif
 
   init_pieces();
 
@@ -388,9 +551,9 @@ namespace {
 
   template <MovementType MT>
 #ifdef PRECOMPUTED_MAGICS
-  void init_magics(Bitboard table[], Magic magics[], std::map<Direction, int> directions, const Bitboard magicsInit[]) {
+  void init_magics(std::vector<Bitboard>& table, Magic magics[], std::map<Direction, int> directions, const Bitboard magicsInit[]) {
 #else
-  void init_magics(Bitboard table[], Magic magics[], std::map<Direction, int> directions) {
+  void init_magics(std::vector<Bitboard>& table, Magic magics[], std::map<Direction, int> directions) {
 #endif
 
     // Optimal PRNG seeds to pick the correct magics in the shortest time
@@ -404,98 +567,97 @@ namespace {
 #endif
 #endif
 
-    Bitboard* occupancy = new Bitboard[1 << (FILE_NB + RANK_NB - 4)];
-    Bitboard* reference = new Bitboard[1 << (FILE_NB + RANK_NB - 4)];
-    Bitboard edges, b;
-    int* epoch = new int[1 << (FILE_NB + RANK_NB - 4)]();
-    int cnt = 0, size = 0;
+    std::vector<size_t> offsets(SQUARE_NB);
+    size_t totalSize = 0;
 
     for (Square s = SQ_A1; s <= SQ_MAX; ++s)
     {
-        // Board edges are not considered in the relevant occupancies
-        edges = ((Rank1BB | rank_bb(RANK_MAX)) & ~rank_bb(s)) | ((FileABB | file_bb(FILE_MAX)) & ~file_bb(s));
-
-        // Given a square 's', the mask is the bitboard of sliding attacks from
-        // 's' computed on an empty board. The index must be big enough to contain
-        // all the attacks for each possible subset of the mask and so is 2 power
-        // the number of 1s of the mask. Hence we deduce the size of the shift to
-        // apply to the 64 or 32 bits word to get the index.
+        Bitboard edges = ((Rank1BB | rank_bb(RANK_MAX)) & ~rank_bb(s)) | ((FileABB | file_bb(FILE_MAX)) & ~file_bb(s));
         Magic& m = magics[s];
-        // The mask for hoppers is unlimited distance, even if the hopper is limited distance (e.g., grasshopper)
-        m.mask  = (MT == LAME_LEAPER ? lame_leaper_path(directions, s) : sliding_attack<MT == HOPPER ? HOPPER_RANGE : MT>(directions, s, 0)) & ~edges;
+        m.mask = (MT == LAME_LEAPER ? lame_leaper_path(directions, s)
+                                    : sliding_attack<MT == HOPPER ? HOPPER_RANGE : MT>(directions, s, 0)) & ~edges;
 #ifdef LARGEBOARDS
         m.shift = 128 - popcount(m.mask);
 #else
         m.shift = (Is64Bit ? 64 : 32) - popcount(m.mask);
 #endif
+        offsets[s] = totalSize;
+        totalSize += size_t(1) << popcount(m.mask);
+    }
 
-        // Set the offset for the attacks table of the square. We have individual
-        // table sizes for each square with "Fancy Magic Bitboards".
-        m.attacks = s == SQ_A1 ? table : magics[s - 1].attacks + size;
+    table.assign(totalSize, Bitboard(0));
 
-        // Use Carry-Rippler trick to enumerate all subsets of masks[s] and
-        // store the corresponding sliding attack bitboard in reference[].
-        b = size = 0;
+    const size_t maxSubsets = size_t(1) << (FILE_NB + RANK_NB - 4);
+    std::vector<Bitboard> occupancy(maxSubsets);
+    std::vector<Bitboard> reference(maxSubsets);
+    std::vector<int> epoch(maxSubsets, 0);
+    int cnt = 0;
+
+    for (Square s = SQ_A1; s <= SQ_MAX; ++s)
+    {
+        Magic& m = magics[s];
+        Bitboard mask = m.mask;
+        m.attacks = table.data() + offsets[s];
+
+        Bitboard b = 0;
+        size_t index = 0;
         do {
-            occupancy[size] = b;
-            reference[size] = MT == LAME_LEAPER ? lame_leaper_attack(directions, s, b) : sliding_attack<MT>(directions, s, b);
-
+            occupancy[index] = b;
+            reference[index] = MT == LAME_LEAPER ? lame_leaper_attack(directions, s, b)
+                                                 : sliding_attack<MT>(directions, s, b);
+#if defined(USE_PEXT)
             if (HasPext)
-                m.attacks[pext(b, m.mask)] = reference[size];
-
-            size++;
-            b = (b - m.mask) & m.mask;
+                m.attacks[m.index(b)] = reference[index];
+#endif
+            ++index;
+            b = (b - mask) & mask;
         } while (b);
 
+#if defined(USE_PEXT)
         if (HasPext)
             continue;
+#endif
+
+        int subsetCountInt = int(index);
 
 #ifndef PRECOMPUTED_MAGICS
         PRNG rng(seeds[Is64Bit][rank_of(s)]);
 #endif
 
-        // Find a magic for square 's' picking up an (almost) random number
-        // until we find the one that passes the verification test.
-        for (int i = 0; i < size; )
+        for (int attempt = 0; attempt < subsetCountInt; )
         {
-            for (m.magic = 0; popcount((m.magic * m.mask) >> (SQUARE_NB - FILE_NB)) < FILE_NB - 2; )
+            for (m.magic = Bitboard(0); popcount((m.magic * mask) >> (SQUARE_NB - FILE_NB)) < FILE_NB - 2; )
             {
-#ifdef LARGEBOARDS
 #ifdef PRECOMPUTED_MAGICS
                 m.magic = magicsInit[s];
-#else
+#elif defined(LARGEBOARDS)
                 m.magic = (rng.sparse_rand<Bitboard>() << 64) ^ rng.sparse_rand<Bitboard>();
-#endif
 #else
                 m.magic = rng.sparse_rand<Bitboard>();
 #endif
             }
 
-            // A good magic must map every possible occupancy to an index that
-            // looks up the correct sliding attack in the attacks[s] database.
-            // Note that we build up the database for square 's' as a side
-            // effect of verifying the magic. Keep track of the attempt count
-            // and save it in epoch[], little speed-up trick to avoid resetting
-            // m.attacks[] after every failed attempt.
-            for (++cnt, i = 0; i < size; ++i)
+            for (++cnt, attempt = 0; attempt < subsetCountInt; ++attempt)
             {
-                unsigned idx = m.index(occupancy[i]);
+                unsigned idx = m.index(occupancy[attempt]);
 
                 if (epoch[idx] < cnt)
                 {
                     epoch[idx] = cnt;
-                    m.attacks[idx] = reference[i];
+                    m.attacks[idx] = reference[attempt];
                 }
-                else if (m.attacks[idx] != reference[i])
+                else if (m.attacks[idx] != reference[attempt])
                     break;
             }
         }
     }
-
-    delete[] occupancy;
-    delete[] reference;
-    delete[] epoch;
   }
 }
+
+#if defined(VERY_LARGE_BOARDS)
+Bitboard on_the_fly_rider_attacks(RiderType r, Square s, Bitboard occupied) {
+  return on_the_fly_rider_attacks_impl(r, s, occupied);
+}
+#endif
 
 } // namespace Stockfish

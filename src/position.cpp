@@ -280,7 +280,7 @@ Position& Position::set(const Variant* v, const string& fenStr, bool isChess960,
   {
       if (isdigit(token))
       {
-#ifdef LARGEBOARDS
+#if defined(LARGEBOARDS) || defined(VERY_LARGE_BOARDS)
           if (isdigit(ss.peek()))
           {
               sq += 10 * (token - '0') * EAST;
@@ -429,11 +429,27 @@ Position& Position::set(const Variant* v, const string& fenStr, bool isChess960,
       // 4. En passant square.
       // Ignore if square is invalid or not on side to move relative rank 6.
       else
-          while (   ((ss >> col) && (col >= 'a' && col <= 'a' + max_file()))
-                 && ((ss >> row) && (row >= '1' && row <= '1' + max_rank())))
+          while ((ss >> col) && (col >= 'a' && col <= 'a' + max_file()))
           {
-              Square epSquare = make_square(File(col - 'a'), Rank(row - '1'));
-#ifdef LARGEBOARDS
+              if (!(ss >> row) || !isdigit(row))
+                  break;
+
+              int rankValue = row - '0';
+#if defined(LARGEBOARDS) || defined(VERY_LARGE_BOARDS)
+              while (isdigit(ss.peek()))
+              {
+                  ss >> row;
+                  if (!isdigit(row))
+                      break;
+                  rankValue = 10 * rankValue + (row - '0');
+              }
+#endif
+
+              if (rankValue < 1 || rankValue > ranks())
+                  continue;
+
+              Square epSquare = make_square(File(col - 'a'), Rank(rankValue - 1));
+#if defined(LARGEBOARDS) || defined(VERY_LARGE_BOARDS)
               // Consider different rank numbering in CECP
               if (max_rank() == RANK_10 && CurrentProtocol == XBOARD)
                   epSquare += NORTH;

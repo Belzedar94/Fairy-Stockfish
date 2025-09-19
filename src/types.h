@@ -80,13 +80,6 @@
 
 #if defined(USE_PEXT)
 #  include <immintrin.h> // Header for _pext_u64() intrinsic
-#  ifdef LARGEBOARDS
-#    define pext(b, m) (_pext_u64(b, m) ^ (_pext_u64(b >> 64, m >> 64) << popcount((m << 64) >> 64)))
-#  else
-#    define pext(b, m) _pext_u64(b, m)
-#  endif
-#else
-#  define pext(b, m) 0
 #endif
 
 namespace Stockfish {
@@ -110,7 +103,145 @@ constexpr bool Is64Bit = false;
 #endif
 
 typedef uint64_t Key;
-#ifdef LARGEBOARDS
+
+#if defined(VERY_LARGE_BOARDS)
+
+struct Bitboard {
+    uint64_t limbs[4];
+
+    constexpr Bitboard(uint64_t l0 = 0) : limbs{l0, 0, 0, 0} {}
+    constexpr Bitboard(uint64_t l0, uint64_t l1, uint64_t l2, uint64_t l3)
+      : limbs{l0, l1, l2, l3} {}
+
+    friend constexpr Bitboard operator~(Bitboard a) {
+        return Bitboard(~a.limbs[0], ~a.limbs[1], ~a.limbs[2], ~a.limbs[3]);
+    }
+
+    friend constexpr Bitboard operator|(Bitboard a, Bitboard b) {
+        return Bitboard(a.limbs[0] | b.limbs[0], a.limbs[1] | b.limbs[1],
+                        a.limbs[2] | b.limbs[2], a.limbs[3] | b.limbs[3]);
+    }
+
+    friend constexpr Bitboard operator&(Bitboard a, Bitboard b) {
+        return Bitboard(a.limbs[0] & b.limbs[0], a.limbs[1] & b.limbs[1],
+                        a.limbs[2] & b.limbs[2], a.limbs[3] & b.limbs[3]);
+    }
+
+    friend constexpr Bitboard operator^(Bitboard a, Bitboard b) {
+        return Bitboard(a.limbs[0] ^ b.limbs[0], a.limbs[1] ^ b.limbs[1],
+                        a.limbs[2] ^ b.limbs[2], a.limbs[3] ^ b.limbs[3]);
+    }
+
+    Bitboard& operator|=(Bitboard b) {
+        limbs[0] |= b.limbs[0];
+        limbs[1] |= b.limbs[1];
+        limbs[2] |= b.limbs[2];
+        limbs[3] |= b.limbs[3];
+        return *this;
+    }
+
+    Bitboard& operator&=(Bitboard b) {
+        limbs[0] &= b.limbs[0];
+        limbs[1] &= b.limbs[1];
+        limbs[2] &= b.limbs[2];
+        limbs[3] &= b.limbs[3];
+        return *this;
+    }
+
+    Bitboard& operator^=(Bitboard b) {
+        limbs[0] ^= b.limbs[0];
+        limbs[1] ^= b.limbs[1];
+        limbs[2] ^= b.limbs[2];
+        limbs[3] ^= b.limbs[3];
+        return *this;
+    }
+
+    constexpr Bitboard operator-() const {
+        return Bitboard() - *this;
+    }
+
+    friend constexpr Bitboard operator<<(Bitboard a, int s) {
+        if (s <= 0)
+            return a >> -s;
+
+        Bitboard result;
+        if (s >= 256)
+            return result;
+
+        int word = s / 64;
+        int rem = s & 63;
+
+        for (int i = 3; i >= 0; --i) {
+            uint64_t val = 0;
+            if (i - word >= 0) {
+                val = a.limbs[i - word] << rem;
+                if (rem && i - word - 1 >= 0)
+                    val |= a.limbs[i - word - 1] >> (64 - rem);
+            }
+            result.limbs[i] = val;
+        }
+
+        return result;
+    }
+
+    friend constexpr Bitboard operator>>(Bitboard a, int s) {
+        if (s <= 0)
+            return a << -s;
+
+        Bitboard result;
+        if (s >= 256)
+            return result;
+
+        int word = s / 64;
+        int rem = s & 63;
+
+        for (int i = 0; i < 4; ++i) {
+            uint64_t val = 0;
+            if (i + word < 4) {
+                val = a.limbs[i + word] >> rem;
+                if (rem && i + word + 1 < 4)
+                    val |= a.limbs[i + word + 1] << (64 - rem);
+            }
+            result.limbs[i] = val;
+        }
+
+        return result;
+    }
+
+    constexpr Bitboard operator-(Bitboard other) const {
+        Bitboard result;
+        uint64_t borrow = 0;
+        for (int i = 0; i < 4; ++i) {
+            const uint64_t rhs = other.limbs[i] + borrow;
+            const uint64_t lhs = limbs[i];
+            result.limbs[i] = lhs - rhs;
+            borrow = lhs < rhs ? 1 : 0;
+        }
+        return result;
+    }
+
+    constexpr Bitboard operator-(int x) const {
+        return *this - Bitboard(x);
+    }
+
+    friend constexpr bool operator==(Bitboard a, Bitboard b) {
+        return a.limbs[0] == b.limbs[0] && a.limbs[1] == b.limbs[1]
+            && a.limbs[2] == b.limbs[2] && a.limbs[3] == b.limbs[3];
+    }
+
+    friend constexpr bool operator!=(Bitboard a, Bitboard b) {
+        return !(a == b);
+    }
+
+    constexpr operator bool() const {
+        return limbs[0] | limbs[1] | limbs[2] | limbs[3];
+    }
+};
+
+constexpr int SQUARE_BITS = 8;
+constexpr int BITBOARD_BITS = 256;
+
+#elif defined(LARGEBOARDS)
 #if defined(__GNUC__) && defined(IS_64BIT)
 typedef unsigned __int128 Bitboard;
 #else
@@ -222,9 +353,11 @@ struct Bitboard {
 };
 #endif
 constexpr int SQUARE_BITS = 7;
+constexpr int BITBOARD_BITS = 128;
 #else
 typedef uint64_t Bitboard;
 constexpr int SQUARE_BITS = 6;
+constexpr int BITBOARD_BITS = 64;
 #endif
 
 //When defined, move list will be stored in heap. Delete this if you want to use stack to store move list. Using stack can cause overflow (Segmentation Fault) when the search is too deep.
@@ -491,7 +624,28 @@ enum : int {
 };
 
 enum Square : int {
-#ifdef LARGEBOARDS
+#if defined(VERY_LARGE_BOARDS)
+#  define SQUARES_OF_RANK(r) \
+    SQ_A##r, SQ_B##r, SQ_C##r, SQ_D##r, SQ_E##r, SQ_F##r, SQ_G##r, SQ_H##r, \
+    SQ_I##r, SQ_J##r, SQ_K##r, SQ_L##r, SQ_M##r, SQ_N##r, SQ_O##r, SQ_P##r
+  SQUARES_OF_RANK(1),
+  SQUARES_OF_RANK(2),
+  SQUARES_OF_RANK(3),
+  SQUARES_OF_RANK(4),
+  SQUARES_OF_RANK(5),
+  SQUARES_OF_RANK(6),
+  SQUARES_OF_RANK(7),
+  SQUARES_OF_RANK(8),
+  SQUARES_OF_RANK(9),
+  SQUARES_OF_RANK(10),
+  SQUARES_OF_RANK(11),
+  SQUARES_OF_RANK(12),
+  SQUARES_OF_RANK(13),
+  SQUARES_OF_RANK(14),
+  SQUARES_OF_RANK(15),
+  SQUARES_OF_RANK(16),
+#  undef SQUARES_OF_RANK
+#elif defined(LARGEBOARDS)
   SQ_A1, SQ_B1, SQ_C1, SQ_D1, SQ_E1, SQ_F1, SQ_G1, SQ_H1, SQ_I1, SQ_J1, SQ_K1, SQ_L1,
   SQ_A2, SQ_B2, SQ_C2, SQ_D2, SQ_E2, SQ_F2, SQ_G2, SQ_H2, SQ_I2, SQ_J2, SQ_K2, SQ_L2,
   SQ_A3, SQ_B3, SQ_C3, SQ_D3, SQ_E3, SQ_F3, SQ_G3, SQ_H3, SQ_I3, SQ_J3, SQ_K3, SQ_L3,
@@ -515,7 +669,10 @@ enum Square : int {
   SQ_NONE,
 
   SQUARE_ZERO = 0,
-#ifdef LARGEBOARDS
+#if defined(VERY_LARGE_BOARDS)
+  SQUARE_NB = 256,
+  SQUARE_BIT_MASK = 255,
+#elif defined(LARGEBOARDS)
   SQUARE_NB = 120,
   SQUARE_BIT_MASK = 127,
 #else
@@ -528,10 +685,12 @@ enum Square : int {
 };
 
 enum Direction : int {
-#ifdef LARGEBOARDS
-  NORTH =  12,
+#if defined(VERY_LARGE_BOARDS)
+  NORTH = 16,
+#elif defined(LARGEBOARDS)
+  NORTH = 12,
 #else
-  NORTH =  8,
+  NORTH = 8,
 #endif
   EAST  =  1,
   SOUTH = -NORTH,
@@ -544,7 +703,10 @@ enum Direction : int {
 };
 
 enum File : int {
-#ifdef LARGEBOARDS
+#if defined(VERY_LARGE_BOARDS)
+  FILE_A, FILE_B, FILE_C, FILE_D, FILE_E, FILE_F, FILE_G, FILE_H,
+  FILE_I, FILE_J, FILE_K, FILE_L, FILE_M, FILE_N, FILE_O, FILE_P,
+#elif defined(LARGEBOARDS)
   FILE_A, FILE_B, FILE_C, FILE_D, FILE_E, FILE_F, FILE_G, FILE_H, FILE_I, FILE_J, FILE_K, FILE_L,
 #else
   FILE_A, FILE_B, FILE_C, FILE_D, FILE_E, FILE_F, FILE_G, FILE_H,
@@ -554,7 +716,10 @@ enum File : int {
 };
 
 enum Rank : int {
-#ifdef LARGEBOARDS
+#if defined(VERY_LARGE_BOARDS)
+  RANK_1, RANK_2, RANK_3, RANK_4, RANK_5, RANK_6, RANK_7, RANK_8,
+  RANK_9, RANK_10, RANK_11, RANK_12, RANK_13, RANK_14, RANK_15, RANK_16,
+#elif defined(LARGEBOARDS)
   RANK_1, RANK_2, RANK_3, RANK_4, RANK_5, RANK_6, RANK_7, RANK_8, RANK_9, RANK_10,
 #else
   RANK_1, RANK_2, RANK_3, RANK_4, RANK_5, RANK_6, RANK_7, RANK_8,
