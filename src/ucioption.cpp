@@ -49,7 +49,7 @@ std::set<string> standard_variants = {
     "normal", "nocastle", "fischerandom", "knightmate", "3check", "makruk", "shatranj",
     "asean", "seirawan", "crazyhouse", "bughouse", "suicide", "giveaway", "losers", "atomic",
     "capablanca", "gothic", "janus", "caparandom", "grand", "shogi", "xiangqi", "duck",
-    "berolina", "spartan"
+    "berolina", "spartan", "spell-chess"
 };
 
 void init_variant(const Variant* v) {
