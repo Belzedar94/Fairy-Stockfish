@@ -182,18 +182,46 @@ struct Variant {
   bool shogiStylePromotions = false;
   std::vector<Direction> connectDirections;
   PieceSet connectPieceTypesTrimmed = ~NO_PIECE_SET;
-  void add_piece(PieceType pt, char c, std::string betza = "", char c2 = ' ') {
-      // Avoid ambiguous definition by removing existing piece with same letter
-      size_t idx;
-      if ((idx = pieceToChar.find(toupper(c))) != std::string::npos)
-          remove_piece(PieceType(idx));
-      // Now add new piece
-      pieceToChar[make_piece(WHITE, pt)] = toupper(c);
-      pieceToChar[make_piece(BLACK, pt)] = tolower(c);
-      pieceToCharSynonyms[make_piece(WHITE, pt)] = toupper(c2);
-      pieceToCharSynonyms[make_piece(BLACK, pt)] = tolower(c2);
+  void add_piece(PieceType pt,
+                 char c,
+                 std::string betza = "",
+                 char c2 = ' ',
+                 char cBlack = 0,
+                 char c2Black = 0) {
+      auto to_upper = [](char ch) { return char(std::toupper(static_cast<unsigned char>(ch))); };
+      auto to_lower = [](char ch) { return char(std::tolower(static_cast<unsigned char>(ch))); };
+      auto is_alpha = [](char ch) { return std::isalpha(static_cast<unsigned char>(ch)); };
+
+      auto make_white = [&](char ch) {
+          return is_alpha(ch) ? to_upper(ch) : ch;
+      };
+      auto make_black = [&](char base, char overrideChar) {
+          if (overrideChar)
+              return overrideChar;
+          return is_alpha(base) ? to_lower(base) : base;
+      };
+
+      char whiteChar = make_white(c);
+      char blackChar = make_black(c, cBlack);
+      char whiteSyn = make_white(c2);
+      char blackSyn = make_black(c2, c2Black);
+
+      auto remove_conflicting_piece = [&](char ch) {
+          if (!ch || ch == ' ')
+              return;
+          size_t idx = pieceToChar.find(ch);
+          if (idx != std::string::npos)
+              remove_piece(PieceType(idx));
+      };
+
+      remove_conflicting_piece(whiteChar);
+      remove_conflicting_piece(blackChar);
+
+      pieceToChar[make_piece(WHITE, pt)] = whiteChar;
+      pieceToChar[make_piece(BLACK, pt)] = blackChar;
+      pieceToCharSynonyms[make_piece(WHITE, pt)] = whiteSyn;
+      pieceToCharSynonyms[make_piece(BLACK, pt)] = blackSyn;
       pieceTypes |= pt;
-      // Add betza notation for custom piece
       if (is_custom(pt))
           customPiece[pt - CUSTOM_PIECES] = betza;
   }
