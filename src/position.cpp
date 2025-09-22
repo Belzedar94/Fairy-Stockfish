@@ -22,6 +22,7 @@
 #include <cstring> // For std::memset, std::memcmp
 #include <iomanip>
 #include <sstream>
+#include <vector>
 
 #include "bitboard.h"
 #include "misc.h"
@@ -1073,13 +1074,24 @@ bool Position::legal(Move m) const {
       Position& pos = const_cast<Position&>(*this);
       StateInfo stCheckless;
       pos.do_move(m, stCheckless, givesCheck);
-      bool isMate = !MoveList<LEGAL>(pos).size();
+
+      static thread_local std::vector<Key> checklessHistory;
+      Key newKey = pos.state()->key;
+      bool hasCycle = std::find(checklessHistory.begin(), checklessHistory.end(), newKey) != checklessHistory.end();
+      bool isMate = false;
+
+      if (!hasCycle)
+      {
+          checklessHistory.push_back(newKey);
+          isMate = !MoveList<LEGAL>(pos).size();
+          checklessHistory.pop_back();
+      }
       pos.undo_move(m);
 #ifndef NO_THREADS
       if (Thread* th = pos.this_thread())
           th->nodes.fetch_sub(1, std::memory_order_relaxed);
 #endif
-      if (!isMate)
+      if (hasCycle || !isMate)
           return false;
   }
 
