@@ -503,9 +503,11 @@ string UCI::dropped_piece(const Position& pos, Move m) {
 
 
 /// UCI::move() converts a Move to a string in coordinate notation (g1f3, a7a8q).
-/// The only special case is castling, where we print in the e1g1 notation in
-/// normal chess mode, and in e1h1 notation in chess960 mode. Internally all
-/// castling moves are always encoded as 'king captures rook'.
+/// Passing moves are reported as "0000" for variants without kings ("@@@@" when
+/// speaking XBoard), while variants with kings use the from-square notation.
+/// Castling is printed in the e1g1 notation in normal chess mode, and in e1h1
+/// notation in chess960 mode. Internally all castling moves are always encoded
+/// as 'king captures rook'.
 
 string UCI::move(const Position& pos, Move m) {
 
@@ -518,8 +520,14 @@ string UCI::move(const Position& pos, Move m) {
   if (m == MOVE_NULL)
       return "0000";
 
-  if (is_pass(m) && CurrentProtocol == XBOARD)
-      return "@@@@";
+  if (is_pass(m))
+  {
+      if (CurrentProtocol == XBOARD)
+          return "@@@@";
+
+      if (!pos.count<KING>())
+          return "0000";
+  }
 
   if (is_gating(m) && gating_square(m) == to)
       from = to_sq(m), to = from_sq(m);
