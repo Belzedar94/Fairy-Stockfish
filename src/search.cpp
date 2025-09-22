@@ -20,6 +20,7 @@
 #include <cassert>
 #include <cmath>
 #include <cstring>   // For std::memset
+#include <iomanip>
 #include <iostream>
 #include <sstream>
 
@@ -220,8 +221,38 @@ void MainThread::search() {
   // Sit in bughouse variants if partner requested it or we are dead
   if (rootPos.two_boards() && !Threads.abort && CurrentProtocol == XBOARD)
   {
-      while (!Threads.stop && (Partner.sitRequested || (Partner.weDead && !Partner.partnerDead)) && Time.elapsed() < Limits.time[us] - 1000)
-      {}
+      bool announcedSit = false;
+      while (!Threads.stop
+          && (Partner.sitRequested || (Partner.weDead && !Partner.partnerDead))
+          && Time.elapsed() < Limits.time[us] - 1000)
+      {
+          TimePoint nowMs = now();
+          if (!announcedSit)
+          {
+              Partner.ptell("status sit start");
+              Partner.lastSitAnnounce = nowMs;
+              announcedSit = true;
+          }
+
+          if (nowMs - Partner.lastSitAnnounce >= 1000)
+          {
+              TimePoint remaining = Limits.time[us] > Time.elapsed() ? Limits.time[us] - Time.elapsed() : TimePoint(0);
+              std::ostringstream status;
+              status << std::fixed << std::setprecision(1) << (remaining / 1000.0);
+              Partner.ptell("status sit " + status.str() + "s");
+              Partner.lastSitAnnounce = nowMs;
+          }
+      }
+
+      if (announcedSit)
+      {
+          if (Time.elapsed() >= Limits.time[us] - 1000)
+              Partner.ptell("status sit forced");
+          else
+              Partner.ptell("status sit end");
+
+          Partner.lastSitAnnounce = 0;
+      }
   }
 
   // When we reach the maximum depth, we can arrive here without a raise of
@@ -610,6 +641,8 @@ void Thread::search() {
                   Partner.weVirtualLoss = false;
                   Partner.fast = false;
               }
+
+              Partner.update_piece_flow(rootPos, rootMoves[0].pv);
           }
 
           // Stop the search if we have exceeded the totalTime

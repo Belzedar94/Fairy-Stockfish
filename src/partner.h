@@ -19,8 +19,10 @@
 #ifndef PARTNER_H_INCLUDED
 #define PARTNER_H_INCLUDED
 
+#include <array>
 #include <atomic>
 #include <sstream>
+#include <vector>
 
 #include "misc.h"
 #include "position.h"
@@ -42,11 +44,20 @@ struct PartnerHandler {
     void ptell(const std::string& message);
     void parse_partner(std::istringstream& is);
     void parse_ptell(std::istringstream& is, const Position& pos);
+    void update_piece_flow(const Position& rootPos, const std::vector<Move>& pv);
 
     std::atomic<bool> isFairy;
     std::atomic<bool> fast, sitRequested, partnerDead, weDead, weWin, weVirtualWin, weVirtualLoss;
     std::atomic<TimePoint> time, opptime;
     Move moveRequested;
+    std::atomic<uint64_t> partnerNeedsMask;
+    std::atomic<uint64_t> partnerBansMask;
+    std::atomic<uint64_t> ourNeedsMask;
+    std::string lastFlowSummary;
+    std::string lastNeedSummary;
+    uint64_t lastDeliveredMask;
+    uint64_t lastBlockedMask;
+    TimePoint lastSitAnnounce;
 };
 
 extern PartnerHandler Partner;
