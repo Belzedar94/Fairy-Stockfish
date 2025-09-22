@@ -22,6 +22,7 @@ GRANDHOUSE = "r8r/1nbqkcabn1/pppppppppp/10/10/10/10/PPPPPPPPPP/1NBQKCABN1/R8R[] 
 XIANGQI = "rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w - - 0 1"
 SHOGUN = "rnb+fkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNB+FKBNR[] w KQkq - 0 1"
 JANGGI = "rnba1abnr/4k4/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/4K4/RNBA1ABNR w - - 0 1"
+ASYMMETRIC32 = "dijlmotu/v?^&=~)}/8/8/8/8/SWYHCZXG/PNBRQFAE w - - 0 1"
 
 
 ini_text = """
@@ -62,6 +63,45 @@ promotionPieceTypes = qh
 flagPiece = k
 flagRegionWhite = *8
 flagRegionBlack = *1
+
+# Asymmetric 32-piece-type variant used to exercise extended piece mappings
+[asymmetric32:chess]
+castling = false
+checking = false
+king = -
+pawn = P
+knight = N
+bishop = B
+rook = R
+queen = Q
+fers = F
+alfil = A
+fersAlfil = E
+silver = S
+aiwok = W
+bers = Y
+archbishop = H
+chancellor = C
+amazon = Z
+knibis = X
+biskni = G
+kniroo = D
+rookni = I
+shogiPawn = J
+lance = L
+shogiKnight = M
+gold = O
+dragonHorse = T
+clobber = U
+breakthrough = V
+immobile = !/?
+cannon = @/^
+janggiCannon = #/&
+soldier = $/=
+horse = %/~
+elephant = (/)
+janggiElephant = {/}
+startFen = dijlmotu/v?^&=~)}/8/8/8/8/SWYHCZXG/PNBRQFAE w - - 0 1
 
 [diana:losalamos]
 pieceToCharTable = PNBRQ................Kpnbrq................k
@@ -244,6 +284,9 @@ variant_positions = {
     "orda": {
         "k7/8/8/8/8/8/8/K7 w - - 0 1": (False, False),  # K vs K
     },
+    "asymmetric32": {
+        ASYMMETRIC32: (False, False),
+    },
     "tencubed": {
         "2cwamwc2/1rnbqkbnr1/pppppppppp/10/10/10/10/PPPPPPPPPP/1RNBQKBNR1/2CWAMWC2 w - - 0 1":  (False, False),  # startpos
         "10/5k4/10/10/10/10/10/10/5KC3/10 w - - 0 1":  (False, True),  # KC vs K
@@ -315,6 +358,7 @@ class TestPyffish(unittest.TestCase):
     def test_variants_loaded(self):
         variants = sf.variants()
         self.assertTrue("shogun" in variants)
+        self.assertTrue("asymmetric32" in variants)
 
     def test_set_option(self):
         result = sf.set_option("UCI_Variant", "capablanca")
@@ -343,6 +387,9 @@ class TestPyffish(unittest.TestCase):
 
         result = sf.start_fen("shogun")
         self.assertEqual(result, SHOGUN)
+
+        result = sf.start_fen("asymmetric32")
+        self.assertEqual(result, ASYMMETRIC32)
 
     def test_legal_moves(self):
         fen = "10/10/10/10/10/k9/10/K9 w - - 0 1"
