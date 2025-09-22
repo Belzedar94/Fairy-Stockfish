@@ -136,6 +136,11 @@ pawnTypes = ps
 # Capture-anything: allow self-capture while keeping standard chess rules otherwise
 [capture-anything:chess]
 selfCapture = true
+
+# Fatal giveaway: non-pawns become neutral dead squares after capturing
+[fatalgiveaway:giveaway]
+deathOnCaptureTypes = KQRBN
+description = Pieces other than pawns die after capturing a live piece; captured bodies remain as neutral ^ squares.
 """
 
 sf.load_variant_config(ini_text)

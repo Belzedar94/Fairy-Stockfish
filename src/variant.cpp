@@ -402,11 +402,6 @@ namespace {
         return v;
     }
 
-    Variant* fatal_giveaway_variant() {
-        Variant* v = giveaway_variant()->init();
-        v->deathOnCaptureTypes = v->pieceTypes & ~piece_set(PAWN);
-        return v;
-    }
     // Antichess
     // https://lichess.org/variant/antichess
     Variant* antichess_variant() {
@@ -1882,7 +1877,6 @@ void VariantMap::init() {
     add("misere", misere_variant());
     add("losers", losers_variant());
     add("giveaway", giveaway_variant());
-    add("fatalgiveaway", fatal_giveaway_variant());
     add("antichess", antichess_variant());
     add("suicide", suicide_variant());
     add("codrus", codrus_variant());
