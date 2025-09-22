@@ -389,6 +389,7 @@ inline CustomPieceMaterial classify_custom_piece(const Position& pos, PieceType 
 
     bool hasAttacks = false;
     bool hasColorChange = false;
+    bool hasNonAdjacentAttacks = false;
     int maxAdjacency = 0;
 
     for (Bitboard squares = region; squares;)
@@ -399,10 +400,14 @@ inline CustomPieceMaterial classify_custom_piece(const Position& pos, PieceType 
             continue;
 
         hasAttacks = true;
-        Bitboard adjacency = attacks & (PseudoAttacks[WHITE][KING][s] & board);
+        Bitboard kingAdjacency = PseudoAttacks[WHITE][KING][s] & board;
+        Bitboard adjacency = attacks & kingAdjacency;
         int adjacencyCount = popcount(adjacency);
         if (adjacencyCount > maxAdjacency)
             maxAdjacency = adjacencyCount;
+
+        if (attacks & ~kingAdjacency)
+            hasNonAdjacentAttacks = true;
 
         Bitboard tmp = attacks;
         while (tmp)
@@ -442,7 +447,7 @@ inline CustomPieceMaterial classify_custom_piece(const Position& pos, PieceType 
     }
 
     bool sliderBased = hasLongSlider && hasColorChange;
-    bool adjacencyBased = hasColorChange && maxAdjacency >= 5;
+    bool adjacencyBased = hasColorChange && maxAdjacency >= 4 && hasNonAdjacentAttacks;
 
     result.major = sliderBased || adjacencyBased;
     return result;
