@@ -928,7 +928,12 @@ inline Value Position::stalemate_value(int ply) const {
   if (var->stalematePieceCount)
   {
       int c = count<ALL_PIECES>(sideToMove) - count<ALL_PIECES>(~sideToMove);
-      return c == 0 ? VALUE_DRAW : convert_mate_value(c < 0 ? var->stalemateValue : -var->stalemateValue, ply);
+      if (c == 0)
+          return VALUE_DRAW;
+      Value v = c < 0 ? var->stalemateValue : -var->stalemateValue;
+      if (var->reverseMaterialCounting)
+          v = -v;
+      return convert_mate_value(v, ply);
   }
   // Check for checkmate of pseudo-royal pieces
   if (var->extinctionPseudoRoyal)
@@ -1628,7 +1633,8 @@ inline Value Position::material_counting_result() const {
       assert(false);
       result = VALUE_DRAW;
   }
-  return sideToMove == WHITE ? result : -result;
+  Value finalResult = sideToMove == WHITE ? result : -result;
+  return var->reverseMaterialCounting ? -finalResult : finalResult;
 }
 
 inline void Position::add_to_hand(Piece pc) {

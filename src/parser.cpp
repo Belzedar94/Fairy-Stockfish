@@ -547,10 +547,11 @@ Variant* VariantParser<DoCheck>::parse(Variant* v) {
     parse_attribute("collinearN", v->collinearN);
     parse_attribute("connectValue", v->connectValue);
     parse_attribute("materialCounting", v->materialCounting);
+    parse_attribute("reverseMaterialCounting", v->reverseMaterialCounting);
     parse_attribute("adjudicateFullBoard", v->adjudicateFullBoard);
     parse_attribute("countingRule", v->countingRule);
     parse_attribute("castlingWins", v->castlingWins);
-    
+
     // Report invalid options
     if (DoCheck)
     {
