@@ -2136,7 +2136,26 @@ void VariantMap::init() {
 // Pre-calculate derived properties
 Variant* Variant::conclude() {
     ensure_piece_letters(this);
-    if (pieceToCharTable == "-")
+    auto table_needs_refresh = [this]() {
+        if (pieceToCharTable == "-")
+            return true;
+
+        for (PieceSet ps = pieceTypes; ps;)
+        {
+            PieceType pt = pop_lsb(ps);
+            char up = pieceToChar[make_piece(WHITE, pt)];
+            if (up == ' ')
+                continue;
+
+            if (pieceToCharTable.find(uppercase_char(up)) == std::string::npos
+                || pieceToCharTable.find(lowercase_char(up)) == std::string::npos)
+                return true;
+        }
+
+        return false;
+    };
+
+    if (table_needs_refresh())
         pieceToCharTable = build_default_piece_to_char_table(this);
 
     // Enforce consistency to allow runtime optimizations
