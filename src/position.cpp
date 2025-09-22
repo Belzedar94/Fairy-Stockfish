@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cstddef> // For offsetof()
+#include <cstdint>
 #include <cstring> // For std::memset, std::memcmp
 #include <iomanip>
 #include <sstream>
@@ -46,6 +47,7 @@ namespace Zobrist {
   Key checks[COLOR_NB][CHECKS_NB];
   Key wall[SQUARE_NB];
   Key endgame[EG_EVAL_NB];
+  Key tablebase[TB_VARIANT_NB];
 }
 
 
@@ -181,6 +183,10 @@ void Position::init() {
 
   for (int i = NO_EG_EVAL; i < EG_EVAL_NB; ++i)
       Zobrist::endgame[i] = rng.rand<Key>();
+
+  for (int i = 0; i < TB_VARIANT_NB; ++i)
+      Zobrist::tablebase[i] = rng.rand<Key>();
+  Zobrist::tablebase[TB_VARIANT_NONE] = Key(0);
 
   // Prepare the cuckoo tables
   std::memset(cuckoo, 0, sizeof(cuckoo));
@@ -662,6 +668,8 @@ void Position::set_state(StateInfo* si) const {
   if (check_counting())
       for (Color c : {WHITE, BLACK})
           si->key ^= Zobrist::checks[c][si->checksRemaining[c]];
+
+  si->materialKey ^= Zobrist::tablebase[var ? var->tablebaseVariant : TB_VARIANT_NONE];
 }
 
 
@@ -669,7 +677,9 @@ void Position::set_state(StateInfo* si) const {
 /// the given endgame code string like "KBPKN". It is mainly a helper to
 /// get the material key out of an endgame code.
 
-Position& Position::set(const string& code, Color c, StateInfo* si) {
+Position& Position::set(const Variant* v, const string& code, Color c, StateInfo* si) {
+
+  const Variant* variantPtr = v ? v : variants.find("fairy")->second;
 
   string sides[] = { code.substr(code.find('v') != string::npos ? code.find('v') + 1 : code.find('K', 1)),      // Weak
                      code.substr(0, std::min(code.find('v'), code.find('K', 1))) }; // Strong
@@ -682,7 +692,12 @@ Position& Position::set(const string& code, Color c, StateInfo* si) {
   string n = std::to_string(8);
   string fenStr =  sides[0] + "///////" + sides[1] + " w - - 0 10";
 
-  return set(variants.find("fairy")->second, fenStr, false, si, nullptr);
+  return set(variantPtr, fenStr, false, si, nullptr);
+}
+
+Position& Position::set(const string& code, Color c, StateInfo* si) {
+
+  return set(variants.find("fairy")->second, code, c, si);
 }
 
 

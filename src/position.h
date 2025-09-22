@@ -113,6 +113,7 @@ public:
 
   // FEN string input/output
   Position& set(const Variant* v, const std::string& fenStr, bool isChess960, StateInfo* si, Thread* th, bool sfen = false);
+  Position& set(const Variant* v, const std::string& code, Color c, StateInfo* si);
   Position& set(const std::string& code, Color c, StateInfo* si);
   std::string fen(bool sfen = false, bool showPromoted = false, int countStarted = 0, std::string holdings = "-", Bitboard fogArea = 0) const;
 
@@ -1667,3 +1668,4 @@ inline bool Position::can_drop(Color c, PieceType pt) const {
 } // namespace Stockfish
 
 #endif // #ifndef POSITION_H_INCLUDED
+
