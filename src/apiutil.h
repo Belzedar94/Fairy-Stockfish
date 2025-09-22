@@ -19,17 +19,19 @@
 #ifndef APIUTIL_H_INCLUDED
 #define APIUTIL_H_INCLUDED
 
+#include <algorithm>
 #include <array>
-#include <vector>
-#include <string>
-#include <sstream>
 #include <cctype>
 #include <iostream>
 #include <math.h>
+#include <string>
+#include <sstream>
+#include <vector>
 
 #include "types.h"
 #include "position.h"
 #include "variant.h"
+#include "piece.h"
 
 namespace Stockfish {
 
@@ -363,6 +365,91 @@ inline const std::string move_to_san(Position& pos, Move m, Notation n) {
 
 } // namespace SAN
 
+namespace {
+
+struct CustomPieceMaterial {
+    bool major = false;
+    bool colorbound = false;
+};
+
+inline Bitboard piece_board_region(const Position& pos, PieceType pt) {
+    Bitboard board = pos.board_bb();
+    Bitboard mobility =  pos.board_bb(WHITE, pt)
+                       | pos.board_bb(BLACK, pt);
+    return mobility ? board & mobility : board;
+}
+
+inline CustomPieceMaterial classify_custom_piece(const Position& pos, PieceType pt) {
+    CustomPieceMaterial result;
+
+    Bitboard board = pos.board_bb();
+    Bitboard region = piece_board_region(pos, pt);
+    if (!region)
+        region = board;
+
+    bool hasAttacks = false;
+    bool hasColorChange = false;
+    int maxAdjacency = 0;
+
+    for (Bitboard squares = region; squares;)
+    {
+        Square s = pop_lsb(squares);
+        Bitboard attacks = PseudoAttacks[WHITE][pt][s] & board;
+        if (!attacks)
+            continue;
+
+        hasAttacks = true;
+        Bitboard adjacency = attacks & (PseudoAttacks[WHITE][KING][s] & board);
+        int adjacencyCount = popcount(adjacency);
+        if (adjacencyCount > maxAdjacency)
+            maxAdjacency = adjacencyCount;
+
+        Bitboard tmp = attacks;
+        while (tmp)
+        {
+            Square to = pop_lsb(tmp);
+            if (((file_of(s) + rank_of(s) + file_of(to) + rank_of(to)) & 1) != 0)
+            {
+                hasColorChange = true;
+                break;
+            }
+        }
+
+        if (hasColorChange && maxAdjacency >= 8)
+            break;
+    }
+
+    result.colorbound = hasAttacks && !hasColorChange;
+
+    const PieceInfo* info = pieceMap.find(pt)->second;
+    bool hasLongSlider = false;
+
+    auto considerSlider = [&](const std::map<Direction, int>& dirs) {
+        for (const auto& entry : dirs)
+        {
+            int limit = entry.second;
+            if (limit != 0 && limit <= 1)
+                continue;
+
+            hasLongSlider = true;
+        }
+    };
+
+    for (bool initial : {false, true})
+    {
+        considerSlider(info->slider[initial][MODALITY_CAPTURE]);
+        considerSlider(info->slider[initial][MODALITY_QUIET]);
+    }
+
+    bool sliderBased = hasLongSlider && hasColorChange;
+    bool adjacencyBased = hasColorChange && maxAdjacency >= 5;
+
+    result.major = sliderBased || adjacencyBased;
+    return result;
+}
+
+} // namespace
+
 inline bool has_insufficient_material(Color c, const Position& pos) {
 
     // Other win rules
@@ -398,22 +485,30 @@ inline bool has_insufficient_material(Color c, const Position& pos) {
         if (pt == KING || !(pos.board_bb(c, pt) & pos.board_bb(~c, KING)) || (pos.extinction_pseudo_royal() && pos.blast_on_capture() && (pos.extinction_piece_types() & pt)))
             restricted |= pos.pieces(c, pt);
 
-        // If piece is a major piece or a custom piece we consider it sufficient for mate.
-        // To avoid false positives, we assume any custom piece has mating potential.
-        else if ((MAJOR_PIECES & pt) || is_custom(pt))
+        // Determine classification for non-restricted pieces, taking configured pieces into account.
+        else
         {
-            // Check if piece is already on the board
-            if (pos.count(c, pt) > 0)
-                return false;
+            bool major = (MAJOR_PIECES & pt);
+            bool isColorbound = (COLORBOUND_PIECES & pt);
 
-            // Check if any pawn can promote to this piece type
-            if (hasPromotingPawn && (pos.promotion_piece_types(c) & pt))
-                return false;
+            if (is_custom(pt))
+            {
+                CustomPieceMaterial props = classify_custom_piece(pos, pt);
+                major = major || props.major;
+                isColorbound = isColorbound || props.colorbound;
+            }
+
+            if (major)
+            {
+                if (pos.count(c, pt) > 0)
+                    return false;
+
+                if (hasPromotingPawn && (pos.promotion_piece_types(c) & pt))
+                    return false;
+            }
+            else if (isColorbound)
+                colorbound |= pos.pieces(pt);
         }
-
-        // Collect color-bound pieces
-        else if (COLORBOUND_PIECES & pt)
-            colorbound |= pos.pieces(pt);
     }
 
     Bitboard unbound = pos.pieces() ^ restricted ^ colorbound;
