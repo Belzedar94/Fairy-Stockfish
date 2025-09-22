@@ -151,11 +151,12 @@ namespace {
     const Bitboard tripleStepRegion = pos.triple_step_region(Us);
 
     const Bitboard pawns      = pos.pieces(Us, PAWN);
-    const Bitboard movable    = pos.board_bb(Us, PAWN) & ~pos.pieces();
+    Bitboard neutral = pos.dead_squares();
+    const Bitboard movable    = pos.board_bb(Us, PAWN) & ~(pos.pieces() | neutral);
     const Bitboard friendlyCapturable = pos.pieces(Us) & ~pos.pieces(Us, KING);
     const Bitboard capturable = pos.board_bb(Us, PAWN)
-                              & (allowFriendlyCaptures ? (pos.pieces(Them) | friendlyCapturable)
-                                                       :  pos.pieces(Them));
+                              & (allowFriendlyCaptures ? (pos.pieces(Them) | friendlyCapturable | neutral)
+                                                       :  (pos.pieces(Them) | neutral));
 
     target = Type == EVASIONS ? target : AllSquares;
 
@@ -244,7 +245,7 @@ namespace {
                 PieceType pt = pop_msb(ps);
                 if (pos.promotion_limit(pt) && pos.promotion_limit(pt) <= pos.count(Us, pt))
                     continue;
-                Bitboard b = ((pos.attacks_from(Us, pt, from) & ~pos.pieces()) | from) & target;
+                Bitboard b = ((pos.attacks_from(Us, pt, from) & ~(pos.pieces() | pos.dead_squares())) | from) & target;
                 while (b)
                 {
                     Square to = pop_lsb(b);
@@ -270,7 +271,7 @@ namespace {
             moveList = make_move_and_gating<NORMAL>(pos, moveList, Us, to - UpLeft, to);
         }
 
-        for (Bitboard epSquares = pos.ep_squares() & ~pos.pieces(); epSquares; )
+        for (Bitboard epSquares = pos.ep_squares() & ~(pos.pieces() | pos.dead_squares()); epSquares; )
         {
             Square epSquare = pop_lsb(epSquares);
 
@@ -308,8 +309,10 @@ namespace {
 
         Bitboard attacks = pos.attacks_from(Us, Pt, from);
         Bitboard quiets = pos.moves_from(Us, Pt, from);
-        Bitboard captureSquares = (attacks & pos.pieces()) & captureTarget;
-        Bitboard quietSquares   = (quiets & ~pos.pieces()) & target;
+        Bitboard occPieces = pos.pieces();
+        Bitboard neutral = pos.dead_squares();
+        Bitboard captureSquares = (attacks & (occPieces | neutral)) & captureTarget;
+        Bitboard quietSquares   = (quiets & ~(occPieces | neutral)) & target;
         Bitboard b = captureSquares | quietSquares;
         Bitboard b1 = b;
         Bitboard promotion_zone = pos.promotion_zone(Us);
@@ -322,7 +325,7 @@ namespace {
                                                             | (allowFriendlyCaptures ? pos.pieces(Us) : Bitboard(0))))
                                      & promotion_zone)
                                 : Bitboard(0);
-        Bitboard epSquares = (pos.en_passant_types(Us) & Pt) ? (attacks & ~quiets & pos.ep_squares() & ~pos.pieces()) : Bitboard(0);
+        Bitboard epSquares = (pos.en_passant_types(Us) & Pt) ? (attacks & ~quiets & pos.ep_squares() & ~(pos.pieces() | pos.dead_squares())) : Bitboard(0);
 
         // target squares considering pawn promotions
         if (pawnPromotions && pos.mandatory_pawn_promotion())
@@ -332,7 +335,7 @@ namespace {
         if (b2 | b3)
         {
             if (pos.mandatory_piece_promotion())
-                b1 &= (promotion_zone & from ? Bitboard(0) : ~promotion_zone) | (pos.piece_promotion_on_capture() ? ~pos.pieces() : Bitboard(0));
+                b1 &= (promotion_zone & from ? Bitboard(0) : ~promotion_zone) | (pos.piece_promotion_on_capture() ? ~(pos.pieces() | pos.dead_squares()) : Bitboard(0));
             // Exclude quiet promotions/demotions
             if (pos.piece_promotion_on_capture())
             {
@@ -395,20 +398,20 @@ namespace {
     constexpr bool Checks = Type == QUIET_CHECKS; // Reduce template instantiations
     const Square ksq = pos.count<KING>(Us) ? pos.square<KING>(Us) : SQ_NONE;
     Bitboard target;
-    Bitboard captureTarget = Type == EVASIONS ? ~pos.pieces(Us) : Bitboard(0);
+    Bitboard captureTarget = Type == EVASIONS ? (~pos.pieces(Us) | pos.dead_squares()) : Bitboard(0);
 
     // Skip generating non-king moves when in double check
     if (Type != EVASIONS || !more_than_one(pos.checkers() & ~pos.non_sliding_riders()))
     {
         target = Type == EVASIONS     ?  between_bb(ksq, lsb(pos.checkers()))
                : Type == NON_EVASIONS ? ~pos.pieces( Us)
-               : Type == CAPTURES     ?  pos.pieces(~Us)
-                                      : ~pos.pieces(   ); // QUIETS || QUIET_CHECKS
+               : Type == CAPTURES     ? (pos.pieces(~Us) | pos.dead_squares())
+                                      : ~(pos.pieces() | pos.dead_squares()); // QUIETS || QUIET_CHECKS
 
         if (Type == EVASIONS)
         {
             if (pos.checkers() & pos.non_sliding_riders())
-                target = ~pos.pieces(Us);
+                target = ~(pos.pieces(Us) | pos.dead_squares());
             // Leaper attacks can not be blocked
             Square checksq = lsb(pos.checkers());
             if (LeaperAttacks[~Us][type_of(pos.piece_on(checksq))][checksq] & pos.square<KING>(Us))
@@ -418,9 +421,9 @@ namespace {
         // Remove inaccessible squares (outside board + wall squares)
         target &= pos.board_bb();
 
-        captureTarget = target;
+        captureTarget = target | pos.dead_squares();
         if (pos.self_capture() && (Type == NON_EVASIONS || Type == CAPTURES))
-            captureTarget |= pos.pieces(Us) & ~pos.pieces(Us, KING);
+            captureTarget |= pos.pieces(Us) & ~(pos.pieces(Us, KING));
 
         moveList = generate_pawn_moves<Us, Type>(pos, moveList, target);
         for (PieceSet ps = pos.piece_types() & ~(piece_set(PAWN) | KING); ps;)
@@ -428,7 +431,7 @@ namespace {
         // generate drops
         if (pos.piece_drops() && Type != CAPTURES && (pos.can_drop(Us, ALL_PIECES) || pos.two_boards()))
             for (PieceSet ps = pos.piece_types(); ps;)
-                moveList = generate_drops<Us, Type>(pos, moveList, pop_lsb(ps), target & ~pos.pieces(~Us));
+                moveList = generate_drops<Us, Type>(pos, moveList, pop_lsb(ps), target & ~(pos.pieces(~Us) | pos.dead_squares()));
 
         // Castling with non-king piece
         if (!pos.count<KING>(Us) && Type != CAPTURES && pos.can_castle(Us & ANY_CASTLING))
@@ -446,7 +449,7 @@ namespace {
             {
                 Square from = pos.square<KING>(Us);
                 Bitboard b = PseudoAttacks[WHITE][KNIGHT][from] & rank_bb(rank_of(from + (Us == WHITE ? NORTH : SOUTH)))
-                    & target & ~pos.pieces();
+                    & target & ~(pos.pieces() | pos.dead_squares());
                 while (b)
                     moveList = make_move_and_gating<SPECIAL>(pos, moveList, Us, from, pop_lsb(b));
             }
@@ -456,7 +459,7 @@ namespace {
             {
                 Square from = pop_lsb(b);
                 Square to = from + 2 * (Us == WHITE ? NORTH : SOUTH);
-                if (is_ok(to) && (target & to & ~pos.pieces()))
+                if (is_ok(to) && (target & to & ~(pos.pieces() | pos.dead_squares())))
                     moveList = make_move_and_gating<SPECIAL>(pos, moveList, Us, from, to);
             }
         }
@@ -476,11 +479,11 @@ namespace {
     if (pos.count<KING>(Us) && (!Checks || pos.blockers_for_king(~Us) & ksq))
     {
         Bitboard kingAttacks = pos.attacks_from(Us, KING, ksq) & pos.pieces();
-        Bitboard kingMoves   = pos.moves_from  (Us, KING, ksq) & ~pos.pieces();
-        Bitboard kingCaptureMask = Type == EVASIONS ? ~pos.pieces(Us) : captureTarget;
+        Bitboard kingMoves   = pos.moves_from  (Us, KING, ksq) & ~(pos.pieces() | pos.dead_squares());
+        Bitboard kingCaptureMask = Type == EVASIONS ? (~pos.pieces(Us) | pos.dead_squares()) : captureTarget;
         if (Type == EVASIONS && pos.self_capture())
-            kingCaptureMask |= pos.pieces(Us) & ~pos.pieces(Us, KING);
-        Bitboard kingQuietMask = Type == EVASIONS ? ~pos.pieces(Us) : target;
+            kingCaptureMask |= pos.pieces(Us) & ~(pos.pieces(Us, KING));
+        Bitboard kingQuietMask = Type == EVASIONS ? ~(pos.pieces(Us) | pos.dead_squares()) : target;
         Bitboard b = (kingAttacks & kingCaptureMask) | (kingMoves & kingQuietMask);
         while (b)
             moveList = make_move_and_gating<NORMAL>(pos, moveList, Us, ksq, pop_lsb(b));
