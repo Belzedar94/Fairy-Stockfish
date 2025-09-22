@@ -125,13 +125,16 @@ namespace {
         for (PieceType pt = PAWN; pt <= KING; ++pt)
             consider_existing(pt);
 
-        // Always reserve 'K' for the king
-        if (v->pieceToChar[make_piece(WHITE, KING)] == ' ')
+        // Reserve 'K' for the king when the variant still uses a distinct king piece
+        if (v->pieceTypes & piece_set(KING))
         {
-            v->pieceToChar[make_piece(WHITE, KING)] = 'K';
-            v->pieceToChar[make_piece(BLACK, KING)] = 'k';
+            if (v->pieceToChar[make_piece(WHITE, KING)] == ' ')
+            {
+                v->pieceToChar[make_piece(WHITE, KING)] = 'K';
+                v->pieceToChar[make_piece(BLACK, KING)] = 'k';
+            }
+            used.insert(uppercase_char(v->pieceToChar[make_piece(WHITE, KING)]));
         }
-        used.insert(uppercase_char(v->pieceToChar[make_piece(WHITE, KING)]));
 
         auto assign_for = [&](PieceType pt) {
             if (pt != KING && !(v->pieceTypes & piece_set(pt)) && pt != v->kingType)
