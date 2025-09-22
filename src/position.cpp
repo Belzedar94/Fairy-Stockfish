@@ -1370,6 +1370,9 @@ bool Position::pseudo_legal(const Move m) const {
   if (pc == NO_PIECE || color_of(pc) != us)
       return false;
 
+  if (capture(m) && capture_disabled())
+      return false;
+
   // The destination square cannot be occupied by a friendly piece unless self capture is allowed
   if (pieces(us) & to)
   {
@@ -1590,6 +1593,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
   Square to = to_sq(m);
   Piece pc = moved_piece(m);
   Piece captured = piece_on(type_of(m) == EN_PASSANT ? capture_square(to) : to);
+  bool isCaptureMove = captured != NO_PIECE;
   if (to == from)
   {
       assert((type_of(m) == PROMOTION && sittuyin_promotion()) || (is_pass(m) && (pass(us) || var->wallOrMove )));
@@ -1598,6 +1602,8 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
   st->capturedpromoted = is_promoted(to);
   st->unpromotedCapturedPiece = captured ? unpromoted_piece_on(to) : NO_PIECE;
   st->pass = is_pass(m);
+  st->colorChangeSquares = 0;
+  st->colorChangeWasPromoted = 0;
 
   assert(color_of(pc) == us);
   assert(captured == NO_PIECE
@@ -1606,6 +1612,74 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
              : (color_of(captured) == them
                 || (self_capture() && color_of(captured) == us))));
   assert(type_of(captured) != KING);
+
+  auto trigger_matches = [](ColorChangeTrigger trigger, bool isCapture) {
+      switch (trigger)
+      {
+      case ColorChangeTrigger::NEVER:
+          return false;
+      case ColorChangeTrigger::ON_CAPTURE:
+          return isCapture;
+      case ColorChangeTrigger::ON_NON_CAPTURE:
+          return !isCapture;
+      case ColorChangeTrigger::ALWAYS:
+          return true;
+      }
+      return false;
+  };
+
+  auto resolve_target_color = [&](ColorChangeTarget target, Color moverColor, Color currentColor, Piece capturedPiece) {
+      switch (target)
+      {
+      case ColorChangeTarget::NONE:
+          return currentColor;
+      case ColorChangeTarget::MOVER:
+          return moverColor;
+      case ColorChangeTarget::OPPONENT:
+          return ~moverColor;
+      case ColorChangeTarget::CAPTURED:
+          return capturedPiece ? color_of(capturedPiece) : ~moverColor;
+      case ColorChangeTarget::WHITE:
+          return WHITE;
+      case ColorChangeTarget::BLACK:
+          return BLACK;
+      }
+      return currentColor;
+  };
+
+  auto apply_color_change = [&](Square s, Piece newPiece, bool newPromoted, Piece newUnpromoted) {
+      Piece originalPiece = piece_on(s);
+      bool originalPromoted = is_promoted(s);
+      Piece originalUnpromoted = unpromoted_piece_on(s);
+
+      if (originalPiece == newPiece && originalPromoted == newPromoted
+          && (!newPromoted || originalUnpromoted == newUnpromoted))
+          return false;
+
+      st->colorChangeSquares |= s;
+      if (originalPromoted)
+          st->colorChangeWasPromoted |= s;
+      st->colorChangeOriginal[s] = originalPiece;
+      st->colorChangeUnpromoted[s] = originalUnpromoted;
+
+      remove_piece(s);
+      k ^= Zobrist::psq[originalPiece][s];
+      st->materialKey ^= Zobrist::psq[originalPiece][pieceCount[originalPiece]];
+      if (type_of(originalPiece) == PAWN)
+          st->pawnKey ^= Zobrist::psq[originalPiece][s];
+      if (type_of(originalPiece) != PAWN)
+          st->nonPawnMaterial[color_of(originalPiece)] -= PieceValue[MG][originalPiece];
+
+      put_piece(newPiece, s, newPromoted, newUnpromoted);
+      k ^= Zobrist::psq[newPiece][s];
+      st->materialKey ^= Zobrist::psq[newPiece][pieceCount[newPiece] - 1];
+      if (type_of(newPiece) == PAWN)
+          st->pawnKey ^= Zobrist::psq[newPiece][s];
+      if (type_of(newPiece) != PAWN)
+          st->nonPawnMaterial[color_of(newPiece)] += PieceValue[MG][newPiece];
+
+      return true;
+  };
 
   if (check_counting() && givesCheck)
       k ^= Zobrist::checks[us][st->checksRemaining[us]] ^ Zobrist::checks[us][--(st->checksRemaining[us])];
@@ -2002,6 +2076,22 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
       st->gatesBB[them] ^= square<KING>(them);
 
 
+  if (st->colorChangeSquares)
+  {
+      Bitboard changed = st->colorChangeSquares;
+      while (changed)
+      {
+          Square s = pop_lsb(changed);
+          Piece original = st->colorChangeOriginal[s];
+          bool wasPromoted = st->colorChangeWasPromoted & s;
+          Piece originalUnpromoted = st->colorChangeUnpromoted[s];
+          remove_piece(s);
+          put_piece(original, s, wasPromoted, originalUnpromoted);
+      }
+      pc = piece_on(to);
+  }
+
+
   // Remove the blast pieces
   if (captured && (blast_on_capture() || var->petrifyOnCaptureTypes))
   {
@@ -2081,6 +2171,83 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
               byTypeBB[ALL_PIECES] |= bsq;
               k ^= Zobrist::wall[bsq];
           }
+      }
+  }
+
+  Piece moverPieceBeforeChange = piece_on(to);
+  PieceType moverTypeBeforeChange = type_of(moverPieceBeforeChange);
+
+  if (trigger_matches(var->changingColors.trigger, isCaptureMove)
+      && (var->changingColors.pieceTypes & moverTypeBeforeChange)
+      && var->changingColors.colors[us])
+  {
+      if (!(var->changingColors.requireDifferentCaptureType
+            && (!isCaptureMove || !captured || type_of(captured) == moverTypeBeforeChange)))
+      {
+          PieceType targetType = moverTypeBeforeChange;
+          bool newPromoted = is_promoted(to);
+          Piece newUnpromoted = newPromoted ? unpromoted_piece_on(to) : NO_PIECE;
+
+          if (var->changingColors.changeTypeToCaptured && isCaptureMove && captured)
+          {
+              targetType = type_of(captured);
+              if (var->changingColors.resetPromotionState || targetType != moverTypeBeforeChange)
+              {
+                  newPromoted = false;
+                  newUnpromoted = NO_PIECE;
+              }
+          }
+          else if (var->changingColors.resetPromotionState)
+          {
+              newPromoted = false;
+              newUnpromoted = NO_PIECE;
+          }
+
+          Color targetColor = resolve_target_color(var->changingColors.target, us, color_of(moverPieceBeforeChange), captured);
+          Piece newPiece = make_piece(targetColor, targetType);
+          if (apply_color_change(to, newPiece, newPromoted, newUnpromoted) && Eval::useNNUE)
+              dp.piece[0] = newPiece;
+      }
+  }
+
+  Piece moverPieceAfterChange = piece_on(to);
+  Color moverColorAfterChange = color_of(moverPieceAfterChange);
+  PieceType moverTypeAfterChange = type_of(moverPieceAfterChange);
+
+  if (var->attackedChangingColors.enabled
+      && trigger_matches(var->attackedChangingColors.trigger, isCaptureMove)
+      && var->attackedChangingColors.moverColors[us]
+      && (var->attackedChangingColors.moverPieceTypes & moverTypeAfterChange))
+  {
+      Bitboard attacked = attacks_from(moverColorAfterChange, moverTypeAfterChange, to) & pieces();
+      while (attacked)
+      {
+          Square s = pop_lsb(attacked);
+          Piece victim = piece_on(s);
+          if (!victim)
+              continue;
+          Color victimColor = color_of(victim);
+          if (victimColor == moverColorAfterChange)
+              continue;
+          if (!var->attackedChangingColors.targetColors[victimColor])
+              continue;
+          if (!(var->attackedChangingColors.targetPieceTypes & type_of(victim)))
+              continue;
+
+          Color newColor = resolve_target_color(var->attackedChangingColors.target, moverColorAfterChange, victimColor, NO_PIECE);
+          if (newColor == victimColor)
+              continue;
+
+          bool newPromoted = is_promoted(s);
+          Piece newUnpromoted = newPromoted ? unpromoted_piece_on(s) : NO_PIECE;
+          if (var->attackedChangingColors.resetPromotionState)
+          {
+              newPromoted = false;
+              newUnpromoted = NO_PIECE;
+          }
+
+          Piece newPiece = make_piece(newColor, type_of(victim));
+          apply_color_change(s, newPiece, newPromoted, newUnpromoted);
       }
   }
 

@@ -73,6 +73,10 @@ struct StateInfo {
   Piece      promotionPawn;
   Bitboard   nonSlidingRiders;
   Bitboard   flippedPieces;
+  Bitboard   colorChangeSquares;
+  Bitboard   colorChangeWasPromoted;
+  Piece      colorChangeOriginal[SQUARE_NB];
+  Piece      colorChangeUnpromoted[SQUARE_NB];
   Bitboard   pseudoRoyalCandidates;
   Bitboard   pseudoRoyals;
   OptBool    legalCapture;
@@ -168,6 +172,7 @@ public:
   bool checking_permitted() const;
   bool drop_checks() const;
   bool self_capture() const;
+  bool capture_disabled() const;
   bool must_capture() const;
   bool has_capture() const;
   bool must_drop() const;
@@ -647,6 +652,11 @@ inline bool Position::drop_checks() const {
 inline bool Position::self_capture() const {
   assert(var != nullptr);
   return var->selfCapture;
+}
+
+inline bool Position::capture_disabled() const {
+  assert(var != nullptr);
+  return var->captureDisabled;
 }
 
 inline bool Position::must_capture() const {
