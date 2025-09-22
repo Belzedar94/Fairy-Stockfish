@@ -2332,6 +2332,24 @@ void Position::undo_move(Move m) {
   Square to = to_sq(m);
   Piece pc = piece_on(to);
 
+  if (st->colorChangeSquares)
+  {
+      Bitboard changed = st->colorChangeSquares;
+      while (changed)
+      {
+          Square s = pop_lsb(changed);
+          Piece original = st->colorChangeOriginal[s];
+          bool wasPromoted = st->colorChangeWasPromoted & s;
+          Piece originalUnpromoted = st->colorChangeUnpromoted[s];
+
+          if (piece_on(s))
+              remove_piece(s);
+          if (original)
+              put_piece(original, s, wasPromoted, originalUnpromoted);
+      }
+      pc = piece_on(to);
+  }
+
   assert(type_of(m) == DROP || empty(from) || type_of(m) == CASTLING || is_gating(m)
          || (type_of(m) == PROMOTION && sittuyin_promotion())
          || (is_pass(m) && (pass(us) || var->wallOrMove)));

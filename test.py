@@ -728,28 +728,28 @@ class TestPyffish(unittest.TestCase):
         self.assertEqual(int(new_fen.split()[4]), 0)
 
     def test_andernach_capture_changes_color(self):
-        fen = "4k3/8/8/4P3/3p4/8/8/4K3 w - - 0 1"
-        result = sf.get_fen("andernach", fen, ["e5d4"])
-        self.assertEqual(result, "4k3/8/8/8/3p4/8/8/4K3 b - - 0 1")
+        fen = "4k3/8/3n4/4P3/8/8/8/4K3 w - - 0 1"
+        result = sf.get_fen("andernach", fen, ["e5d6"])
+        self.assertEqual(result, "4k3/8/3p4/8/8/8/8/4K3 b - - 0 1")
 
     def test_andernach_non_capture_keeps_color(self):
         fen = "4k3/8/8/4P3/8/8/8/4K3 w - - 0 1"
         result = sf.get_fen("andernach", fen, ["e5e6"])
-        self.assertEqual(result, "4k3/8/4P3/8/8/8/8/4K3 b - - 1 1")
+        self.assertEqual(result, "4k3/8/4P3/8/8/8/8/4K3 b - - 0 1")
 
     def test_antiandernach_non_capture_changes_color(self):
         fen = "4k3/8/8/4P3/8/8/8/4K3 w - - 0 1"
         result = sf.get_fen("antiandernach", fen, ["e5e6"])
-        self.assertEqual(result, "4k3/8/4p3/8/8/8/8/4K3 b - - 1 1")
+        self.assertEqual(result, "4k3/8/4p3/8/8/8/8/4K3 b - - 0 1")
 
     def test_superandernach_changes_color_on_any_move(self):
         fen_non_capture = "4k3/8/8/4P3/8/8/8/4K3 w - - 0 1"
         result = sf.get_fen("superandernach", fen_non_capture, ["e5e6"])
-        self.assertEqual(result, "4k3/8/4p3/8/8/8/8/4K3 b - - 1 1")
+        self.assertEqual(result, "4k3/8/4p3/8/8/8/8/4K3 b - - 0 1")
 
-        fen_capture = "4k3/8/8/4P3/3p4/8/8/4K3 w - - 0 1"
-        result_capture = sf.get_fen("superandernach", fen_capture, ["e5d4"])
-        self.assertEqual(result_capture, "4k3/8/8/8/3p4/8/8/4K3 b - - 0 1")
+        fen_capture = "4k3/8/3n4/4P3/8/8/8/4K3 w - - 0 1"
+        result_capture = sf.get_fen("superandernach", fen_capture, ["e5d6"])
+        self.assertEqual(result_capture, "4k3/8/3p4/8/8/8/8/4K3 b - - 0 1")
 
     def test_tibetan_capture_changes_type_and_color(self):
         fen = "4k3/8/8/3p4/2Q5/8/8/4K3 b - - 0 1"
@@ -759,7 +759,7 @@ class TestPyffish(unittest.TestCase):
     def test_benedict_flips_attacked_pieces(self):
         fen = "4k3/3n4/8/8/8/8/3R4/4K3 w - - 0 1"
         result = sf.get_fen("benedict", fen, ["d2d4"])
-        self.assertEqual(result, "4k3/3N4/8/3R4/8/8/8/4K3 b - - 1 1")
+        self.assertEqual(result, "4k3/3N4/8/8/3R4/8/8/4K3 b - - 1 1")
 
     def test_benedict_disallows_captures(self):
         fen = "4k3/3n4/8/8/8/8/3R4/4K3 w - - 0 1"
