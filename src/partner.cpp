@@ -244,6 +244,7 @@ void PartnerHandler::reset() {
     ourNeedsMask = 0;
     lastFlowSummary.clear();
     lastNeedSummary.clear();
+    lastFeedSummary.clear();
     lastDeliveredMask = 0;
     lastBlockedMask = 0;
     lastSitAnnounce = 0;
@@ -456,9 +457,10 @@ void PartnerHandler::update_piece_flow(const Position& rootPos, const std::vecto
             ptell("need -");
             lastNeedSummary.clear();
         }
-        if (lastDeliveredMask)
+        if (!lastFeedSummary.empty() || lastDeliveredMask)
         {
             ptell("feed -");
+            lastFeedSummary.clear();
             lastDeliveredMask = 0;
         }
         lastBlockedMask = 0;
@@ -539,19 +541,30 @@ void PartnerHandler::update_piece_flow(const Position& rootPos, const std::vecto
 
     uint64_t incomingMask = counts_to_mask(info.toPartner);
     uint64_t deliverMask = incomingMask & partnerNeedsMask.load();
-    if (deliverMask != lastDeliveredMask)
+    if (!deliverMask)
     {
-        if (deliverMask)
+        if (lastDeliveredMask || !lastFeedSummary.empty())
         {
-            std::string deliverPieces = format_piece_counts(rootPos, info.toPartner, ~us, deliverMask);
-            if (!deliverPieces.empty())
-                ptell("feed " + deliverPieces);
-        }
-        else if (lastDeliveredMask)
             ptell("feed -");
-
-        lastDeliveredMask = deliverMask;
+            lastFeedSummary.clear();
+        }
     }
+    else
+    {
+        std::string deliverPieces = format_piece_counts(rootPos, info.toPartner, ~us, deliverMask);
+        if (!deliverPieces.empty())
+        {
+            if (deliverPieces != lastFeedSummary)
+            {
+                ptell("feed " + deliverPieces);
+                lastFeedSummary = deliverPieces;
+            }
+        }
+        else
+            lastFeedSummary.clear();
+    }
+
+    lastDeliveredMask = deliverMask;
 }
 
 template void PartnerHandler::ptell<HUMAN>(const std::string&);

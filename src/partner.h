@@ -22,6 +22,7 @@
 #include <array>
 #include <atomic>
 #include <sstream>
+#include <string>
 #include <vector>
 
 #include "misc.h"
@@ -55,6 +56,7 @@ struct PartnerHandler {
     std::atomic<uint64_t> ourNeedsMask;
     std::string lastFlowSummary;
     std::string lastNeedSummary;
+    std::string lastFeedSummary;
     uint64_t lastDeliveredMask;
     uint64_t lastBlockedMask;
     TimePoint lastSitAnnounce;
