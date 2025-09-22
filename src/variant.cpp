@@ -16,10 +16,14 @@
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include <string>
-#include <iostream>
+#include <algorithm>
+#include <cctype>
 #include <fstream>
+#include <iostream>
 #include <sstream>
+#include <string>
+#include <unordered_set>
+#include <vector>
 
 #include "parser.h"
 #include "piece.h"
@@ -32,6 +36,158 @@ namespace Stockfish {
 VariantMap variants; // Global object
 
 namespace {
+    inline char uppercase_char(char c) {
+        return char(std::toupper(static_cast<unsigned char>(c)));
+    }
+
+    inline char lowercase_char(char c) {
+        return char(std::tolower(static_cast<unsigned char>(c)));
+    }
+
+    std::vector<char> default_letter_candidates(PieceType pt, const Variant* v) {
+        std::vector<char> candidates;
+        std::unordered_set<char> seen;
+
+        auto add_candidate = [&](char c) {
+            if (std::isalpha(static_cast<unsigned char>(c)))
+                c = uppercase_char(c);
+            else if (!std::isdigit(static_cast<unsigned char>(c)))
+                return;
+            if (seen.insert(c).second)
+                candidates.push_back(c);
+        };
+
+        // Prefer explicitly configured synonyms first
+        char synonym = v->pieceToCharSynonyms[make_piece(WHITE, pt)];
+        if (synonym != ' ')
+            add_candidate(synonym);
+
+        std::string name = piece_name(pt);
+        if (!name.empty())
+        {
+            bool newWord = true;
+            char prev = 0;
+            for (size_t i = 0; i < name.size(); ++i)
+            {
+                char c = name[i];
+                if (!std::isalnum(static_cast<unsigned char>(c)))
+                {
+                    newWord = true;
+                    prev = c;
+                    continue;
+                }
+                if (newWord || (std::isupper(static_cast<unsigned char>(c))
+                                && (i == 0 || !std::isupper(static_cast<unsigned char>(prev)))))
+                    add_candidate(c);
+                newWord = false;
+                prev = c;
+            }
+            for (char c : name)
+                add_candidate(c);
+        }
+
+        return candidates;
+    }
+
+    char assign_default_letter(PieceType pt, Variant* v, std::unordered_set<char>& used)
+    {
+        const std::string fallback = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*-=+/?<>~";
+        auto candidates = default_letter_candidates(pt, v);
+        char current = v->pieceToChar[make_piece(WHITE, pt)];
+        if (current != ' ')
+            candidates.insert(candidates.begin(), uppercase_char(current));
+
+        for (char candidate : candidates)
+            if (used.insert(candidate).second)
+                return candidate;
+
+        for (char fallbackChar : fallback)
+            if (used.insert(fallbackChar).second)
+                return fallbackChar;
+
+        // As a last resort, cycle through ASCII letters
+        for (char fallbackChar = '!'; fallbackChar <= '~'; ++fallbackChar)
+            if (used.insert(fallbackChar).second)
+                return fallbackChar;
+
+        return 'X';
+    }
+
+    void ensure_piece_letters(Variant* v)
+    {
+        std::unordered_set<char> used;
+        auto consider_existing = [&](PieceType pt) {
+            char c = v->pieceToChar[make_piece(WHITE, pt)];
+            if (c != ' ')
+                used.insert(uppercase_char(c));
+        };
+
+        for (PieceType pt = PAWN; pt <= KING; ++pt)
+            consider_existing(pt);
+
+        // Reserve 'K' for the king when the variant still uses a distinct king piece
+        if (v->pieceTypes & piece_set(KING))
+        {
+            if (v->pieceToChar[make_piece(WHITE, KING)] == ' ')
+            {
+                v->pieceToChar[make_piece(WHITE, KING)] = 'K';
+                v->pieceToChar[make_piece(BLACK, KING)] = 'k';
+            }
+            used.insert(uppercase_char(v->pieceToChar[make_piece(WHITE, KING)]));
+        }
+
+        auto assign_for = [&](PieceType pt) {
+            if (pt != KING && !(v->pieceTypes & piece_set(pt)) && pt != v->kingType)
+                return;
+
+            char& whiteChar = v->pieceToChar[make_piece(WHITE, pt)];
+            if (whiteChar != ' ')
+            {
+                used.insert(uppercase_char(whiteChar));
+                return;
+            }
+
+            char assigned = assign_default_letter(pt, v, used);
+            whiteChar = assigned;
+            v->pieceToChar[make_piece(BLACK, pt)] = lowercase_char(assigned);
+        };
+
+        for (PieceType pt = PAWN; pt <= KING; ++pt)
+            assign_for(pt);
+    }
+
+    std::string build_default_piece_to_char_table(const Variant* v)
+    {
+        std::string upper;
+        std::string lower;
+        std::unordered_set<char> added;
+
+        auto append_piece = [&](PieceType pt) {
+            if (pt != KING && !(v->pieceTypes & piece_set(pt)) && pt != v->kingType)
+                return;
+
+            char c = v->pieceToChar[make_piece(WHITE, pt)];
+            if (c == ' ')
+                return;
+            c = uppercase_char(c);
+            if (!added.insert(c).second)
+                return;
+            upper.push_back(c);
+            lower.push_back(lowercase_char(c));
+        };
+
+        for (PieceType pt = PAWN; pt <= KING; ++pt)
+            append_piece(pt);
+
+        if (upper.empty())
+        {
+            upper.push_back('K');
+            lower.push_back('k');
+        }
+
+        return upper + lower;
+    }
+
     // Base variant
     Variant* variant_base() {
         Variant* v = new Variant();
@@ -1979,6 +2135,29 @@ void VariantMap::init() {
 
 // Pre-calculate derived properties
 Variant* Variant::conclude() {
+    ensure_piece_letters(this);
+    auto table_needs_refresh = [this]() {
+        if (pieceToCharTable == "-")
+            return true;
+
+        for (PieceSet ps = pieceTypes; ps;)
+        {
+            PieceType pt = pop_lsb(ps);
+            char up = pieceToChar[make_piece(WHITE, pt)];
+            if (up == ' ')
+                continue;
+
+            if (pieceToCharTable.find(uppercase_char(up)) == std::string::npos
+                || pieceToCharTable.find(lowercase_char(up)) == std::string::npos)
+                return true;
+        }
+
+        return false;
+    };
+
+    if (table_needs_refresh())
+        pieceToCharTable = build_default_piece_to_char_table(this);
+
     // Enforce consistency to allow runtime optimizations
     if (!doubleStep)
         doubleStepRegion[WHITE] = doubleStepRegion[BLACK] = 0;
