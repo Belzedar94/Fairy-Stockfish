@@ -1668,6 +1668,8 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
 
   auto apply_color_change = [&](Square s, Piece newPiece, bool newPromoted, Piece newUnpromoted) {
       Piece originalPiece = piece_on(s);
+      if (originalPiece == NO_PIECE)
+          return false;
       bool originalPromoted = is_promoted(s);
       Piece originalUnpromoted = unpromoted_piece_on(s);
 
@@ -2194,79 +2196,85 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
   }
 
   Piece moverPieceBeforeChange = piece_on(to);
-  PieceType moverTypeBeforeChange = type_of(moverPieceBeforeChange);
-
-  if (trigger_matches(var->changingColors.trigger, isCaptureMove)
-      && (var->changingColors.pieceTypes & moverTypeBeforeChange)
-      && var->changingColors.colors[us])
+  if (moverPieceBeforeChange != NO_PIECE)
   {
-      if (!(var->changingColors.requireDifferentCaptureType
-            && (!isCaptureMove || !captured || type_of(captured) == moverTypeBeforeChange)))
-      {
-          PieceType targetType = moverTypeBeforeChange;
-          bool newPromoted = is_promoted(to);
-          Piece newUnpromoted = newPromoted ? unpromoted_piece_on(to) : NO_PIECE;
+      PieceType moverTypeBeforeChange = type_of(moverPieceBeforeChange);
 
-          if (var->changingColors.changeTypeToCaptured && isCaptureMove && captured)
+      if (trigger_matches(var->changingColors.trigger, isCaptureMove)
+          && (var->changingColors.pieceTypes & moverTypeBeforeChange)
+          && var->changingColors.colors[us])
+      {
+          if (!(var->changingColors.requireDifferentCaptureType
+                && (!isCaptureMove || !captured || type_of(captured) == moverTypeBeforeChange)))
           {
-              targetType = type_of(captured);
-              if (var->changingColors.resetPromotionState || targetType != moverTypeBeforeChange)
+              PieceType targetType = moverTypeBeforeChange;
+              bool newPromoted = is_promoted(to);
+              Piece newUnpromoted = newPromoted ? unpromoted_piece_on(to) : NO_PIECE;
+
+              if (var->changingColors.changeTypeToCaptured && isCaptureMove && captured)
+              {
+                  targetType = type_of(captured);
+                  if (var->changingColors.resetPromotionState || targetType != moverTypeBeforeChange)
+                  {
+                      newPromoted = false;
+                      newUnpromoted = NO_PIECE;
+                  }
+              }
+              else if (var->changingColors.resetPromotionState)
               {
                   newPromoted = false;
                   newUnpromoted = NO_PIECE;
               }
-          }
-          else if (var->changingColors.resetPromotionState)
-          {
-              newPromoted = false;
-              newUnpromoted = NO_PIECE;
-          }
 
-          Color targetColor = resolve_target_color(var->changingColors.target, us, color_of(moverPieceBeforeChange), captured);
-          Piece newPiece = make_piece(targetColor, targetType);
-          if (apply_color_change(to, newPiece, newPromoted, newUnpromoted) && Eval::useNNUE)
-              dp.piece[0] = newPiece;
+              Color targetColor = resolve_target_color(var->changingColors.target, us, color_of(moverPieceBeforeChange), captured);
+              Piece newPiece = make_piece(targetColor, targetType);
+              if (apply_color_change(to, newPiece, newPromoted, newUnpromoted) && Eval::useNNUE)
+                  dp.piece[0] = newPiece;
+          }
       }
   }
 
   Piece moverPieceAfterChange = piece_on(to);
-  Color moverColorAfterChange = color_of(moverPieceAfterChange);
-  PieceType moverTypeAfterChange = type_of(moverPieceAfterChange);
-
-  if (var->attackedChangingColors.enabled
-      && trigger_matches(var->attackedChangingColors.trigger, isCaptureMove)
-      && var->attackedChangingColors.moverColors[us]
-      && (var->attackedChangingColors.moverPieceTypes & moverTypeAfterChange))
+  if (moverPieceAfterChange != NO_PIECE)
   {
-      Bitboard attacked = attacks_from(moverColorAfterChange, moverTypeAfterChange, to) & pieces();
-      while (attacked)
+      Color moverColorAfterChange = color_of(moverPieceAfterChange);
+      PieceType moverTypeAfterChange = type_of(moverPieceAfterChange);
+
+      if (var->attackedChangingColors.enabled
+          && trigger_matches(var->attackedChangingColors.trigger, isCaptureMove)
+          && var->attackedChangingColors.moverColors[us]
+          && (var->attackedChangingColors.moverPieceTypes & moverTypeAfterChange))
       {
-          Square s = pop_lsb(attacked);
-          Piece victim = piece_on(s);
-          if (!victim)
-              continue;
-          Color victimColor = color_of(victim);
-          if (victimColor == moverColorAfterChange)
-              continue;
-          if (!var->attackedChangingColors.targetColors[victimColor])
-              continue;
-          if (!(var->attackedChangingColors.targetPieceTypes & type_of(victim)))
-              continue;
-
-          Color newColor = resolve_target_color(var->attackedChangingColors.target, moverColorAfterChange, victimColor, NO_PIECE);
-          if (newColor == victimColor)
-              continue;
-
-          bool newPromoted = is_promoted(s);
-          Piece newUnpromoted = newPromoted ? unpromoted_piece_on(s) : NO_PIECE;
-          if (var->attackedChangingColors.resetPromotionState)
+          Bitboard attacked = attacks_from(moverColorAfterChange, moverTypeAfterChange, to) & pieces();
+          while (attacked)
           {
-              newPromoted = false;
-              newUnpromoted = NO_PIECE;
-          }
+              Square s = pop_lsb(attacked);
+              Piece victim = piece_on(s);
+              if (!victim)
+                  continue;
+              Color victimColor = color_of(victim);
+              if (victimColor == moverColorAfterChange)
+                  continue;
+              if (!var->attackedChangingColors.targetColors[victimColor])
+                  continue;
+              if (!(var->attackedChangingColors.targetPieceTypes & type_of(victim)))
+                  continue;
 
-          Piece newPiece = make_piece(newColor, type_of(victim));
-          apply_color_change(s, newPiece, newPromoted, newUnpromoted);
+              Color newColor = resolve_target_color(var->attackedChangingColors.target, moverColorAfterChange, victimColor, NO_PIECE);
+              if (newColor == victimColor)
+                  continue;
+
+              bool newPromoted = is_promoted(s);
+              Piece newUnpromoted = newPromoted ? unpromoted_piece_on(s) : NO_PIECE;
+              if (var->attackedChangingColors.resetPromotionState)
+              {
+                  newPromoted = false;
+                  newUnpromoted = NO_PIECE;
+              }
+
+              Piece newPiece = make_piece(newColor, type_of(victim));
+              apply_color_change(s, newPiece, newPromoted, newUnpromoted);
+          }
       }
   }
 
