@@ -67,8 +67,10 @@ namespace {
       {
           char c = betza[i];
           // Modality
-          if (c == 'm' || c == 'c')
-              moveModalities.push_back(c == 'c' ? MODALITY_CAPTURE : MODALITY_QUIET);
+          if (c == 'm' || c == 'c' || c == 'k')
+              moveModalities.push_back(c == 'c' ? MODALITY_CAPTURE
+                                       : c == 'k' ? MODALITY_CHECK
+                                                  : MODALITY_QUIET);
           // Hopper
           else if (c == 'p' || c == 'g')
           {

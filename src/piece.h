@@ -27,7 +27,7 @@
 
 namespace Stockfish {
 
-enum MoveModality {MODALITY_QUIET, MODALITY_CAPTURE, MOVE_MODALITY_NB};
+enum MoveModality {MODALITY_QUIET, MODALITY_CAPTURE, MODALITY_CHECK, MOVE_MODALITY_NB};
 
 /// PieceInfo struct stores information about the piece movements.
 
