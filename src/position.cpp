@@ -1448,6 +1448,64 @@ bool Position::gives_check(Move m) const {
   if (!count<KING>(~sideToMove))
       return false;
 
+  if (var->fastCheckDetection)
+  {
+      MoveType mt = type_of(m);
+
+      if (mt == NORMAL || mt == EN_PASSANT || mt == PROMOTION || mt == CASTLING)
+      {
+          Square ksq = square<KING>(~sideToMove);
+          Bitboard kingBB = square_bb(ksq);
+          Bitboard occupied = pieces();
+          occupied ^= from;
+
+          Bitboard movedSquares = square_bb(from);
+
+          if (mt == CASTLING)
+          {
+              Square kto = make_square(to > from ? castling_kingside_file() : castling_queenside_file(),
+                                       castling_rank(sideToMove));
+              Square rto = kto + (to > from ? WEST : EAST);
+              PieceType rookType = type_of(piece_on(to));
+
+              occupied ^= to;
+              occupied |= kto;
+              occupied |= rto;
+
+              if (attacks_bb(sideToMove, king_type(), kto, occupied ^ kto) & kingBB)
+                  return true;
+
+              if (attacks_bb(sideToMove, rookType, rto, occupied ^ rto) & kingBB)
+                  return true;
+
+              movedSquares |= square_bb(to);
+          }
+          else
+          {
+              Square capsq = mt == EN_PASSANT ? capture_square(to) : to;
+
+              if (piece_on(capsq) != NO_PIECE)
+                  occupied ^= capsq;
+
+              occupied |= to;
+
+              if (mt == PROMOTION)
+              {
+                  if (attacks_bb(sideToMove, promotion_type(m), to, occupied ^ to) & kingBB)
+                      return true;
+              }
+              else if (check_squares(type_of(moved_piece(m))) & to)
+                  return true;
+          }
+
+          if (((blockers_for_king(~sideToMove) & movedSquares) || (non_sliding_riders() & pieces(sideToMove)))
+              && (attackers_to(ksq, occupied) & occupied & pieces(sideToMove)))
+              return true;
+
+          return false;
+      }
+  }
+
   Bitboard occupied = (type_of(m) != DROP ? pieces() ^ from : pieces()) | to;
   Bitboard janggiCannons = pieces(JANGGI_CANNON);
   if (type_of(moved_piece(m)) == JANGGI_CANNON)
