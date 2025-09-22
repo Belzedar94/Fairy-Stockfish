@@ -453,6 +453,7 @@ Variant* VariantParser<DoCheck>::parse(Variant* v) {
     parse_attribute("castlingRookPiecesBlack", v->castlingRookPieces[BLACK], v->pieceToChar);
     parse_attribute("oppositeCastling", v->oppositeCastling);
     parse_attribute("checking", v->checking);
+    parse_attribute("checkless", v->checkless);
     parse_attribute("dropChecks", v->dropChecks);
     parse_attribute("mustCapture", v->mustCapture);
     parse_attribute("selfCapture", v->selfCapture);

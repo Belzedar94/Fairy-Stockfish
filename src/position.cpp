@@ -1053,8 +1053,37 @@ bool Position::legal(Move m) const {
   assert(!count<KING>(us) || piece_on(square<KING>(us)) == make_piece(us, KING));
   assert(board_bb() & to);
 
+  bool givesCheck = false;
+  bool givesCheckEvaluated = false;
+  auto compute_gives_check = [&]() {
+      if (!givesCheckEvaluated)
+      {
+          givesCheck = gives_check(m);
+          givesCheckEvaluated = true;
+      }
+      return givesCheck;
+  };
+
   // Illegal checks
-  if ((!checking_permitted() || (sittuyin_promotion() && type_of(m) == PROMOTION) || (!drop_checks() && type_of(m) == DROP)) && gives_check(m))
+  if (!checking_permitted() && compute_gives_check())
+  {
+      if (!checkless())
+          return false;
+
+      Position& pos = const_cast<Position&>(*this);
+      StateInfo stCheckless;
+      pos.do_move(m, stCheckless, givesCheck);
+      bool isMate = !MoveList<LEGAL>(pos).size();
+      pos.undo_move(m);
+#ifndef NO_THREADS
+      if (Thread* th = pos.this_thread())
+          th->nodes.fetch_sub(1, std::memory_order_relaxed);
+#endif
+      if (!isMate)
+          return false;
+  }
+
+  if (((sittuyin_promotion() && type_of(m) == PROMOTION) || (!drop_checks() && type_of(m) == DROP)) && compute_gives_check())
       return false;
 
   // Illegal quiet moves

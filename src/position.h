@@ -166,6 +166,7 @@ public:
   bool fast_attacks() const;
   bool fast_attacks2() const;
   bool checking_permitted() const;
+  bool checkless() const;
   bool drop_checks() const;
   bool self_capture() const;
   bool must_capture() const;
@@ -622,6 +623,11 @@ inline int Position::nnue_king_square_index(Square ksq) const {
 inline bool Position::checking_permitted() const {
   assert(var != nullptr);
   return var->checking;
+}
+
+inline bool Position::checkless() const {
+  assert(var != nullptr);
+  return var->checkless;
 }
 
 inline bool Position::free_drops() const {
