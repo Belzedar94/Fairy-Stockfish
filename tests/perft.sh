@@ -10,17 +10,35 @@ trap 'error ${LINENO}' ERR
 
 echo "perft testing started"
 
-cat << EOF > perft.exp
+cat << 'EOF' > perft.exp
    set timeout 60
-   lassign \$argv var pos depth result chess960
-   if {\$chess960 eq ""} {set chess960 false}
-   spawn ./stockfish
-   send "setoption name UCI_Chess960 value \$chess960\\n"
-   send "setoption name UCI_Variant value \$var\\n"
-   send "position \$pos\\ngo perft \$depth\\n"
-   expect "Nodes searched? \$result" {} timeout {exit 1}
-   send "quit\\n"
-   expect eof
+   if {[catch {lassign $argv var pos depth result chess960} err]} {
+       puts stderr "failed to parse arguments: $err"
+       exit 1
+   }
+   if {$chess960 eq ""} {set chess960 false}
+   if {[catch {spawn ./stockfish} err]} {
+       puts stderr "failed to spawn ./stockfish: $err"
+       exit 1
+   }
+   if {[catch {send "setoption name UCI_Chess960 value $chess960\n"} err]} {
+       puts stderr "failed to configure Chess960: $err"
+       exit 1
+   }
+   if {[catch {send "setoption name UCI_Variant value $var\n"} err]} {
+       puts stderr "failed to configure variant: $err"
+       exit 1
+   }
+   if {[catch {send "position $pos\ngo perft $depth\n"} err]} {
+       puts stderr "failed to start perft: $err"
+       exit 1
+   }
+   if {[catch {expect "Nodes searched? $result"} err]} {
+       puts stderr "perft expectation failed: $err"
+       exit 1
+   }
+   catch {send "quit\n"}
+   catch {expect eof}
 EOF
 
 # chess

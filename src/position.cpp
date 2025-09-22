@@ -1592,6 +1592,25 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
   Square from = from_sq(m);
   Square to = to_sq(m);
   Piece pc = moved_piece(m);
+  if (pc == NO_PIECE)
+  {
+      assert(is_pass(m));
+
+      st->capturedpromoted = false;
+      st->unpromotedCapturedPiece = NO_PIECE;
+      st->capturedPiece = NO_PIECE;
+      st->pass = true;
+
+      dp.dirty_num = 0;
+      st->key = k;
+      st->checkersBB = Bitboard(0);
+      sideToMove = ~sideToMove;
+      set_check_info(st);
+      st->repetition = 0;
+
+      assert(pos_is_ok());
+      return;
+  }
   Piece captured = piece_on(type_of(m) == EN_PASSANT ? capture_square(to) : to);
   bool isCaptureMove = captured != NO_PIECE;
   if (to == from)
