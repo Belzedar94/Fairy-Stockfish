@@ -582,9 +582,12 @@ void Position::set_check_info(StateInfo* si) const {
   {
       PieceType pt = pop_lsb(ps);
       PieceType movePt = pt == KING ? king_type() : pt;
-      si->checkSquares[pt] = ksq != SQ_NONE ? attacks_bb(~sideToMove, movePt, ksq, pieces()) : Bitboard(0);
+      si->checkSquares[pt] = ksq != SQ_NONE
+                           ? (attacks_bb(~sideToMove, movePt, ksq, pieces())
+                              | check_attacks_bb(~sideToMove, movePt, ksq, pieces()))
+                           : Bitboard(0);
       // Collect special piece types that require slower check and evasion detection
-      if (AttackRiderTypes[movePt] & NON_SLIDING_RIDERS)
+      if ((AttackRiderTypes[movePt] | CheckRiderTypes[movePt]) & NON_SLIDING_RIDERS)
           si->nonSlidingRiders |= pieces(pt);
   }
   si->shak = si->checkersBB & (byTypeBB[KNIGHT] | byTypeBB[ROOK] | byTypeBB[BERS]);
@@ -972,6 +975,19 @@ Bitboard Position::attackers_to(Square s, Bitboard occupied, Color c, Bitboard j
               b |= attacks_bb(~c, move_pt, s, occupied) & attacks_bb(~c, move_pt, s, occupied & ~janggiCannons) & pieces(c, JANGGI_CANNON);
           else
               b |= attacks_bb(~c, move_pt, s, occupied) & pieces(c, pt);
+
+          if (CheckRiderTypes[move_pt] & ASYMMETRICAL_RIDERS)
+          {
+              Bitboard asymmetricals = PseudoCheckAttacks[~c][move_pt][s] & pieces(c, pt);
+              while (asymmetricals)
+              {
+                  Square s2 = pop_lsb(asymmetricals);
+                  if (check_attacks_bb(c, move_pt, s2, occupied) & s)
+                      b |= s2;
+              }
+          }
+          else
+              b |= check_attacks_bb(~c, move_pt, s, occupied) & pieces(c, pt);
       }
   }
 
