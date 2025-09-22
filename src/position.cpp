@@ -1977,8 +1977,16 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
       {
           // Add gating piece
           dp.piece[dp.dirty_num] = gating_piece;
-          dp.handPiece[dp.dirty_num] = gating_piece;
-          dp.handCount[dp.dirty_num] = pieceCountInHand[us][gating_type(m)];
+          if (gating_from_hand())
+          {
+              dp.handPiece[dp.dirty_num] = gating_piece;
+              dp.handCount[dp.dirty_num] = pieceCountInHand[us][gating_type(m)];
+          }
+          else
+          {
+              dp.handPiece[dp.dirty_num] = NO_PIECE;
+              dp.handCount[dp.dirty_num] = 0;
+          }
           dp.from[dp.dirty_num] = SQ_NONE;
           dp.to[dp.dirty_num] = gate;
           dp.dirty_num++;
