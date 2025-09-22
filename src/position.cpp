@@ -571,6 +571,49 @@ void Position::set_castling_right(Color c, Square rfrom) {
 
 void Position::set_check_info(StateInfo* si) const {
 
+  if (var->fastCheckDetection)
+  {
+      si->blockersForKing[WHITE] = slider_blockers(pieces(BLACK), count<KING>(WHITE) ? square<KING>(WHITE) : SQ_NONE, si->pinners[BLACK], BLACK);
+      si->blockersForKing[BLACK] = slider_blockers(pieces(WHITE), count<KING>(BLACK) ? square<KING>(BLACK) : SQ_NONE, si->pinners[WHITE], WHITE);
+
+      std::fill(std::begin(si->checkSquares), std::end(si->checkSquares), Bitboard(0));
+
+      Square ksq = count<KING>(~sideToMove) ? square<KING>(~sideToMove) : SQ_NONE;
+      if (ksq != SQ_NONE)
+      {
+          Bitboard occupied = pieces();
+          Bitboard pawnChecks = pawn_attacks_bb(~sideToMove, ksq);
+          Bitboard knightChecks = attacks_bb<KNIGHT>(ksq);
+          Bitboard bishopChecks = attacks_bb<BISHOP>(ksq, occupied);
+          Bitboard rookChecks = attacks_bb<ROOK>(ksq, occupied);
+          Bitboard kingChecks = attacks_bb<KING>(ksq);
+
+          si->checkSquares[PAWN] = pawnChecks;
+          si->checkSquares[KNIGHT] = knightChecks;
+          si->checkSquares[BISHOP] = bishopChecks;
+          si->checkSquares[ROOK] = rookChecks;
+          si->checkSquares[QUEEN] = bishopChecks | rookChecks;
+          si->checkSquares[KING] = kingChecks;
+          si->checkSquares[ARCHBISHOP] = bishopChecks | knightChecks;
+          si->checkSquares[CHANCELLOR] = rookChecks | knightChecks;
+          si->checkSquares[COMMONER] = kingChecks;
+      }
+
+      si->nonSlidingRiders = 0;
+      for (PieceType pt : {PAWN, KNIGHT, BISHOP, ROOK, QUEEN, KING, ARCHBISHOP, CHANCELLOR, COMMONER})
+          if (AttackRiderTypes[pt == KING ? king_type() : pt] & NON_SLIDING_RIDERS)
+              si->nonSlidingRiders |= pieces(pt);
+
+      si->shak = si->checkersBB & (byTypeBB[KNIGHT] | byTypeBB[ROOK] | byTypeBB[BERS]);
+      si->bikjang = false;
+      si->chased = Bitboard(0);
+      si->legalCapture = NO_VALUE;
+      si->pseudoRoyalCandidates = 0;
+      si->pseudoRoyals = 0;
+
+      return;
+  }
+
   si->blockersForKing[WHITE] = slider_blockers(pieces(BLACK), count<KING>(WHITE) ? square<KING>(WHITE) : SQ_NONE, si->pinners[BLACK], BLACK);
   si->blockersForKing[BLACK] = slider_blockers(pieces(WHITE), count<KING>(BLACK) ? square<KING>(BLACK) : SQ_NONE, si->pinners[WHITE], WHITE);
 
