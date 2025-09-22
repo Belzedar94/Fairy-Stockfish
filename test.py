@@ -200,6 +200,9 @@ variant_positions = {
         "k7/8/8/8/8/8/8/KH6[] w - - 0 1": (False, True),  # KH vs K
         "k7/8/8/8/8/8/8/4K3[E] w E - 0 1": (False, True),  # KE vs K
     },
+    "omega": {
+        "w**********w/*crnbqkbnrc*/*pppppppppp*/*10*/*10*/*10*/*10*/*10*/*10*/*PPPPPPPPPP*/*CRNBQKBNRC*/W**********W w KQkq - 0 1": (False, False),
+    },
     "cambodian": {
         "rnsmksnr/8/pppppppp/8/8/PPPPPPPP/8/RNSKMSNR w DEde 0 0 1": (False, False),  # startpos
         "1ns1ksn1/r6r/pppmpppp/3p4/8/PPPPPPPP/RK2N2R/1NS1MS2 w Ee - 6 5": (False, False),
@@ -420,6 +423,13 @@ class TestPyffish(unittest.TestCase):
         self.assertEqual(['d4e2', 'd4b3', 'd4f5', 'd4c6'], result)
         result = sf.legal_moves("betzatest", "7/7/7/3D3/7/7/7 w - - 0 1", [])
         self.assertEqual(['d4c2', 'd4f3', 'd4b5', 'd4e6'], result)
+
+
+    def test_omega_moves(self):
+        start = sf.start_fen("omega")
+        moves = sf.legal_moves("omega", start, [])
+        self.assertIn("c3c6", moves)
+        self.assertIn("b2d4", moves)
 
 
     def test_castling(self):

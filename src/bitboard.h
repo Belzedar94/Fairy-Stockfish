@@ -40,22 +40,53 @@ std::string pretty(Bitboard b);
 
 } // namespace Stockfish::Bitboards
 
-#ifdef LARGEBOARDS
-constexpr Bitboard AllSquares = ((~Bitboard(0)) >> 8);
-#else
-constexpr Bitboard AllSquares = ~Bitboard(0);
-#endif
-#ifdef LARGEBOARDS
-constexpr Bitboard DarkSquares = (Bitboard(0xAAA555AAA555AAULL) << 64) ^ Bitboard(0xA555AAA555AAA555ULL);
-#else
-constexpr Bitboard DarkSquares = 0xAA55AA55AA55AA55ULL;
-#endif
+#if defined(VERY_LARGE_BOARDS)
+extern Bitboard AllSquares;
+extern Bitboard DarkSquares;
 
-#ifdef LARGEBOARDS
+extern Bitboard FileABB;
+extern Bitboard FileBBB;
+extern Bitboard FileCBB;
+extern Bitboard FileDBB;
+extern Bitboard FileEBB;
+extern Bitboard FileFBB;
+extern Bitboard FileGBB;
+extern Bitboard FileHBB;
+extern Bitboard FileIBB;
+extern Bitboard FileJBB;
+extern Bitboard FileKBB;
+extern Bitboard FileLBB;
+extern Bitboard FileMBB;
+extern Bitboard FileNBB;
+extern Bitboard FileOBB;
+extern Bitboard FilePBB;
+
+extern Bitboard Rank1BB;
+extern Bitboard Rank2BB;
+extern Bitboard Rank3BB;
+extern Bitboard Rank4BB;
+extern Bitboard Rank5BB;
+extern Bitboard Rank6BB;
+extern Bitboard Rank7BB;
+extern Bitboard Rank8BB;
+extern Bitboard Rank9BB;
+extern Bitboard Rank10BB;
+extern Bitboard Rank11BB;
+extern Bitboard Rank12BB;
+extern Bitboard Rank13BB;
+extern Bitboard Rank14BB;
+extern Bitboard Rank15BB;
+extern Bitboard Rank16BB;
+
+extern Bitboard QueenSide;
+extern Bitboard CenterFiles;
+extern Bitboard KingSide;
+extern Bitboard Center;
+extern Bitboard KingFlank[FILE_NB];
+#elif defined(LARGEBOARDS)
+constexpr Bitboard AllSquares = ((~Bitboard(0)) >> 8);
+constexpr Bitboard DarkSquares = (Bitboard(0xAAA555AAA555AAULL) << 64) ^ Bitboard(0xA555AAA555AAA555ULL);
 constexpr Bitboard FileABB = (Bitboard(0x00100100100100ULL) << 64) ^ Bitboard(0x1001001001001001ULL);
-#else
-constexpr Bitboard FileABB = 0x0101010101010101ULL;
-#endif
 constexpr Bitboard FileBBB = FileABB << 1;
 constexpr Bitboard FileCBB = FileABB << 2;
 constexpr Bitboard FileDBB = FileABB << 3;
@@ -63,19 +94,12 @@ constexpr Bitboard FileEBB = FileABB << 4;
 constexpr Bitboard FileFBB = FileABB << 5;
 constexpr Bitboard FileGBB = FileABB << 6;
 constexpr Bitboard FileHBB = FileABB << 7;
-#ifdef LARGEBOARDS
 constexpr Bitboard FileIBB = FileABB << 8;
 constexpr Bitboard FileJBB = FileABB << 9;
 constexpr Bitboard FileKBB = FileABB << 10;
 constexpr Bitboard FileLBB = FileABB << 11;
-#endif
 
-
-#ifdef LARGEBOARDS
 constexpr Bitboard Rank1BB = 0xFFF;
-#else
-constexpr Bitboard Rank1BB = 0xFF;
-#endif
 constexpr Bitboard Rank2BB = Rank1BB << (FILE_NB * 1);
 constexpr Bitboard Rank3BB = Rank1BB << (FILE_NB * 2);
 constexpr Bitboard Rank4BB = Rank1BB << (FILE_NB * 3);
@@ -83,10 +107,39 @@ constexpr Bitboard Rank5BB = Rank1BB << (FILE_NB * 4);
 constexpr Bitboard Rank6BB = Rank1BB << (FILE_NB * 5);
 constexpr Bitboard Rank7BB = Rank1BB << (FILE_NB * 6);
 constexpr Bitboard Rank8BB = Rank1BB << (FILE_NB * 7);
-#ifdef LARGEBOARDS
 constexpr Bitboard Rank9BB = Rank1BB << (FILE_NB * 8);
 constexpr Bitboard Rank10BB = Rank1BB << (FILE_NB * 9);
-#endif
+
+constexpr Bitboard QueenSide   = FileABB | FileBBB | FileCBB | FileDBB;
+constexpr Bitboard CenterFiles = FileCBB | FileDBB | FileEBB | FileFBB;
+constexpr Bitboard KingSide    = FileEBB | FileFBB | FileGBB | FileHBB;
+constexpr Bitboard Center      = (FileDBB | FileEBB) & (Rank4BB | Rank5BB);
+
+constexpr Bitboard KingFlank[FILE_NB] = {
+  QueenSide ^ FileDBB, QueenSide, QueenSide, QueenSide,
+  CenterFiles, CenterFiles, CenterFiles, CenterFiles,
+  KingSide, KingSide, KingSide, KingSide ^ FileEBB
+};
+#else
+constexpr Bitboard AllSquares = ~Bitboard(0);
+constexpr Bitboard DarkSquares = 0xAA55AA55AA55AA55ULL;
+constexpr Bitboard FileABB = 0x0101010101010101ULL;
+constexpr Bitboard FileBBB = FileABB << 1;
+constexpr Bitboard FileCBB = FileABB << 2;
+constexpr Bitboard FileDBB = FileABB << 3;
+constexpr Bitboard FileEBB = FileABB << 4;
+constexpr Bitboard FileFBB = FileABB << 5;
+constexpr Bitboard FileGBB = FileABB << 6;
+constexpr Bitboard FileHBB = FileABB << 7;
+
+constexpr Bitboard Rank1BB = 0xFF;
+constexpr Bitboard Rank2BB = Rank1BB << (FILE_NB * 1);
+constexpr Bitboard Rank3BB = Rank1BB << (FILE_NB * 2);
+constexpr Bitboard Rank4BB = Rank1BB << (FILE_NB * 3);
+constexpr Bitboard Rank5BB = Rank1BB << (FILE_NB * 4);
+constexpr Bitboard Rank6BB = Rank1BB << (FILE_NB * 5);
+constexpr Bitboard Rank7BB = Rank1BB << (FILE_NB * 6);
+constexpr Bitboard Rank8BB = Rank1BB << (FILE_NB * 7);
 
 constexpr Bitboard QueenSide   = FileABB | FileBBB | FileCBB | FileDBB;
 constexpr Bitboard CenterFiles = FileCBB | FileDBB | FileEBB | FileFBB;
@@ -98,6 +151,7 @@ constexpr Bitboard KingFlank[FILE_NB] = {
   CenterFiles, CenterFiles,
   KingSide, KingSide, KingSide ^ FileEBB
 };
+#endif
 
 extern uint8_t PopCnt16[1 << 16];
 extern uint8_t SquareDistance[SQUARE_NB][SQUARE_NB];
@@ -109,14 +163,11 @@ extern Bitboard PseudoAttacks[COLOR_NB][PIECE_TYPE_NB][SQUARE_NB];
 extern Bitboard PseudoMoves[2][COLOR_NB][PIECE_TYPE_NB][SQUARE_NB];
 extern Bitboard LeaperAttacks[COLOR_NB][PIECE_TYPE_NB][SQUARE_NB];
 extern Bitboard LeaperMoves[2][COLOR_NB][PIECE_TYPE_NB][SQUARE_NB];
-extern Bitboard SquareBB[SQUARE_NB];
 extern Bitboard BoardSizeBB[FILE_NB][RANK_NB];
 extern RiderType AttackRiderTypes[PIECE_TYPE_NB];
 extern RiderType MoveRiderTypes[2][PIECE_TYPE_NB];
 
-#ifdef LARGEBOARDS
-int popcount(Bitboard b); // required for 128 bit pext
-#endif
+int popcount(Bitboard b);
 
 /// Magic holds all magic bitboards relevant data for a single square
 struct Magic {
@@ -128,19 +179,32 @@ struct Magic {
   // Compute the attack's index using the 'magic bitboards' approach
   unsigned index(Bitboard occupied) const {
 
+#if defined(VERY_LARGE_BOARDS)
+#if defined(USE_PEXT)
     if (HasPext)
-        return unsigned(pext(occupied, mask));
-
-#ifdef LARGEBOARDS
+        return unsigned(pext256(occupied, mask));
+#endif
+    return 0;
+#elif defined(LARGEBOARDS)
+#if defined(USE_PEXT)
+    if (HasPext)
+        return unsigned(_pext_u64(uint64_t(occupied), uint64_t(mask))
+                        ^ (_pext_u64(uint64_t(occupied >> 64), uint64_t(mask >> 64))
+                           << popcount(Bitboard((mask << 64) >> 64))));
+#endif
     return unsigned(((occupied & mask) * magic) >> shift);
 #else
+#if defined(USE_PEXT)
+    if (HasPext)
+        return unsigned(_pext_u64(occupied, mask));
+#endif
     if (Is64Bit)
         return unsigned(((occupied & mask) * magic) >> shift);
-#endif
 
     unsigned lo = unsigned(occupied) & unsigned(mask);
     unsigned hi = unsigned(occupied >> 32) & unsigned(mask >> 32);
     return (lo * unsigned(magic) ^ hi * unsigned(magic >> 32)) >> shift;
+#endif
   }
 };
 
@@ -160,6 +224,31 @@ extern Magic GrasshopperMagicsV[SQUARE_NB];
 extern Magic GrasshopperMagicsD[SQUARE_NB];
 
 extern Magic* magics[];
+
+#if defined(VERY_LARGE_BOARDS) && defined(USE_PEXT)
+inline unsigned pext256(Bitboard b, Bitboard m) {
+  unsigned result = 0;
+  unsigned shift = 0;
+  for (int i = 0; i < 4; ++i)
+  {
+      if (m.limbs[i])
+      {
+          result |= unsigned(_pext_u64(b.limbs[i], m.limbs[i])) << shift;
+          uint64_t bits = m.limbs[i];
+          while (bits)
+          {
+              bits &= bits - 1;
+              ++shift;
+          }
+      }
+  }
+  return result;
+}
+#endif
+
+#if defined(VERY_LARGE_BOARDS)
+Bitboard on_the_fly_rider_attacks(RiderType r, Square s, Bitboard occupied);
+#endif
 
 constexpr Bitboard make_bitboard() { return 0; }
 
@@ -216,6 +305,23 @@ constexpr bool opposite_colors(Square s1, Square s2) {
 /// rank_bb() and file_bb() return a bitboard representing all the squares on
 /// the given file or rank.
 
+#if defined(VERY_LARGE_BOARDS)
+inline Bitboard rank_bb(Rank r) {
+  return Rank1BB << (FILE_NB * r);
+}
+
+inline Bitboard rank_bb(Square s) {
+  return rank_bb(rank_of(s));
+}
+
+inline Bitboard file_bb(File f) {
+  return FileABB << f;
+}
+
+inline Bitboard file_bb(Square s) {
+  return file_bb(file_of(s));
+}
+#else
 constexpr Bitboard rank_bb(Rank r) {
   return Rank1BB << (FILE_NB * r);
 }
@@ -231,10 +337,31 @@ constexpr Bitboard file_bb(File f) {
 constexpr Bitboard file_bb(Square s) {
   return file_bb(file_of(s));
 }
+#endif
 
 
 /// shift() moves a bitboard one or two steps as specified by the direction D
 
+#if defined(VERY_LARGE_BOARDS)
+template<Direction D>
+inline Bitboard shift(Bitboard b) {
+  return  D == NORTH      ?  b                       << NORTH      : D == SOUTH      ?  b             >> NORTH
+        : D == NORTH+NORTH?  b                       <<(2 * NORTH) : D == SOUTH+SOUTH?  b             >> (2 * NORTH)
+        : D == EAST       ? (b & ~file_bb(FILE_MAX)) << EAST       : D == WEST       ? (b & ~FileABB) >> EAST
+        : D == NORTH_EAST ? (b & ~file_bb(FILE_MAX)) << NORTH_EAST : D == NORTH_WEST ? (b & ~FileABB) << NORTH_WEST
+        : D == SOUTH_EAST ? (b & ~file_bb(FILE_MAX)) >> NORTH_WEST : D == SOUTH_WEST ? (b & ~FileABB) >> NORTH_EAST
+        : Bitboard(0);
+}
+
+inline Bitboard shift(Direction D, Bitboard b) {
+  return  D == NORTH      ?  b                       << NORTH      : D == SOUTH      ?  b             >> NORTH
+        : D == NORTH+NORTH?  b                       <<(2 * NORTH) : D == SOUTH+SOUTH?  b             >> (2 * NORTH)
+        : D == EAST       ? (b & ~file_bb(FILE_MAX)) << EAST       : D == WEST       ? (b & ~FileABB) >> EAST
+        : D == NORTH_EAST ? (b & ~file_bb(FILE_MAX)) << NORTH_EAST : D == NORTH_WEST ? (b & ~FileABB) << NORTH_WEST
+        : D == SOUTH_EAST ? (b & ~file_bb(FILE_MAX)) >> NORTH_WEST : D == SOUTH_WEST ? (b & ~FileABB) >> NORTH_EAST
+        : Bitboard(0);
+}
+#else
 template<Direction D>
 constexpr Bitboard shift(Bitboard b) {
   return  D == NORTH      ?  b                       << NORTH      : D == SOUTH      ?  b             >> NORTH
@@ -244,7 +371,6 @@ constexpr Bitboard shift(Bitboard b) {
         : D == SOUTH_EAST ? (b & ~file_bb(FILE_MAX)) >> NORTH_WEST : D == SOUTH_WEST ? (b & ~FileABB) >> NORTH_EAST
         : Bitboard(0);
 }
-
 
 /// shift() moves a bitboard one step along direction D (mainly for pawns)
 
@@ -256,16 +382,25 @@ constexpr Bitboard shift(Direction D, Bitboard b) {
         : D == SOUTH_EAST ? (b & ~file_bb(FILE_MAX)) >> NORTH_WEST : D == SOUTH_WEST ? (b & ~FileABB) >> NORTH_EAST
         : Bitboard(0);
 }
+#endif
 
 
 /// pawn_attacks_bb() returns the squares attacked by pawns of the given color
 /// from the squares in the given bitboard.
 
+#if defined(VERY_LARGE_BOARDS)
+template<Color C>
+inline Bitboard pawn_attacks_bb(Bitboard b) {
+  return C == WHITE ? shift<NORTH_WEST>(b) | shift<NORTH_EAST>(b)
+                    : shift<SOUTH_WEST>(b) | shift<SOUTH_EAST>(b);
+}
+#else
 template<Color C>
 constexpr Bitboard pawn_attacks_bb(Bitboard b) {
   return C == WHITE ? shift<NORTH_WEST>(b) | shift<NORTH_EAST>(b)
                     : shift<SOUTH_WEST>(b) | shift<SOUTH_EAST>(b);
 }
+#endif
 
 inline Bitboard pawn_attacks_bb(Color c, Square s) {
 
@@ -277,19 +412,33 @@ inline Bitboard pawn_attacks_bb(Color c, Square s) {
 /// pawn_double_attacks_bb() returns the squares doubly attacked by pawns of the
 /// given color from the squares in the given bitboard.
 
+#if defined(VERY_LARGE_BOARDS)
+template<Color C>
+inline Bitboard pawn_double_attacks_bb(Bitboard b) {
+  return C == WHITE ? shift<NORTH_WEST>(b) & shift<NORTH_EAST>(b)
+                    : shift<SOUTH_WEST>(b) & shift<SOUTH_EAST>(b);
+}
+#else
 template<Color C>
 constexpr Bitboard pawn_double_attacks_bb(Bitboard b) {
   return C == WHITE ? shift<NORTH_WEST>(b) & shift<NORTH_EAST>(b)
                     : shift<SOUTH_WEST>(b) & shift<SOUTH_EAST>(b);
 }
+#endif
 
 
 /// adjacent_files_bb() returns a bitboard representing all the squares on the
 /// adjacent files of a given square.
 
+#if defined(VERY_LARGE_BOARDS)
+inline Bitboard adjacent_files_bb(Square s) {
+  return shift<EAST>(file_bb(s)) | shift<WEST>(file_bb(s));
+}
+#else
 constexpr Bitboard adjacent_files_bb(Square s) {
   return shift<EAST>(file_bb(s)) | shift<WEST>(file_bb(s));
 }
+#endif
 
 
 /// line_bb() returns a bitboard representing an entire line (from board edge
@@ -335,6 +484,17 @@ inline Bitboard between_bb(Square s1, Square s2, PieceType pt) {
 /// front of the given one, from the point of view of the given color. For instance,
 /// forward_ranks_bb(BLACK, SQ_D3) will return the 16 squares on ranks 1 and 2.
 
+#if defined(VERY_LARGE_BOARDS)
+inline Bitboard forward_ranks_bb(Color c, Square s) {
+  return c == WHITE ? (AllSquares ^ Rank1BB) << FILE_NB * relative_rank(WHITE, s, RANK_MAX)
+                    : (AllSquares ^ rank_bb(RANK_MAX)) >> FILE_NB * relative_rank(BLACK, s, RANK_MAX);
+}
+
+inline Bitboard forward_ranks_bb(Color c, Rank r) {
+  return c == WHITE ? (AllSquares ^ Rank1BB) << FILE_NB * (r - RANK_1)
+                    : (AllSquares ^ rank_bb(RANK_MAX)) >> FILE_NB * (RANK_MAX - r);
+}
+#else
 constexpr Bitboard forward_ranks_bb(Color c, Square s) {
   return c == WHITE ? (AllSquares ^ Rank1BB) << FILE_NB * relative_rank(WHITE, s, RANK_MAX)
                     : (AllSquares ^ rank_bb(RANK_MAX)) >> FILE_NB * relative_rank(BLACK, s, RANK_MAX);
@@ -344,6 +504,7 @@ constexpr Bitboard forward_ranks_bb(Color c, Rank r) {
   return c == WHITE ? (AllSquares ^ Rank1BB) << FILE_NB * (r - RANK_1)
                     : (AllSquares ^ rank_bb(RANK_MAX)) >> FILE_NB * (RANK_MAX - r);
 }
+#endif
 
 
 /// zone_bb() returns a bitboard representing the squares on all the ranks
@@ -358,26 +519,44 @@ inline Bitboard zone_bb(Color c, Rank r, Rank maxRank) {
 /// forward_file_bb() returns a bitboard representing all the squares along the
 /// line in front of the given one, from the point of view of the given color.
 
+#if defined(VERY_LARGE_BOARDS)
+inline Bitboard forward_file_bb(Color c, Square s) {
+  return forward_ranks_bb(c, s) & file_bb(s);
+}
+#else
 constexpr Bitboard forward_file_bb(Color c, Square s) {
   return forward_ranks_bb(c, s) & file_bb(s);
 }
+#endif
 
 
 /// pawn_attack_span() returns a bitboard representing all the squares that can
 /// be attacked by a pawn of the given color when it moves along its file, starting
 /// from the given square.
 
+#if defined(VERY_LARGE_BOARDS)
+inline Bitboard pawn_attack_span(Color c, Square s) {
+  return forward_ranks_bb(c, s) & adjacent_files_bb(s);
+}
+#else
 constexpr Bitboard pawn_attack_span(Color c, Square s) {
   return forward_ranks_bb(c, s) & adjacent_files_bb(s);
 }
+#endif
 
 
 /// passed_pawn_span() returns a bitboard which can be used to test if a pawn of
 /// the given color and on the given square is a passed pawn.
 
+#if defined(VERY_LARGE_BOARDS)
+inline Bitboard passed_pawn_span(Color c, Square s) {
+  return pawn_attack_span(c, s) | forward_file_bb(c, s);
+}
+#else
 constexpr Bitboard passed_pawn_span(Color c, Square s) {
   return pawn_attack_span(c, s) | forward_file_bb(c, s);
 }
+#endif
 
 
 /// aligned() returns true if the squares s1, s2 and s3 are aligned either on a
@@ -404,6 +583,9 @@ template<RiderType R>
 inline Bitboard rider_attacks_bb(Square s, Bitboard occupied) {
 
   static_assert(R != NO_RIDER && !(R & (R - 1))); // exactly one bit
+#if defined(VERY_LARGE_BOARDS)
+  return on_the_fly_rider_attacks(R, s, occupied);
+#else
   const Magic& m =  R == RIDER_ROOK_H ? RookMagicsH[s]
                   : R == RIDER_ROOK_V ? RookMagicsV[s]
                   : R == RIDER_CANNON_H ? CannonMagicsH[s]
@@ -419,6 +601,7 @@ inline Bitboard rider_attacks_bb(Square s, Bitboard occupied) {
                   : R == RIDER_GRASSHOPPER_D ? GrasshopperMagicsD[s]
                   : BishopMagics[s];
   return m.attacks[m.index(occupied)];
+#endif
 }
 
 inline Square lsb(Bitboard b);
@@ -426,8 +609,13 @@ inline Square lsb(Bitboard b);
 inline Bitboard rider_attacks_bb(RiderType R, Square s, Bitboard occupied) {
 
   assert(R != NO_RIDER && !(R & (R - 1))); // exactly one bit
+
+#if defined(VERY_LARGE_BOARDS)
+  return on_the_fly_rider_attacks(R, s, occupied);
+#else
   const Magic& m = magics[lsb(R)][s]; // re-use Bitboard lsb for riders
   return m.attacks[m.index(occupied)];
+#endif
 }
 
 
@@ -493,33 +681,39 @@ inline Bitboard moves_bb(Color c, PieceType pt, Square s, Bitboard occupied) {
 
 inline int popcount(Bitboard b) {
 
+#if defined(VERY_LARGE_BOARDS)
 #ifndef USE_POPCNT
-
-#ifdef LARGEBOARDS
+  int sum = 0;
+  const uint16_t* parts = reinterpret_cast<const uint16_t*>(b.limbs);
+  for (int i = 0; i < 16; ++i)
+      sum += PopCnt16[parts[i]];
+  return sum;
+#elif defined(_MSC_VER) || defined(__INTEL_COMPILER)
+  return int(_mm_popcnt_u64(b.limbs[0]) + _mm_popcnt_u64(b.limbs[1])
+             + _mm_popcnt_u64(b.limbs[2]) + _mm_popcnt_u64(b.limbs[3]));
+#else
+  return __builtin_popcountll(b.limbs[0]) + __builtin_popcountll(b.limbs[1])
+       + __builtin_popcountll(b.limbs[2]) + __builtin_popcountll(b.limbs[3]);
+#endif
+#elif defined(LARGEBOARDS)
+#ifndef USE_POPCNT
   union { Bitboard bb; uint16_t u[8]; } v = { b };
   return  PopCnt16[v.u[0]] + PopCnt16[v.u[1]] + PopCnt16[v.u[2]] + PopCnt16[v.u[3]]
         + PopCnt16[v.u[4]] + PopCnt16[v.u[5]] + PopCnt16[v.u[6]] + PopCnt16[v.u[7]];
+#elif defined(_MSC_VER) || defined(__INTEL_COMPILER)
+  return int(_mm_popcnt_u64(uint64_t(b >> 64)) + _mm_popcnt_u64(uint64_t(b)));
 #else
+  return __builtin_popcountll(b >> 64) + __builtin_popcountll(b);
+#endif
+#else
+#ifndef USE_POPCNT
   union { Bitboard bb; uint16_t u[4]; } v = { b };
   return PopCnt16[v.u[0]] + PopCnt16[v.u[1]] + PopCnt16[v.u[2]] + PopCnt16[v.u[3]];
-#endif
-
 #elif defined(_MSC_VER) || defined(__INTEL_COMPILER)
-
-#ifdef LARGEBOARDS
-  return (int)_mm_popcnt_u64(uint64_t(b >> 64)) + (int)_mm_popcnt_u64(uint64_t(b));
-#else
-  return (int)_mm_popcnt_u64(b);
-#endif
-
-#else // Assumed gcc or compatible compiler
-
-#ifdef LARGEBOARDS
-  return __builtin_popcountll(b >> 64) + __builtin_popcountll(b);
+  return int(_mm_popcnt_u64(b));
 #else
   return __builtin_popcountll(b);
 #endif
-
 #endif
 }
 
@@ -530,16 +724,28 @@ inline int popcount(Bitboard b) {
 
 inline Square lsb(Bitboard b) {
   assert(b);
-#ifdef LARGEBOARDS
+#if defined(VERY_LARGE_BOARDS)
+  for (int i = 0; i < 4; ++i)
+      if (b.limbs[i])
+          return Square(__builtin_ctzll(b.limbs[i]) + 64 * i);
+  return SQ_NONE;
+#elif defined(LARGEBOARDS)
   if (!(b << 64))
       return Square(__builtin_ctzll(b >> 64) + 64);
-#endif
   return Square(__builtin_ctzll(b));
+#else
+  return Square(__builtin_ctzll(b));
+#endif
 }
 
 inline Square msb(Bitboard b) {
   assert(b);
-#ifdef LARGEBOARDS
+#if defined(VERY_LARGE_BOARDS)
+  for (int i = 3; i >= 0; --i)
+      if (b.limbs[i])
+          return Square(63 - __builtin_clzll(b.limbs[i]) + 64 * i);
+  return SQ_NONE;
+#elif defined(LARGEBOARDS)
   if (b >> 64)
       return Square(int(SQUARE_BIT_MASK) ^ __builtin_clzll(b >> 64));
   return Square(int(SQUARE_BIT_MASK) ^ (__builtin_clzll(b) + 64));
@@ -555,7 +761,25 @@ inline Square msb(Bitboard b) {
 inline Square lsb(Bitboard b) {
   assert(b);
   unsigned long idx;
-#ifdef LARGEBOARDS
+#if defined(VERY_LARGE_BOARDS)
+  if (b.limbs[0])
+  {
+      _BitScanForward64(&idx, b.limbs[0]);
+      return Square(idx);
+  }
+  if (b.limbs[1])
+  {
+      _BitScanForward64(&idx, b.limbs[1]);
+      return Square(idx + 64);
+  }
+  if (b.limbs[2])
+  {
+      _BitScanForward64(&idx, b.limbs[2]);
+      return Square(idx + 128);
+  }
+  _BitScanForward64(&idx, b.limbs[3]);
+  return Square(idx + 192);
+#elif defined(LARGEBOARDS)
   if (uint64_t(b))
   {
       _BitScanForward64(&idx, uint64_t(b));
@@ -575,7 +799,25 @@ inline Square lsb(Bitboard b) {
 inline Square msb(Bitboard b) {
   assert(b);
   unsigned long idx;
-#ifdef LARGEBOARDS
+#if defined(VERY_LARGE_BOARDS)
+  if (b.limbs[3])
+  {
+      _BitScanReverse64(&idx, b.limbs[3]);
+      return Square(idx + 192);
+  }
+  if (b.limbs[2])
+  {
+      _BitScanReverse64(&idx, b.limbs[2]);
+      return Square(idx + 128);
+  }
+  if (b.limbs[1])
+  {
+      _BitScanReverse64(&idx, b.limbs[1]);
+      return Square(idx + 64);
+  }
+  _BitScanReverse64(&idx, b.limbs[0]);
+  return Square(idx);
+#elif defined(LARGEBOARDS)
   if (b >> 64)
   {
       _BitScanReverse64(&idx, uint64_t(b >> 64));
@@ -598,7 +840,23 @@ inline Square lsb(Bitboard b) {
   assert(b);
   unsigned long idx;
 
-#ifdef LARGEBOARDS
+#if defined(VERY_LARGE_BOARDS)
+  for (int limb = 0; limb < 4; ++limb)
+  {
+      const uint64_t chunk = b.limbs[limb];
+      if (chunk)
+      {
+          if (uint32_t(chunk))
+          {
+              _BitScanForward(&idx, uint32_t(chunk));
+              return Square(idx + limb * 64);
+          }
+          _BitScanForward(&idx, uint32_t(chunk >> 32));
+          return Square(idx + limb * 64 + 32);
+      }
+  }
+  return SQ_NONE;
+#elif defined(LARGEBOARDS)
   if (b << 96) {
       _BitScanForward(&idx, uint32_t(b));
       return Square(idx);
@@ -627,15 +885,37 @@ inline Square msb(Bitboard b) {
   assert(b);
   unsigned long idx;
 
-#ifdef LARGEBOARDS
+#if defined(VERY_LARGE_BOARDS)
+  for (int limb = 3; limb >= 0; --limb)
+  {
+      const uint64_t chunk = b.limbs[limb];
+      if (chunk)
+      {
+          if (chunk >> 32)
+          {
+              _BitScanReverse(&idx, uint32_t(chunk >> 32));
+              return Square(idx + limb * 64 + 32);
+          }
+          _BitScanReverse(&idx, uint32_t(chunk));
+          return Square(idx + limb * 64);
+      }
+  }
+  return SQ_NONE;
+#elif defined(LARGEBOARDS)
   if (b >> 96) {
       _BitScanReverse(&idx, uint32_t(b >> 96));
       return Square(idx + 96);
   } else if (b >> 64) {
       _BitScanReverse(&idx, uint32_t(b >> 64));
       return Square(idx + 64);
-  } else
-#endif
+  } else if (b >> 32) {
+      _BitScanReverse(&idx, uint32_t(b >> 32));
+      return Square(idx + 32);
+  } else {
+      _BitScanReverse(&idx, uint32_t(b));
+      return Square(idx);
+  }
+#else
   if (b >> 32) {
       _BitScanReverse(&idx, uint32_t(b >> 32));
       return Square(idx + 32);
@@ -643,6 +923,7 @@ inline Square msb(Bitboard b) {
       _BitScanReverse(&idx, uint32_t(b));
       return Square(idx);
   }
+#endif
 }
 
 #endif

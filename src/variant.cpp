@@ -1247,7 +1247,7 @@ namespace {
         v->flyingGeneral = true;
         return v;
     }
-#ifdef LARGEBOARDS
+#if defined(LARGEBOARDS) || defined(VERY_LARGE_BOARDS)
     // Shogi (Japanese chess)
     // https://en.wikipedia.org/wiki/Shogi
     Variant* shogi_variant() {
@@ -1601,9 +1601,32 @@ namespace {
         v->castling = false;
         return v;
     }
-    // Omicron chess
-    // Omega chess on a 12x10 board
+#if defined(VERY_LARGE_BOARDS)
+    // Omega chess on a 12x12 board
     // http://www.eglebbk.dds.nl/program/chess-omicron.html
+    Variant* omega_variant() {
+        Variant* v = chess_variant_base()->init();
+        v->pieceToCharTable = "PNBRQ..C.W...........Kpnbrq..c.w...........k";
+        v->maxRank = RANK_12;
+        v->maxFile = FILE_L;
+        v->startFen = "w**********w/*crnbqkbnrc*/*pppppppppp*/*10*/*10*/*10*/*10*/*10*/*10*/*PPPPPPPPPP*/*CRNBQKBNRC*/W**********W w KQkq - 0 1";
+        v->add_piece(CUSTOM_PIECE_1, 'c', "DAW"); // Champion
+        v->add_piece(CUSTOM_PIECE_2, 'w', "CF");  // Wizard
+        v->promotionRegion[WHITE] = Rank9BB | Rank10BB;
+        v->promotionRegion[BLACK] = Rank2BB | Rank1BB;
+        v->doubleStepRegion[WHITE] = Rank3BB;
+        v->doubleStepRegion[BLACK] = Rank8BB;
+        v->tripleStepRegion[WHITE] = Rank3BB;
+        v->tripleStepRegion[BLACK] = Rank8BB;
+        v->castlingKingsideFile = FILE_I;
+        v->castlingQueensideFile = FILE_E;
+        v->castlingRank = RANK_2;
+        return v;
+    }
+#endif
+
+    // Omicron chess
+
     Variant* omicron_variant() {
         Variant* v = chess_variant_base()->init();
         v->pieceToCharTable = "PNBRQ..C.W...........Kpnbrq..c.w...........k";
@@ -1936,7 +1959,7 @@ void VariantMap::init() {
     add("flipello", flipello_variant());
     add("minixiangqi", minixiangqi_variant());
     add("raazuvaa", raazuvaa_variant());
-#ifdef LARGEBOARDS
+#if defined(LARGEBOARDS) || defined(VERY_LARGE_BOARDS)
     add("shogi", shogi_variant());
     add("checkshogi", checkshogi_variant());
     add("shoshogi", shoshogi_variant());
@@ -1956,6 +1979,9 @@ void VariantMap::init() {
     add("courier", courier_variant());
     add("grand", grand_variant());
     add("opulent", opulent_variant());
+#if defined(VERY_LARGE_BOARDS)
+    add("omega", omega_variant());
+#endif
     add("tencubed", tencubed_variant());
     add("omicron", omicron_variant());
     add("troitzky", troitzky_variant());
