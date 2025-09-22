@@ -1308,7 +1308,39 @@ class TestPyffish(unittest.TestCase):
         fen = "rnbqkbnr/p1p2ppp/8/Pp1pp3/4P3/8/1PPP1PPP/RNBQKBNR w KQkq b6 0 1"
         result = sf.get_fog_fen(fen, "fogofwar")
         self.assertEqual(result, "********/********/2******/Pp*p***1/4P3/4*3/1PPP1PPP/RNBQKBNR w KQkq b6 0 1")
-        
+
+    def test_dead_squares_and_fatal_giveaway(self):
+        dead_fen = "4k3/8/8/3^4/8/8/8/4K3 w - - 0 1"
+        self.assertEqual(sf.validate_fen(dead_fen, "chess"), sf.FEN_OK)
+        self.assertEqual(sf.get_fen("chess", dead_fen, []), dead_fen)
+
+        fatal_fen = "4k3/8/8/3n4/8/8/8/3R3K w - - 0 1"
+        moves = sf.legal_moves("fatalgiveaway", fatal_fen, [])
+        self.assertIn("d1d5", moves)
+        self.assertTrue(sf.is_capture("fatalgiveaway", fatal_fen, [], "d1d5"))
+        after_capture = sf.get_fen("fatalgiveaway", fatal_fen, ["d1d5"])
+        board_after_capture = after_capture.split()[0]
+        self.assertIn("^", board_after_capture)
+        self.assertNotIn("R", board_after_capture)
+
+        dead_target_fen = "4k3/8/8/3^4/8/8/8/3R3K w - - 0 1"
+        moves_dead = sf.legal_moves("fatalgiveaway", dead_target_fen, [])
+        self.assertIn("d1d5", moves_dead)
+        self.assertTrue(sf.is_capture("fatalgiveaway", dead_target_fen, [], "d1d5"))
+        after_dead = sf.get_fen("fatalgiveaway", dead_target_fen, ["d1d5"])
+        board_after_dead = after_dead.split()[0]
+        self.assertNotIn("^", board_after_dead)
+        self.assertIn("3R4", after_dead.split()[0].split('/')[3])
+
+        pawn_capture_fen = "4k3/8/8/3n4/4P3/8/8/6K1 w - - 0 1"
+        moves_pawn = sf.legal_moves("fatalgiveaway", pawn_capture_fen, [])
+        self.assertIn("e4d5", moves_pawn)
+        self.assertTrue(sf.is_capture("fatalgiveaway", pawn_capture_fen, [], "e4d5"))
+        after_pawn = sf.get_fen("fatalgiveaway", pawn_capture_fen, ["e4d5"])
+        pawn_board = after_pawn.split()[0]
+        self.assertNotIn("^", pawn_board)
+        self.assertIn("3P4", after_pawn.split()[0].split('/')[3])
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

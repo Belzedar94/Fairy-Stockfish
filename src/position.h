@@ -36,6 +36,8 @@
 
 namespace Stockfish {
 
+namespace Zobrist { extern Key dead[SQUARE_NB]; }
+
 /// StateInfo struct stores information needed to restore a Position object to
 /// its previous state when we retract a move. Whenever a move is made on the
 /// board (by calling Position::do_move), a StateInfo object must be passed.
@@ -55,7 +57,11 @@ struct StateInfo {
   Bitboard epSquares;
   Square castlingKingSquare[COLOR_NB];
   Bitboard wallSquares;
+  Bitboard deadSquares;
   Bitboard gatesBB[COLOR_NB];
+  Piece      deadPiece;
+  Piece      deadUnpromotedPiece;
+  bool       deadPiecePromoted;
 
   // Not copied when making a move (will be recomputed anyhow)
   Key        key;
@@ -125,6 +131,7 @@ public:
   bool two_boards() const;
   Bitboard board_bb() const;
   Bitboard board_bb(Color c, PieceType pt) const;
+  Bitboard dead_squares() const;
   PieceSet piece_types() const;
   const std::string& piece_to_char() const;
   const std::string& piece_to_char_synonyms() const;
@@ -142,6 +149,7 @@ public:
   bool blast_on_capture() const;
   PieceSet blast_immune_types() const;
   PieceSet mutually_immune_types() const;
+  PieceSet death_on_capture_types() const;
   PieceSet iron_piece_types() const;
   EndgameEval endgame_eval() const;
   Bitboard double_step_region(Color c) const;
@@ -429,6 +437,10 @@ inline Bitboard Position::board_bb() const {
   return board_size_bb(var->maxFile, var->maxRank) & ~st->wallSquares;
 }
 
+inline Bitboard Position::dead_squares() const {
+  return st->deadSquares;
+}
+
 inline Bitboard Position::board_bb(Color c, PieceType pt) const {
   assert(var != nullptr);
   return var->mobilityRegion[c][pt] ? var->mobilityRegion[c][pt] & board_bb() : board_bb();
@@ -518,6 +530,11 @@ inline PieceSet Position::blast_immune_types() const {
 inline PieceSet Position::mutually_immune_types() const {
   assert(var != nullptr);
   return var->mutuallyImmuneTypes;
+}
+
+inline PieceSet Position::death_on_capture_types() const {
+  assert(var != nullptr);
+  return var->deathOnCaptureTypes;
 }
 
 inline PieceSet Position::iron_piece_types() const {
@@ -1455,13 +1472,22 @@ inline bool Position::is_chess960() const {
 
 inline bool Position::capture_or_promotion(Move m) const {
   assert(is_ok(m));
-  return type_of(m) == PROMOTION || type_of(m) == EN_PASSANT || (type_of(m) != CASTLING && !empty(to_sq(m)));
+  if (type_of(m) == PROMOTION || type_of(m) == EN_PASSANT)
+      return true;
+  if (type_of(m) == CASTLING || from_sq(m) == to_sq(m))
+      return false;
+  Square to = to_sq(m);
+  return !empty(to) || (dead_squares() & to);
 }
 
 inline bool Position::capture(Move m) const {
   assert(is_ok(m));
-  // Castling is encoded as "king captures rook"
-  return (!empty(to_sq(m)) && type_of(m) != CASTLING && from_sq(m) != to_sq(m)) || type_of(m) == EN_PASSANT;
+  if (type_of(m) == EN_PASSANT)
+      return true;
+  if (type_of(m) == CASTLING || from_sq(m) == to_sq(m))
+      return false;
+  Square to = to_sq(m);
+  return !empty(to) || (dead_squares() & to);
 }
 
 inline Square Position::capture_square(Square to) const {

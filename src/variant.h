@@ -66,6 +66,7 @@ struct Variant {
   bool blastOnCapture = false;
   PieceSet blastImmuneTypes = NO_PIECE_SET;
   PieceSet mutuallyImmuneTypes = NO_PIECE_SET;
+  PieceSet deathOnCaptureTypes = NO_PIECE_SET;
   // Allow capturing pieces of the same color (friendly capture)
   bool selfCapture = false;
   // Iron pieces: attempts to capture these piece types are illegal
