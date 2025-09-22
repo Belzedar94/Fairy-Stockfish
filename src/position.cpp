@@ -1618,7 +1618,6 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
   Piece pc = moved_piece(m);
   Piece captured = piece_on(type_of(m) == EN_PASSANT ? capture_square(to) : to);
   PieceType movingPieceType = type_of(pc);
-  bool movingPiecePromoted = type_of(m) != DROP && is_ok(from) && is_promoted(from);
   st->deadPiece = NO_PIECE;
   st->deadUnpromotedPiece = NO_PIECE;
   st->deadPiecePromoted = false;
