@@ -704,13 +704,14 @@ namespace {
     Variant* benedict_variant() {
         Variant* v = chess_variant()->init();
         v->nnueAlias = "nn-";
-        v->checking = false;
         v->captureDisabled = true;
         v->attackedChangingColors.enabled = true;
         v->attackedChangingColors.trigger = ColorChangeTrigger::ALWAYS;
         v->attackedChangingColors.moverPieceTypes = ~NO_PIECE_SET;
         v->attackedChangingColors.targetPieceTypes = ~NO_PIECE_SET;
         v->attackedChangingColors.target = ColorChangeTarget::MOVER;
+        v->extinctionValue = -VALUE_MATE;
+        v->extinctionPieceTypes = piece_set(KING);
         return v;
     }
 

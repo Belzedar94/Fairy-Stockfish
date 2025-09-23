@@ -1677,6 +1677,13 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
           && (!newPromoted || originalUnpromoted == newUnpromoted))
           return false;
 
+      if (st->castlingRights && castlingRightsMask[s])
+      {
+          k ^= Zobrist::castling[st->castlingRights];
+          st->castlingRights &= ~castlingRightsMask[s];
+          k ^= Zobrist::castling[st->castlingRights];
+      }
+
       st->colorChangeSquares |= s;
       if (originalPromoted)
           st->colorChangeWasPromoted |= s;
@@ -2278,6 +2285,9 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
       }
   }
 
+  if (givesCheck && !count<KING>(them))
+      givesCheck = false;
+
   // Add gated wall square
   // if wallOrMove, only actually place the wall if they gave up their move
   if (walling() && (!var->wallOrMove || (from==to)))
@@ -2299,7 +2309,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
   // Update the key with the final value
   st->key = k;
   // Calculate checkers bitboard (if move gives check)
-  st->checkersBB = givesCheck ? attackers_to(square<KING>(them), us) & pieces(us) : Bitboard(0);
+  st->checkersBB = givesCheck && count<KING>(them) ? attackers_to(square<KING>(them), us) & pieces(us) : Bitboard(0);
   assert(givesCheck == bool(st->checkersBB));
 
   sideToMove = ~sideToMove;

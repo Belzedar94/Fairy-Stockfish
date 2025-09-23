@@ -766,6 +766,18 @@ class TestPyffish(unittest.TestCase):
         moves = sf.legal_moves("benedict", fen, [])
         self.assertNotIn("d2d7", moves)
 
+    def test_benedict_foolmate(self):
+        fen = "rnbqkbnr/pp1ppppp/2p5/8/3PP3/8/PPP2PPP/RNBQKBNR b KQkq d3 0 2"
+        moves = sf.legal_moves("benedict", fen, [])
+        self.assertIn("d8a5", moves)
+
+        result_fen = sf.get_fen("benedict", fen, ["d8a5"])
+        self.assertEqual(result_fen, "rnb1kbnr/pp1ppppp/2p5/q7/3PP3/8/pPP2PPP/RNBQkBNR w kq - 1 3")
+
+        game_end, value = sf.is_immediate_game_end("benedict", result_fen, [])
+        self.assertTrue(game_end)
+        self.assertEqual(value, -sf.VALUE_MATE)
+
     def test_get_san(self):
         fen = "4k3/8/3R4/8/1R3R2/8/3R4/4K3 w - - 0 1"
         result = sf.get_san("chess", fen, "b4d4")
