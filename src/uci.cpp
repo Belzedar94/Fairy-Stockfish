@@ -546,8 +546,13 @@ string UCI::move(const Position& pos, Move m) {
       move += '-';
   else if (is_gating(m))
   {
-      move += pos.piece_to_char()[make_piece(BLACK, gating_type(m))];
-      if (gating_square(m) != from)
+      if (pos.gating_from_hand())
+      {
+          move += pos.piece_to_char()[make_piece(BLACK, gating_type(m))];
+          if (gating_square(m) != from)
+              move += UCI::square(pos, gating_square(m));
+      }
+      else if (gating_square(m) != from)
           move += UCI::square(pos, gating_square(m));
   }
 
