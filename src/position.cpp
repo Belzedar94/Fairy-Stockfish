@@ -1696,9 +1696,9 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
           k ^= Zobrist::castling[st->castlingRights];
       }
 
-      st->colorChangeSquares |= s;
+      st->colorChangeSquares |= square_bb(s);
       if (originalPromoted)
-          st->colorChangeWasPromoted |= s;
+          st->colorChangeWasPromoted |= square_bb(s);
       st->colorChangeOriginal[s] = originalPiece;
       st->colorChangeUnpromoted[s] = originalUnpromoted;
 
@@ -2131,7 +2131,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
       {
           Square s = pop_lsb(changed);
           Piece original = st->colorChangeOriginal[s];
-          bool wasPromoted = st->colorChangeWasPromoted & s;
+          bool wasPromoted = st->colorChangeWasPromoted & square_bb(s);
           Piece originalUnpromoted = st->colorChangeUnpromoted[s];
           remove_piece(s);
           put_piece(original, s, wasPromoted, originalUnpromoted);
@@ -2437,7 +2437,7 @@ void Position::undo_move(Move m) {
       {
           Square s = pop_lsb(changed);
           Piece original = st->colorChangeOriginal[s];
-          bool wasPromoted = st->colorChangeWasPromoted & s;
+          bool wasPromoted = st->colorChangeWasPromoted & square_bb(s);
           Piece originalUnpromoted = st->colorChangeUnpromoted[s];
 
           if (piece_on(s))
