@@ -2,20 +2,93 @@
 
 import faulthandler
 import subprocess
+import sys
 import unittest
 from pathlib import Path
 
-import pyffish as sf
-
 faulthandler.enable()
 
-ENGINE_PATH = Path(__file__).resolve().parent / "src" / "stockfish"
+REPO_ROOT = Path(__file__).resolve().parent
+ENGINE_PATH = REPO_ROOT / "src" / "stockfish"
+ENGINE_BUILD_ROOT = ENGINE_PATH.parent
+_ENGINE_READY = False
+
+
+def _ensure_setuptools():
+    try:
+        import setuptools  # noqa: F401
+        return
+    except ModuleNotFoundError:
+        pass
+
+    try:
+        subprocess.run([sys.executable, "-m", "ensurepip", "--upgrade"], check=True)
+        subprocess.run(
+            [sys.executable, "-m", "pip", "install", "--upgrade", "setuptools"],
+            check=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise AssertionError(
+            "Failed to install setuptools required to build pyffish"
+        ) from exc
+
+
+def _import_pyffish():
+    try:
+        import pyffish as sf  # type: ignore
+    except ModuleNotFoundError:
+        _ensure_setuptools()
+        build_cmd = [
+            sys.executable,
+            "setup.py",
+            "build_ext",
+            "--inplace",
+        ]
+        try:
+            subprocess.run(build_cmd, cwd=REPO_ROOT, check=True)
+        except (OSError, subprocess.CalledProcessError) as exc:
+            raise AssertionError(
+                "Failed to build the pyffish extension required for unit tests"
+            ) from exc
+        import pyffish as sf  # type: ignore
+    return sf
+
+
+sf = _import_pyffish()
+
+
+def ensure_engine_binary():
+    """Build the standalone engine if it is missing."""
+
+    global _ENGINE_READY
+    if _ENGINE_READY or ENGINE_PATH.exists():
+        _ENGINE_READY = True
+        return
+
+    make_cmd = [
+        "make",
+        "-C",
+        str(ENGINE_BUILD_ROOT),
+        "build",
+        "ARCH=x86-64",
+    ]
+    try:
+        subprocess.run(make_cmd, check=True)
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise AssertionError(
+            "Failed to build the Stockfish engine required for integration tests"
+        ) from exc
+
+    if not ENGINE_PATH.exists():
+        raise AssertionError(f"Engine build did not produce {ENGINE_PATH}")
+
+    _ENGINE_READY = True
 
 
 def run_engine(commands):
     """Run the standalone engine with the provided list of UCI commands."""
 
-    assert ENGINE_PATH.exists(), f"Expected engine binary at {ENGINE_PATH}"
+    ensure_engine_binary()
     script = "\n".join(commands) + "\n"
     result = subprocess.run(
         [str(ENGINE_PATH)],
