@@ -760,9 +760,21 @@ namespace {
     // https://www.chessvariants.com/rules/battle-of-kings-
     Variant* battle_kings_variant() {
         Variant* v = chess_variant_base()->init();
+			v->remove_piece(KING);
+        v->add_piece(COMMONER, 'k'); 
+		v->pieceValue[MG][COMMONER] = -3500;
+		v->pieceValue[EG][COMMONER] = -3500;
+		v->pieceValue[MG][PAWN] = 1880;
+		v->pieceValue[EG][PAWN] = 1750;
+		v->pieceValue[MG][KNIGHT] = 1780;
+		v->pieceValue[EG][KNIGHT] = 1650;
+		v->pieceValue[MG][BISHOP] = 620;
+		v->pieceValue[EG][BISHOP] = 700;
+		v->pieceValue[MG][ROOK] =280;
+		v->pieceValue[EG][ROOK]=380;
+		v->pieceValue[MG][QUEEN] = 30;
+		v->pieceValue[EG][QUEEN] = 30;
         v->startFen = "8/pppppppp/8/8/8/8/PPPPPPPP/8 w - - 0 1";
-        v->remove_piece(KING);
-        v->add_piece(COMMONER, 'k');
         v->castling = false;
         v->gating = true;
         v->gatingFromHand = false;
@@ -781,7 +793,7 @@ namespace {
         v->extinctionValue = -VALUE_MATE;
         v->extinctionPieceTypes = piece_set(COMMONER);
         v->extinctionMustAppear = piece_set(COMMONER);
-        v->extinctionPseudoRoyal = true;
+     //   v->extinctionPseudoRoyal = true;
         v->extinctionFirstCaptureWins = true;
         return v;
     }
