@@ -1586,6 +1586,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
   st->accumulator.computed[BLACK] = false;
   auto& dp = st->dirtyPiece;
   dp.dirty_num = 1;
+  bool decrementedCheck = false;
 
   Color us = sideToMove;
   Color them = ~us;
@@ -1710,7 +1711,10 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
   };
 
   if (check_counting() && givesCheck)
+  {
       k ^= Zobrist::checks[us][st->checksRemaining[us]] ^ Zobrist::checks[us][--(st->checksRemaining[us])];
+      decrementedCheck = true;
+  }
 
   if (type_of(m) == CASTLING)
   {
@@ -2285,8 +2289,48 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
       }
   }
 
-  if (givesCheck && !count<KING>(them))
+  Bitboard checkers = Bitboard(0);
+
+  if (count<KING>(them))
+  {
+      if (st->colorChangeSquares)
+      {
+          checkers = attackers_to(square<KING>(them), us) & pieces(us);
+
+          if (check_counting())
+          {
+              if (checkers && !decrementedCheck)
+              {
+                  k ^= Zobrist::checks[us][st->checksRemaining[us]]
+                     ^ Zobrist::checks[us][--(st->checksRemaining[us])];
+                  decrementedCheck = true;
+              }
+              else if (!checkers && decrementedCheck)
+              {
+                  k ^= Zobrist::checks[us][st->checksRemaining[us]]
+                     ^ Zobrist::checks[us][st->checksRemaining[us] + 1];
+                  ++st->checksRemaining[us];
+                  decrementedCheck = false;
+              }
+          }
+
+          givesCheck = bool(checkers);
+      }
+      else if (givesCheck)
+          checkers = attackers_to(square<KING>(them), us) & pieces(us);
+  }
+  else
+  {
+      if (check_counting() && decrementedCheck)
+      {
+          k ^= Zobrist::checks[us][st->checksRemaining[us]]
+             ^ Zobrist::checks[us][st->checksRemaining[us] + 1];
+          ++st->checksRemaining[us];
+          decrementedCheck = false;
+      }
+
       givesCheck = false;
+  }
 
   // Add gated wall square
   // if wallOrMove, only actually place the wall if they gave up their move
@@ -2309,7 +2353,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
   // Update the key with the final value
   st->key = k;
   // Calculate checkers bitboard (if move gives check)
-  st->checkersBB = givesCheck && count<KING>(them) ? attackers_to(square<KING>(them), us) & pieces(us) : Bitboard(0);
+  st->checkersBB = count<KING>(them) ? checkers : Bitboard(0);
   assert(givesCheck == bool(st->checkersBB));
 
   sideToMove = ~sideToMove;

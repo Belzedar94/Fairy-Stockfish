@@ -1146,6 +1146,10 @@ class TestPyffish(unittest.TestCase):
         result = sf.game_result("chess", CHESS, ["f2f3", "e7e5", "g2g4", "d8h4"])
         self.assertEqual(result, -sf.VALUE_MATE)
 
+        # Benedict checkmate triggered by color change
+        result = sf.game_result("benedict", CHESS, ["e2e3", "g8f6", "d1f3"])
+        self.assertEqual(result, -sf.VALUE_MATE)
+
         # shogi pawn drop mate
         result = sf.game_result("shogi", "lnsg3nk/1r2b1gs1/ppppppp1p/7N1/7p1/9/PPPPPPPP1/1B5R1/LNSGKGS1L[P] w 0 1", ["P@i8"])
         self.assertEqual(result, sf.VALUE_MATE)
