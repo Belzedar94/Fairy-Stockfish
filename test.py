@@ -420,6 +420,29 @@ class TestPyffish(unittest.TestCase):
         fen = "8/4k1k1/8/8/8/8/4Q3/8 w - - 0 1"
         self._check_immediate_game_end("battlekings", fen, ["e2e7"], True, -sf.VALUE_MATE)
 
+    def test_battlekings_multiple_commoners(self):
+        start = sf.start_fen("battlekings")
+        sequence = [
+            "e2e4",
+            "h7h6",
+            "e2c3",
+            "a7a5",
+            "e2g4",
+            "e7e5",
+            "e2e3",
+            "d7d5",
+            "e2e1",
+            "a5a4",
+            "e1d1",
+        ]
+        fen = sf.get_fen("battlekings", start, sequence)
+        board = fen.split()[0]
+        self.assertEqual(board.count("K"), 2)
+
+    def test_battlekings_first_commoner_capture_with_multiple(self):
+        fen = "3qk3/pppp1ppp/2nkr3/4p1b1/P1N5/NPPP3P/NBNNPPPN/8 w - - 3 8"
+        self._check_immediate_game_end("battlekings", fen, ["c4d6"], True, -sf.VALUE_MATE)
+
     def test_legal_moves(self):
         fen = "10/10/10/10/10/k9/10/K9 w - - 0 1"
         result = sf.legal_moves("capablanca", fen, [])

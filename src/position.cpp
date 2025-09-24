@@ -1263,9 +1263,13 @@ bool Position::legal(Move m) const {
 
   Bitboard occupied = (type_of(m) != DROP ? pieces() ^ from : pieces()) | to;
 
+  bool gatingCreatesExtinctionPiece =   gating_type(m) != NO_PIECE_TYPE
+                                     && (extinction_piece_types() & piece_set(gating_type(m)));
+
   if (   is_gating(m)
       && (   gating_type(m) == KING
-          || (extinction_pseudo_royal() && (extinction_piece_types() & piece_set(gating_type(m))))))
+          || (   gatingCreatesExtinctionPiece
+              && (extinction_pseudo_royal() || extinction_first_capture()))))
   {
       Bitboard occ = occupied | gating_square(m);
       if (type_of(m) == EN_PASSANT)
