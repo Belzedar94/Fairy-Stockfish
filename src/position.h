@@ -246,6 +246,7 @@ public:
   Bitboard pieces(PieceType pt = ALL_PIECES) const;
   Bitboard pieces(PieceType pt1, PieceType pt2) const;
   Bitboard pieces(Color c) const;
+  Bitboard dormant_pieces() const;
   Bitboard pieces(Color c, PieceType pt) const;
   Bitboard pieces(Color c, PieceType pt1, PieceType pt2) const;
   Bitboard pieces(Color c, PieceType pt1, PieceType pt2, PieceType pt3) const;
@@ -1224,6 +1225,10 @@ inline Bitboard Position::pieces(Color c) const {
   return byColorBB[c];
 }
 
+inline Bitboard Position::dormant_pieces() const {
+  return dormantPieces;
+}
+
 inline Bitboard Position::pieces(Color c, PieceType pt) const {
   return pieces(c) & pieces(pt);
 }
@@ -1336,6 +1341,8 @@ inline Bitboard Position::attacks_from(Color c, PieceType pt, Square s) const {
 }
 
 inline Bitboard Position::moves_from(Color c, PieceType pt, Square s) const {
+  if (dormantPieces & square_bb(s))
+      return Bitboard(0);
   if (var->fastAttacks || var->fastAttacks2)
       return moves_bb(c, pt, s, byTypeBB[ALL_PIECES]) & board_bb();
 

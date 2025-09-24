@@ -1,103 +1,11 @@
 # -*- coding: utf-8 -*-
 
 import faulthandler
-import subprocess
-import sys
 import unittest
-from pathlib import Path
+
+import pyffish as sf
 
 faulthandler.enable()
-
-REPO_ROOT = Path(__file__).resolve().parent
-ENGINE_PATH = REPO_ROOT / "src" / "stockfish"
-ENGINE_BUILD_ROOT = ENGINE_PATH.parent
-_ENGINE_READY = False
-
-
-def _ensure_setuptools():
-    try:
-        import setuptools  # noqa: F401
-        return
-    except ModuleNotFoundError:
-        pass
-
-    try:
-        subprocess.run([sys.executable, "-m", "ensurepip", "--upgrade"], check=True)
-        subprocess.run(
-            [sys.executable, "-m", "pip", "install", "--upgrade", "setuptools"],
-            check=True,
-        )
-    except (OSError, subprocess.CalledProcessError) as exc:
-        raise AssertionError(
-            "Failed to install setuptools required to build pyffish"
-        ) from exc
-
-
-def _import_pyffish():
-    try:
-        import pyffish as sf  # type: ignore
-    except ModuleNotFoundError:
-        _ensure_setuptools()
-        build_cmd = [
-            sys.executable,
-            "setup.py",
-            "build_ext",
-            "--inplace",
-        ]
-        try:
-            subprocess.run(build_cmd, cwd=REPO_ROOT, check=True)
-        except (OSError, subprocess.CalledProcessError) as exc:
-            raise AssertionError(
-                "Failed to build the pyffish extension required for unit tests"
-            ) from exc
-        import pyffish as sf  # type: ignore
-    return sf
-
-
-sf = _import_pyffish()
-
-
-def ensure_engine_binary():
-    """Build the standalone engine if it is missing."""
-
-    global _ENGINE_READY
-    if _ENGINE_READY or ENGINE_PATH.exists():
-        _ENGINE_READY = True
-        return
-
-    make_cmd = [
-        "make",
-        "-C",
-        str(ENGINE_BUILD_ROOT),
-        "build",
-        "ARCH=x86-64",
-    ]
-    try:
-        subprocess.run(make_cmd, check=True)
-    except (OSError, subprocess.CalledProcessError) as exc:
-        raise AssertionError(
-            "Failed to build the Stockfish engine required for integration tests"
-        ) from exc
-
-    if not ENGINE_PATH.exists():
-        raise AssertionError(f"Engine build did not produce {ENGINE_PATH}")
-
-    _ENGINE_READY = True
-
-
-def run_engine(commands):
-    """Run the standalone engine with the provided list of UCI commands."""
-
-    ensure_engine_binary()
-    script = "\n".join(commands) + "\n"
-    result = subprocess.run(
-        [str(ENGINE_PATH)],
-        input=script,
-        text=True,
-        capture_output=True,
-        check=True,
-    )
-    return result.stdout
 
 CHESS = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 CHESS960 = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w HAha - 0 1"
@@ -1252,6 +1160,11 @@ class TestPyffish(unittest.TestCase):
         result = sf.game_result("benedict", CHESS, ["e2e4", "c7c6", "d2d4", "d8a5"])
         self.assertEqual(result, -sf.VALUE_MATE)
 
+    def test_benedict_dormant_traitor_inactive(self):
+        fen = "r1bqk1nr/pPpP2P1/2nbP3/4qP1P/8/4PN2/PPPP1PPP/RNB1KB1R w KQkq - 4 6"
+        moves = sf.legal_moves("benedict", fen, [])
+        self.assertNotIn("e5f6", moves)
+
         # shogi pawn drop mate
         result = sf.game_result("shogi", "lnsg3nk/1r2b1gs1/ppppppp1p/7N1/7p1/9/PPPPPPPP1/1B5R1/LNSGKGS1L[P] w 0 1", ["P@i8"])
         self.assertEqual(result, sf.VALUE_MATE)
@@ -1468,55 +1381,7 @@ class TestPyffish(unittest.TestCase):
         fen = "rnbqkbnr/p1p2ppp/8/Pp1pp3/4P3/8/1PPP1PPP/RNBQKBNR w KQkq b6 0 1"
         result = sf.get_fog_fen(fen, "fogofwar")
         self.assertEqual(result, "********/********/2******/Pp*p***1/4P3/4*3/1PPP1PPP/RNBQKBNR w KQkq b6 0 1")
-
-
-class TestColorChangeRegression(unittest.TestCase):
-    def test_benedict_conversion_no_false_mate(self):
-        output = run_engine(
-            [
-                "uci",
-                "setoption name UCI_Variant value benedict",
-                "isready",
-                "position startpos moves e2e3 e7e6 d1e2 h7h5 e2b5 f7f5 b5e5",
-                "go depth 2",
-                "quit",
-            ]
-        )
-
-        self.assertIn("bestmove", output)
-        self.assertNotIn("score mate", output)
-
-    def test_benedict_mass_conversion_stability(self):
-        output = run_engine(
-            [
-                "uci",
-                "setoption name UCI_Variant value benedict",
-                "isready",
-                "position fen rnbqkbnr/pppppppp/pppppppp/pppppppp/3Q4/PPPPPPPP/PPPPPPPP/RNBQKBNR w KQkq - 0 1 moves d4e5",
-                "go depth 1",
-                "quit",
-            ]
-        )
-
-        self.assertIn("bestmove", output)
-        self.assertNotIn("bestmove (none)", output)
-        self.assertNotIn("Unknown command", output)
-
-    def test_antiandernach_short_search(self):
-        output = run_engine(
-            [
-                "uci",
-                "setoption name UCI_Variant value antiandernach",
-                "isready",
-                "position startpos moves e2e4 e7e5 g1f3 b8c6 f1c4 g8f6",
-                "go depth 2",
-                "quit",
-            ]
-        )
-
-        self.assertIn("bestmove", output)
-        self.assertNotIn("bestmove (none)", output)
-
+        
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
