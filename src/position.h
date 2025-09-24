@@ -77,6 +77,7 @@ struct StateInfo {
   Bitboard   colorChangeWasPromoted;
   Piece      colorChangeOriginal[SQUARE_NB];
   Piece      colorChangeUnpromoted[SQUARE_NB];
+  Bitboard   dormantBefore;
   Bitboard   pseudoRoyalCandidates;
   Bitboard   pseudoRoyals;
   OptBool    legalCapture;
@@ -390,6 +391,7 @@ private:
   int pieceCountInHand[COLOR_NB][PIECE_TYPE_NB];
   int virtualPieces;
   Bitboard promotedPieces;
+  Bitboard dormantPieces;
   void add_to_hand(Piece pc);
   void remove_from_hand(Piece pc);
   void drop_piece(Piece pc_hand, Piece pc_drop, Square s);
@@ -1302,6 +1304,8 @@ inline Square Position::castling_rook_square(CastlingRights cr) const {
 }
 
 inline Bitboard Position::attacks_from(Color c, PieceType pt, Square s) const {
+  if (dormantPieces & square_bb(s))
+      return Bitboard(0);
   if (var->fastAttacks || var->fastAttacks2)
       return attacks_bb(c, pt, s, byTypeBB[ALL_PIECES]) & board_bb();
 
@@ -1532,6 +1536,7 @@ inline void Position::put_piece(Piece pc, Square s, bool isPromoted, Piece unpro
   board[s] = pc;
   byTypeBB[ALL_PIECES] |= byTypeBB[type_of(pc)] |= s;
   byColorBB[color_of(pc)] |= s;
+  dormantPieces &= ~square_bb(s);
   pieceCount[pc]++;
   pieceCount[make_piece(color_of(pc), ALL_PIECES)]++;
   psq += PSQT::psq[pc][s];
@@ -1546,6 +1551,7 @@ inline void Position::remove_piece(Square s) {
   byTypeBB[ALL_PIECES] ^= s;
   byTypeBB[type_of(pc)] ^= s;
   byColorBB[color_of(pc)] ^= s;
+  dormantPieces &= ~square_bb(s);
   board[s] = NO_PIECE;
   pieceCount[pc]--;
   pieceCount[make_piece(color_of(pc), ALL_PIECES)]--;

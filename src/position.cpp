@@ -925,29 +925,32 @@ Bitboard Position::slider_blockers(Bitboard sliders, Square s, Bitboard& pinners
 
 Bitboard Position::attackers_to(Square s, Bitboard occupied, Color c, Bitboard janggiCannons) const {
 
+  Bitboard activeMask = ~dormantPieces;
+
   // Use a faster version for variants with moderate rule variations
   if (var->fastAttacks)
   {
-      return  (pawn_attacks_bb(~c, s)          & pieces(c, PAWN))
-            | (attacks_bb<KNIGHT>(s)           & pieces(c, KNIGHT, ARCHBISHOP, CHANCELLOR))
-            | (attacks_bb<  ROOK>(s, occupied) & pieces(c, ROOK, QUEEN, CHANCELLOR))
-            | (attacks_bb<BISHOP>(s, occupied) & pieces(c, BISHOP, QUEEN, ARCHBISHOP))
-            | (attacks_bb<KING>(s)             & pieces(c, KING, COMMONER));
+      return  (pawn_attacks_bb(~c, s)          & (pieces(c, PAWN) & activeMask))
+            | (attacks_bb<KNIGHT>(s)           & (pieces(c, KNIGHT, ARCHBISHOP, CHANCELLOR) & activeMask))
+            | (attacks_bb<  ROOK>(s, occupied) & (pieces(c, ROOK, QUEEN, CHANCELLOR) & activeMask))
+            | (attacks_bb<BISHOP>(s, occupied) & (pieces(c, BISHOP, QUEEN, ARCHBISHOP) & activeMask))
+            | (attacks_bb<KING>(s)             & (pieces(c, KING, COMMONER) & activeMask));
   }
 
   // Use a faster version for selected fairy pieces
   if (var->fastAttacks2)
   {
-      return  (pawn_attacks_bb(~c, s)             & pieces(c, PAWN, BREAKTHROUGH_PIECE, GOLD))
-            | (attacks_bb<KNIGHT>(s)              & pieces(c, KNIGHT))
-            | (attacks_bb<  ROOK>(s, occupied)    & (  pieces(c, ROOK, QUEEN, DRAGON)
-                                                     | (pieces(c, LANCE) & PseudoAttacks[~c][LANCE][s])))
-            | (attacks_bb<BISHOP>(s, occupied)    & pieces(c, BISHOP, QUEEN, DRAGON_HORSE))
-            | (attacks_bb<KING>(s)                & pieces(c, KING, COMMONER))
-            | (attacks_bb<FERS>(s)                & pieces(c, FERS, DRAGON, SILVER))
-            | (attacks_bb<WAZIR>(s)               & pieces(c, WAZIR, DRAGON_HORSE, GOLD))
-            | (LeaperAttacks[~c][SHOGI_KNIGHT][s] & pieces(c, SHOGI_KNIGHT))
-            | (LeaperAttacks[~c][SHOGI_PAWN][s]   & pieces(c, SHOGI_PAWN, SILVER));
+      Bitboard activeLances = pieces(c, LANCE) & activeMask;
+      return  (pawn_attacks_bb(~c, s)             & (pieces(c, PAWN, BREAKTHROUGH_PIECE, GOLD) & activeMask))
+            | (attacks_bb<KNIGHT>(s)              & (pieces(c, KNIGHT) & activeMask))
+            | (attacks_bb<  ROOK>(s, occupied)    & ( (pieces(c, ROOK, QUEEN, DRAGON) & activeMask)
+                                                     | (activeLances & PseudoAttacks[~c][LANCE][s])))
+            | (attacks_bb<BISHOP>(s, occupied)    & (pieces(c, BISHOP, QUEEN, DRAGON_HORSE) & activeMask))
+            | (attacks_bb<KING>(s)                & (pieces(c, KING, COMMONER) & activeMask))
+            | (attacks_bb<FERS>(s)                & (pieces(c, FERS, DRAGON, SILVER) & activeMask))
+            | (attacks_bb<WAZIR>(s)               & (pieces(c, WAZIR, DRAGON_HORSE, GOLD) & activeMask))
+            | (LeaperAttacks[~c][SHOGI_KNIGHT][s] & (pieces(c, SHOGI_KNIGHT) & activeMask))
+            | (LeaperAttacks[~c][SHOGI_PAWN][s]   & (pieces(c, SHOGI_PAWN, SILVER) & activeMask));
   }
 
   Bitboard b = 0;
@@ -957,10 +960,12 @@ Bitboard Position::attackers_to(Square s, Bitboard occupied, Color c, Bitboard j
       if (board_bb(c, pt) & s)
       {
           PieceType move_pt = pt == KING ? king_type() : pt;
+          Bitboard activePieces = pieces(c, pt) & activeMask;
+
           // Consider asymmetrical moves (e.g., horse)
           if (AttackRiderTypes[move_pt] & ASYMMETRICAL_RIDERS)
           {
-              Bitboard asymmetricals = PseudoAttacks[~c][move_pt][s] & pieces(c, pt);
+              Bitboard asymmetricals = PseudoAttacks[~c][move_pt][s] & activePieces;
               while (asymmetricals)
               {
                   Square s2 = pop_lsb(asymmetricals);
@@ -969,9 +974,11 @@ Bitboard Position::attackers_to(Square s, Bitboard occupied, Color c, Bitboard j
               }
           }
           else if (pt == JANGGI_CANNON)
-              b |= attacks_bb(~c, move_pt, s, occupied) & attacks_bb(~c, move_pt, s, occupied & ~janggiCannons) & pieces(c, JANGGI_CANNON);
+              b |= attacks_bb(~c, move_pt, s, occupied)
+                 & attacks_bb(~c, move_pt, s, occupied & ~janggiCannons)
+                 & activePieces;
           else
-              b |= attacks_bb(~c, move_pt, s, occupied) & pieces(c, pt);
+              b |= attacks_bb(~c, move_pt, s, occupied) & activePieces;
       }
   }
 
@@ -980,13 +987,13 @@ Bitboard Position::attackers_to(Square s, Bitboard occupied, Color c, Bitboard j
   {
       Bitboard diags = 0;
       if (king_type() == WAZIR)
-          diags |= attacks_bb(~c, FERS, s, occupied) & pieces(c, KING);
-      diags |= attacks_bb(~c, FERS, s, occupied) & pieces(c, WAZIR);
-      diags |= attacks_bb(~c, PAWN, s, occupied) & pieces(c, SOLDIER);
-      diags |= rider_attacks_bb<RIDER_BISHOP>(s, occupied) & pieces(c, ROOK);
+          diags |= attacks_bb(~c, FERS, s, occupied) & (pieces(c, KING) & activeMask);
+      diags |= attacks_bb(~c, FERS, s, occupied) & (pieces(c, WAZIR) & activeMask);
+      diags |= attacks_bb(~c, PAWN, s, occupied) & (pieces(c, SOLDIER) & activeMask);
+      diags |= rider_attacks_bb<RIDER_BISHOP>(s, occupied) & (pieces(c, ROOK) & activeMask);
       diags |=  rider_attacks_bb<RIDER_CANNON_DIAG>(s, occupied)
               & rider_attacks_bb<RIDER_CANNON_DIAG>(s, occupied & ~janggiCannons)
-              & pieces(c, JANGGI_CANNON);
+              & (pieces(c, JANGGI_CANNON) & activeMask);
       b |= diags & diagonal_lines();
   }
 
@@ -1572,6 +1579,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
   newSt.previous = st;
   st = &newSt;
   st->move = m;
+  st->dormantBefore = dormantPieces;
 
   // Increment ply counters. In particular, rule50 will be reset to zero later on
   // in case of a capture or a pawn move.
@@ -1625,6 +1633,9 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
   st->colorChangeSquares = 0;
   st->colorChangeWasPromoted = 0;
 
+  if (type_of(m) != DROP && (dormantPieces & square_bb(from)))
+      dormantPieces &= ~square_bb(from);
+
   assert(color_of(pc) == us);
   assert(captured == NO_PIECE
          || (type_of(m) == CASTLING
@@ -1667,7 +1678,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
       return currentColor;
   };
 
-  auto apply_color_change = [&](Square s, Piece newPiece, bool newPromoted, Piece newUnpromoted) {
+  auto apply_color_change = [&](Square s, Piece newPiece, bool newPromoted, Piece newUnpromoted, bool setDormant) {
       Piece originalPiece = piece_on(s);
       if (originalPiece == NO_PIECE)
           return false;
@@ -1706,6 +1717,11 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
           st->pawnKey ^= Zobrist::psq[newPiece][s];
       if (type_of(newPiece) != PAWN)
           st->nonPawnMaterial[color_of(newPiece)] += PieceValue[MG][newPiece];
+
+      if (setDormant)
+          dormantPieces |= square_bb(s);
+      else
+          dormantPieces &= ~square_bb(s);
 
       return true;
   };
@@ -2239,7 +2255,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
 
               Color targetColor = resolve_target_color(var->changingColors.target, us, color_of(moverPieceBeforeChange), captured);
               Piece newPiece = make_piece(targetColor, targetType);
-              if (apply_color_change(to, newPiece, newPromoted, newUnpromoted) && Eval::useNNUE)
+              if (apply_color_change(to, newPiece, newPromoted, newUnpromoted, false) && Eval::useNNUE)
                   dp.piece[0] = newPiece;
           }
       }
@@ -2284,7 +2300,8 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
               }
 
               Piece newPiece = make_piece(newColor, type_of(victim));
-              apply_color_change(s, newPiece, newPromoted, newUnpromoted);
+              apply_color_change(s, newPiece, newPromoted, newUnpromoted,
+                                 var->attackedChangingColors.convertedPiecesDormant);
           }
       }
   }
@@ -2545,6 +2562,8 @@ void Position::undo_move(Move m) {
           put_piece(resulting, s);
       }
   }
+
+  dormantPieces = st->dormantBefore;
 
   // Finally point our state pointer back to the previous state
   st = st->previous;

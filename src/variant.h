@@ -82,6 +82,7 @@ struct AttackedColorChangeRule {
   ColorMask targetColors;
   ColorChangeTarget target = ColorChangeTarget::MOVER;
   bool resetPromotionState = false;
+  bool convertedPiecesDormant = false;
 };
 
 struct Variant {

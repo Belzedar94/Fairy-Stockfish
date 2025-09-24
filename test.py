@@ -766,6 +766,16 @@ class TestPyffish(unittest.TestCase):
         moves = sf.legal_moves("benedict", fen, [])
         self.assertNotIn("d2d7", moves)
 
+    def test_benedict_traitor_must_move_before_attacking(self):
+        fen = sf.start_fen("benedict")
+        moves = ["g1f3", "e7e5", "f3g5", "e8e7", "g5e6"]
+
+        game_end, _ = sf.is_immediate_game_end("benedict", fen, moves)
+        self.assertFalse(game_end)
+
+        legal = sf.legal_moves("benedict", fen, moves)
+        self.assertIn("d7d6", legal)
+
     def test_benedict_foolmate(self):
         fen = "rnbqkbnr/pp1ppppp/2p5/8/3PP3/8/PPP2PPP/RNBQKBNR b KQkq d3 0 2"
         moves = sf.legal_moves("benedict", fen, [])
@@ -1147,7 +1157,7 @@ class TestPyffish(unittest.TestCase):
         self.assertEqual(result, -sf.VALUE_MATE)
 
         # Benedict checkmate triggered by color change
-        result = sf.game_result("benedict", CHESS, ["e2e3", "g8f6", "d1f3"])
+        result = sf.game_result("benedict", CHESS, ["e2e4", "c7c6", "d2d4", "d8a5"])
         self.assertEqual(result, -sf.VALUE_MATE)
 
         # shogi pawn drop mate

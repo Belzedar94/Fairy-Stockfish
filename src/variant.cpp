@@ -710,6 +710,7 @@ namespace {
         v->attackedChangingColors.moverPieceTypes = ~NO_PIECE_SET;
         v->attackedChangingColors.targetPieceTypes = ~NO_PIECE_SET;
         v->attackedChangingColors.target = ColorChangeTarget::MOVER;
+        v->attackedChangingColors.convertedPiecesDormant = true;
         v->extinctionValue = -VALUE_MATE;
         v->extinctionPieceTypes = piece_set(KING);
         return v;

@@ -575,6 +575,7 @@ Variant* VariantParser<DoCheck>::parse(Variant* v) {
     parse_attribute("attackChangingColorsTargetColors", v->attackedChangingColors.targetColors);
     parse_attribute("attackChangingColorsTarget", v->attackedChangingColors.target);
     parse_attribute("attackChangingColorsResetPromotion", v->attackedChangingColors.resetPromotionState);
+    parse_attribute("attackChangingColorsDormant", v->attackedChangingColors.convertedPiecesDormant);
     parse_attribute("mustDrop", v->mustDrop);
     parse_attribute("mustDropType", v->mustDropType, v->pieceToChar);
     parse_attribute("pieceDrops", v->pieceDrops);
