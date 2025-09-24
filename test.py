@@ -389,6 +389,28 @@ class TestPyffish(unittest.TestCase):
         self.assertIn("e1d1", post_king_moves)
         self.assertNotIn("e1d1k", post_king_moves)
 
+    def test_battlekings_gating_after_en_passant(self):
+        start = sf.start_fen("battlekings")
+
+        sequence = ["e2e4", "a7a5", "e4e5", "d7d5", "e5d6", "a5a4"]
+        post_ep_moves = sf.legal_moves("battlekings", start, sequence)
+        self.assertIn("d2d4", post_ep_moves)
+
+        fen_after_gate = sf.get_fen("battlekings", start, sequence + ["d2d4"])
+        board_after_gate = fen_after_gate.split()[0].split("/")
+        rank_two = board_after_gate[6]
+        file_index = 0
+        d_file_piece = None
+        for ch in rank_two:
+            if ch.isdigit():
+                file_index += int(ch)
+            else:
+                if file_index == 3:
+                    d_file_piece = ch
+                    break
+                file_index += 1
+        self.assertEqual(d_file_piece, "N")
+
     def test_battlekings_king_spawn_blocked(self):
         fen = "8/8/8/8/8/3p4/4Q3/8 w - - 0 1"
         moves = sf.legal_moves("battlekings", fen, [])

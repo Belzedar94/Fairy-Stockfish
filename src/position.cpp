@@ -2011,8 +2011,11 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
           st->gatesBB[us] ^= from;
       if (type_of(m) == CASTLING && (gates(us) & to_sq(m)))
           st->gatesBB[us] ^= to_sq(m);
-      if (gates(them) & to)
-          st->gatesBB[them] ^= to;
+      Square captureGate = to;
+      if (type_of(m) == EN_PASSANT)
+          captureGate = st->captureSquare;
+      if (gates(them) & captureGate)
+          st->gatesBB[them] ^= captureGate;
       if (seirawan_gating() && count_in_hand(us, ALL_PIECES) == 0 && !captures_to_hand())
           st->gatesBB[us] = 0;
   }
