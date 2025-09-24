@@ -1726,6 +1726,22 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
       return true;
   };
 
+  auto push_dirty_board_change = [&](Piece piece, Square fromSq, Square toSq) {
+      if (!Eval::useNNUE || piece == NO_PIECE)
+          return;
+
+      if (dp.dirty_num < DirtyPiece::Max)
+      {
+          dp.piece[dp.dirty_num] = piece;
+          dp.handPiece[dp.dirty_num] = NO_PIECE;
+          dp.handCount[dp.dirty_num] = 0;
+          dp.from[dp.dirty_num] = fromSq;
+          dp.to[dp.dirty_num] = toSq;
+      }
+
+      dp.dirty_num = std::min(dp.dirty_num + 1, DirtyPiece::Max);
+  };
+
   if (check_counting() && givesCheck)
   {
       k ^= Zobrist::checks[us][st->checksRemaining[us]] ^ Zobrist::checks[us][--(st->checksRemaining[us])];
@@ -2255,8 +2271,15 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
 
               Color targetColor = resolve_target_color(var->changingColors.target, us, color_of(moverPieceBeforeChange), captured);
               Piece newPiece = make_piece(targetColor, targetType);
-              if (apply_color_change(to, newPiece, newPromoted, newUnpromoted, false) && Eval::useNNUE)
-                  dp.piece[0] = newPiece;
+              if (apply_color_change(to, newPiece, newPromoted, newUnpromoted, false))
+              {
+                  if (Eval::useNNUE)
+                  {
+                      if (dp.to[0] == to)
+                          dp.to[0] = SQ_NONE;
+                      push_dirty_board_change(piece_on(to), SQ_NONE, to);
+                  }
+              }
           }
       }
   }
@@ -2300,8 +2323,12 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
               }
 
               Piece newPiece = make_piece(newColor, type_of(victim));
-              apply_color_change(s, newPiece, newPromoted, newUnpromoted,
-                                 var->attackedChangingColors.convertedPiecesDormant);
+              if (apply_color_change(s, newPiece, newPromoted, newUnpromoted,
+                                     var->attackedChangingColors.convertedPiecesDormant))
+              {
+                  push_dirty_board_change(victim, s, SQ_NONE);
+                  push_dirty_board_change(piece_on(s), SQ_NONE, s);
+              }
           }
       }
   }

@@ -566,19 +566,19 @@ enum Rank : int {
 // Keep track of what a move changes on the board (used by NNUE)
 struct DirtyPiece {
 
+  static constexpr int Max = 2 * SQUARE_NB + 16;
+
   // Number of changed pieces
   int dirty_num;
 
-  // Max 3 pieces can change in one move. A promotion with capture moves
-  // both the pawn and the captured piece to SQ_NONE and the piece promoted
-  // to from SQ_NONE to the capture square.
-  Piece piece[12];
-  Piece handPiece[12];
-  int handCount[12];
+  // Changed pieces either on the board or in hand.
+  Piece piece[Max];
+  Piece handPiece[Max];
+  int handCount[Max];
 
   // From and to squares, which may be SQ_NONE
-  Square from[12];
-  Square to[12];
+  Square from[Max];
+  Square to[Max];
 };
 
 /// Score enum stores a middlegame and an endgame value in a single integer (enum).
