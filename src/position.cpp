@@ -1263,6 +1263,17 @@ bool Position::legal(Move m) const {
 
   Bitboard occupied = (type_of(m) != DROP ? pieces() ^ from : pieces()) | to;
 
+  if (   is_gating(m)
+      && (   gating_type(m) == KING
+          || (extinction_pseudo_royal() && (extinction_piece_types() & piece_set(gating_type(m))))))
+  {
+      Bitboard occ = occupied | gating_square(m);
+      if (type_of(m) == EN_PASSANT)
+          occ ^= capture_square(to);
+      if (attackers_to(gating_square(m), occ, ~us))
+          return false;
+  }
+
   // Flying general rule and bikjang
   // In case of bikjang passing is always allowed, even when in check
   if (st->bikjang && is_pass(m))
@@ -1976,7 +1987,8 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
       }
 
       put_piece(gating_piece, gate);
-      remove_from_hand(gating_piece);
+      if (gating_from_hand())
+          remove_from_hand(gating_piece);
 
       st->gatesBB[us] ^= gate;
       k ^= Zobrist::psq[gating_piece][gate];
@@ -2204,7 +2216,8 @@ void Position::undo_move(Move m) {
       Piece gating_piece = make_piece(us, gating_type(m));
       remove_piece(gating_square(m));
       board[gating_square(m)] = NO_PIECE;
-      add_to_hand(gating_piece);
+      if (gating_from_hand())
+          add_to_hand(gating_piece);
       st->gatesBB[us] |= gating_square(m);
   }
 
@@ -2465,6 +2478,10 @@ Value Position::blast_see(Move m) const {
   }
   else
   {
+      if (   extinction_first_capture()
+          && piece_on(to)
+          && (extinction_piece_types() & type_of(piece_on(to))))
+          return -extinction_value();
       if (extinctsUs)
           return extinction_value();
       if (extinctsThem)
@@ -2498,6 +2515,10 @@ bool Position::see_ge(Move m, Value threshold) const {
       return blast_see(m) >= threshold;
 
   // Extinction
+  if (   extinction_first_capture()
+      && piece_on(to)
+      && (extinction_piece_types() & type_of(piece_on(to))))
+      return extinction_value() < VALUE_ZERO;
   if (   extinction_value() != VALUE_NONE
       && piece_on(to)
       && (   (   (extinction_piece_types() & type_of(piece_on(to)))
@@ -2777,6 +2798,21 @@ bool Position::is_optional_game_end(Value& result, int ply, int countStarted) co
 
 bool Position::is_immediate_game_end(Value& result, int ply) const {
 
+  if (extinction_first_capture() && captured_piece() != NO_PIECE)
+  {
+      Piece captured = captured_piece();
+      PieceType capturedType = type_of(captured);
+      Color capturedColor = color_of(captured);
+      if (   (extinction_piece_types() & piece_set(capturedType))
+          && capturedColor == sideToMove
+          && (   !(extinction_must_appear() & piece_set(capturedType))
+              || (st->extinctionSeen[capturedColor] & piece_set(capturedType))))
+      {
+          result = extinction_value(ply);
+          return true;
+      }
+  }
+
   // Extinction
   // Extinction does not apply for pseudo-royal pieces, because they can not be captured
   if (extinction_value() != VALUE_NONE && (!var->extinctionPseudoRoyal || blast_on_capture()))
@@ -2785,6 +2821,8 @@ bool Position::is_immediate_game_end(Value& result, int ply) const {
           for (PieceSet ps = extinction_piece_types(); ps;)
           {
               PieceType pt = pop_lsb(ps);
+              if ((extinction_must_appear() & piece_set(pt)) && !(st->extinctionSeen[c] & piece_set(pt)))
+                  continue;
               if (   count_with_hand( c, pt) <= var->extinctionPieceCount
                   && count_with_hand(~c, pt) >= var->extinctionOpponentPieceCount + (extinction_claim() && c == sideToMove))
               {
