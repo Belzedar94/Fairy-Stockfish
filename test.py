@@ -429,6 +429,11 @@ class TestPyffish(unittest.TestCase):
         fen = sf.get_fen("battlekings", start, ["d2d1"])
         self.assertEqual(fen, expected)
 
+    def test_chess_promotion_does_not_gate(self):
+        start = "8/P7/8/8/8/8/7p/7K w - - 0 1"
+        fen = sf.get_fen("chess", start, ["a7a8q"])
+        self.assertEqual(fen, "Q7/8/8/8/8/8/7p/7K b - - 0 1")
+
     def test_battlekings_king_spawn_blocked(self):
         fen = "8/8/8/8/8/3p4/4Q3/8 w - - 0 1"
         moves = sf.legal_moves("battlekings", fen, [])
