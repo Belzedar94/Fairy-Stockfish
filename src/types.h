@@ -815,7 +815,13 @@ inline Square gating_square(Move m) {
 }
 
 inline bool is_gating(Move m) {
-  return gating_type(m) && (type_of(m) == NORMAL || type_of(m) == CASTLING);
+  MoveType mt = type_of(m);
+  return gating_type(m)
+      && (   mt == NORMAL
+          || mt == CASTLING
+          || mt == EN_PASSANT
+          || mt == PROMOTION
+          || mt == PIECE_PROMOTION);
 }
 
 inline bool is_pass(Move m) {

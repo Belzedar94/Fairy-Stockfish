@@ -411,6 +411,24 @@ class TestPyffish(unittest.TestCase):
                 file_index += 1
         self.assertEqual(d_file_piece, "N")
 
+    def test_battlekings_en_passant_keeps_gate_available(self):
+        start = sf.start_fen("battlekings")
+        setup = ["e2e3", "c7c5", "f2f3", "c5c4", "d2d4"]
+        expected = "8/ppnppppp/8/2n5/2n5/3pPP2/PPPNNNPP/8 w - - 0 4"
+
+        fen = sf.get_fen("battlekings", start, setup + ["c4d3"])
+        self.assertEqual(fen, expected)
+
+    def test_battlekings_forced_promotion_and_gate(self):
+        start = "8/ppnppppp/8/2n5/2N1P3/2P1BP2/PNPpNNPP/8 b - - 0 5"
+        expected = "8/ppnppppp/8/2n5/2N1P3/2P1BP2/PNPnNNPP/3n4 w - - 0 6"
+
+        legal = sf.legal_moves("battlekings", start, [])
+        self.assertIn("d2d1", legal)
+
+        fen = sf.get_fen("battlekings", start, ["d2d1"])
+        self.assertEqual(fen, expected)
+
     def test_battlekings_king_spawn_blocked(self):
         fen = "8/8/8/8/8/3p4/4Q3/8 w - - 0 1"
         moves = sf.legal_moves("battlekings", fen, [])
