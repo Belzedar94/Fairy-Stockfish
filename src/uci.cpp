@@ -521,7 +521,7 @@ string UCI::move(const Position& pos, Move m) {
   if (is_pass(m) && CurrentProtocol == XBOARD)
       return "@@@@";
 
-  if (is_gating(m) && gating_square(m) == to)
+  if (pos.gating() && is_gating(m) && gating_square(m) == to)
       from = to_sq(m), to = from_sq(m);
   else if (type_of(m) == CASTLING && !pos.is_chess960())
   {
@@ -541,14 +541,15 @@ string UCI::move(const Position& pos, Move m) {
   if (type_of(m) == PROMOTION)
   {
       PieceType forced = NO_PIECE_TYPE;
-      if (is_gating(m) && !pos.gating_from_hand())
+      if (pos.gating() && is_gating(m) && !pos.gating_from_hand())
       {
           Piece moving = pos.moved_piece(m);
           if (moving != NO_PIECE)
               forced = pos.forced_gating_type(pos.side_to_move(), type_of(moving));
       }
 
-      bool autoPromotion =   forced != NO_PIECE_TYPE
+      bool autoPromotion =   pos.gating()
+                          && forced != NO_PIECE_TYPE
                           && forced == promotion_type(m)
                           && forced == gating_type(m);
 
@@ -559,7 +560,7 @@ string UCI::move(const Position& pos, Move m) {
       move += '+';
   else if (type_of(m) == PIECE_DEMOTION)
       move += '-';
-  else if (is_gating(m))
+  else if (pos.gating() && is_gating(m))
   {
       if (pos.gating_from_hand())
       {
@@ -603,7 +604,7 @@ Move UCI::to_move(const Position& pos, string& str) {
       if (str.length() == 4 && type_of(m) == PROMOTION && uciMove.length() == 5)
       {
           Piece moving = pos.moved_piece(m);
-          PieceType forced = is_gating(m) && !pos.gating_from_hand() && moving != NO_PIECE
+          PieceType forced = pos.gating() && is_gating(m) && !pos.gating_from_hand() && moving != NO_PIECE
                               ? pos.forced_gating_type(pos.side_to_move(), type_of(moving))
                               : NO_PIECE_TYPE;
           if (forced != NO_PIECE_TYPE && forced == promotion_type(m) && forced == gating_type(m)

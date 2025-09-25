@@ -1119,7 +1119,7 @@ bool Position::legal(Move m) const {
       Bitboard occupied = (type_of(m) != DROP ? pieces() ^ from : pieces());
       if (walling_rule() == DUCK)
           occupied ^= st->wallSquares;
-      if (walling() || is_gating(m))
+      if (walling() || (gating() && is_gating(m)))
           occupied |= gating_square(m);
       if (type_of(m) == CASTLING)
       {
@@ -1244,7 +1244,7 @@ bool Position::legal(Move m) const {
 
       // Will the gate be blocked by king or rook?
       Square rto = to + (to_sq(m) > from_sq(m) ? WEST : EAST);
-      if (is_gating(m) && (gating_square(m) == to || gating_square(m) == rto))
+      if (gating() && is_gating(m) && (gating_square(m) == to || gating_square(m) == rto))
           return false;
 
       // Non-royal pieces can not be impeded from castling
@@ -1266,7 +1266,7 @@ bool Position::legal(Move m) const {
   bool gatingCreatesExtinctionPiece =   gating_type(m) != NO_PIECE_TYPE
                                      && (extinction_piece_types() & piece_set(gating_type(m)));
 
-  if (   is_gating(m)
+  if (   gating() && is_gating(m)
       && (   gating_type(m) == KING
           || (   gatingCreatesExtinctionPiece
               && (extinction_pseudo_royal() || extinction_first_capture()))))
@@ -1340,7 +1340,7 @@ bool Position::pseudo_legal(const Move m) const {
 
   // Use a slower but simpler function for uncommon cases
   // yet we skip the legality check of MoveList<LEGAL>().
-  if (type_of(m) != NORMAL || is_gating(m))
+  if (type_of(m) != NORMAL || (gating() && is_gating(m)))
       return checkers() ? MoveList<    EVASIONS>(*this).contains(m)
                         : MoveList<NON_EVASIONS>(*this).contains(m);
 
@@ -1495,7 +1495,7 @@ bool Position::gives_check(Move m) const {
       return true;
 
   // Is there a check by gated pieces?
-  if (    is_gating(m)
+  if (    gating() && is_gating(m)
       && attacks_bb(sideToMove, gating_type(m), gating_square(m), (pieces() ^ from) | to) & square<KING>(~sideToMove))
       return true;
 
@@ -1974,7 +1974,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
   st->capturedPiece = captured;
 
   // Add gating piece
-  if (is_gating(m))
+  if (gating() && is_gating(m))
   {
       Square gate = gating_square(m);
       Piece gating_piece = make_piece(us, gating_type(m));
@@ -2192,7 +2192,7 @@ void Position::undo_move(Move m) {
   Square to = to_sq(m);
   Piece pc = piece_on(to);
 
-  assert(type_of(m) == DROP || empty(from) || type_of(m) == CASTLING || is_gating(m)
+  assert(type_of(m) == DROP || empty(from) || type_of(m) == CASTLING || (gating() && is_gating(m))
          || (type_of(m) == PROMOTION && sittuyin_promotion())
          || (is_pass(m) && (pass(us) || var->wallOrMove)));
   assert(type_of(st->capturedPiece) != KING);
@@ -2226,7 +2226,7 @@ void Position::undo_move(Move m) {
   }
 
   // Remove gated piece
-  if (is_gating(m))
+  if (gating() && is_gating(m))
   {
       Piece gating_piece = make_piece(us, gating_type(m));
       remove_piece(gating_square(m));
@@ -2543,7 +2543,7 @@ bool Position::see_ge(Move m, Value threshold) const {
       return extinction_value() < VALUE_ZERO;
 
   // Do not evaluate SEE if value would be unreliable
-  if (must_capture() || !checking_permitted() || is_gating(m) || count<CLOBBER_PIECE>() == count<ALL_PIECES>())
+  if (must_capture() || !checking_permitted() || (gating() && is_gating(m)) || count<CLOBBER_PIECE>() == count<ALL_PIECES>())
       return VALUE_ZERO >= threshold;
 
   Piece victim = piece_on(to);
