@@ -2984,6 +2984,8 @@ bool Position::see_ge(Move m, Value threshold) const {
 
 bool Position::is_optional_game_end(Value& result, int ply, int countStarted) const {
 
+  result = VALUE_ZERO;
+
   // n-move rule
   if (n_move_rule() && st->rule50 > (2 * n_move_rule() - 1) && (!checkers() || MoveList<LEGAL>(*this).size()))
   {
@@ -3121,6 +3123,8 @@ bool Position::is_optional_game_end(Value& result, int ply, int countStarted) co
 /// It does not detect stalemates.
 
 bool Position::is_immediate_game_end(Value& result, int ply) const {
+
+  result = VALUE_ZERO;
 
   // Extinction
   // Extinction does not apply for pseudo-royal pieces, because they can not be captured

@@ -1193,6 +1193,27 @@ class TestPyffish(unittest.TestCase):
         self.assertFalse(game_end)
         self.assertEqual(value, 0)
 
+    def test_benedict_immediate_game_end_reports_zero_when_false(self):
+        fen = sf.start_fen("benedict")
+        moves = [
+            "e2e3",
+            "e7e6",
+            "d1e2",
+            "h7h5",
+            "e2b5",
+            "f7f5",
+            "b5e5",
+            "b8c6",
+            "g1f3",
+            "f8d6",
+            "b7b8b",
+            "e5c3",
+        ]
+
+        game_end, value = sf.is_immediate_game_end("benedict", fen, moves)
+        self.assertFalse(game_end)
+        self.assertEqual(value, 0)
+
     def test_benedict_traitor_can_move_while_dormant(self):
         fen = sf.start_fen("benedict")
         moves = [
