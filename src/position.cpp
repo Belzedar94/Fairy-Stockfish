@@ -315,9 +315,22 @@ Position& Position::set(const Variant* v, const string& fenStr, bool isChess960,
 
       else if ((idx = piece_to_char().find(token)) != string::npos || (idx = piece_to_char_synonyms().find(token)) != string::npos)
       {
-          if (ss.peek() == '~')
-              ss >> token;
-          put_piece(Piece(idx), sq, token == '~');
+          bool promoted = false;
+          bool dormant = false;
+
+          while (ss.peek() == '~' || ss.peek() == '!')
+          {
+              char marker;
+              ss >> marker;
+              if (marker == '~')
+                  promoted = true;
+              else if (marker == '!')
+                  dormant = true;
+          }
+
+          put_piece(Piece(idx), sq, promoted);
+          if (dormant)
+              dormantPieces |= square_bb(sq);
           ++sq;
       }
 
@@ -326,6 +339,15 @@ Position& Position::set(const Variant* v, const string& fenStr, bool isChess960,
       {
           ss >> token;
           put_piece(make_piece(color_of(Piece(idx)), promoted_piece_type(type_of(Piece(idx)))), sq, true, Piece(idx));
+
+          bool dormant = false;
+          while (ss.peek() == '!')
+          {
+              ss >> token;
+              dormant = true;
+          }
+          if (dormant)
+              dormantPieces |= square_bb(sq);
           ++sq;
       }
   }
@@ -662,6 +684,8 @@ void Position::set_state(StateInfo* si) const {
   if (check_counting())
       for (Color c : {WHITE, BLACK})
           si->key ^= Zobrist::checks[c][si->checksRemaining[c]];
+
+  si->dormantBefore = dormantPieces;
 }
 
 
@@ -710,15 +734,24 @@ string Position::fen(bool sfen, bool showPromoted, int countStarted, std::string
                   // Wall square
                   ss << "*";
               else if (unpromoted_piece_on(make_square(f, r)))
-                  // Promoted shogi pieces, e.g., +r for dragon
-                  ss << "+" << piece_to_char()[unpromoted_piece_on(make_square(f, r))];
+              // Promoted shogi pieces, e.g., +r for dragon
+              {
+                  Square sq = make_square(f, r);
+                  ss << "+" << piece_to_char()[unpromoted_piece_on(sq)];
+                  if (dormantPieces & square_bb(sq))
+                      ss << "!";
+              }
               else
               {
-                  ss << piece_to_char()[piece_on(make_square(f, r))];
+                  Square sq = make_square(f, r);
+                  ss << piece_to_char()[piece_on(sq)];
 
                   // Set promoted pieces
-                  if (((captures_to_hand() && !drop_loop()) || two_boards() ||  showPromoted) && is_promoted(make_square(f, r)))
+                  if (((captures_to_hand() && !drop_loop()) || two_boards() ||  showPromoted) && is_promoted(sq))
                       ss << "~";
+
+                  if (dormantPieces & square_bb(sq))
+                      ss << "!";
               }
           }
       }

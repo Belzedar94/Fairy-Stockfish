@@ -759,7 +759,7 @@ class TestPyffish(unittest.TestCase):
     def test_benedict_flips_attacked_pieces(self):
         fen = "4k3/3n4/8/8/8/8/3R4/4K3 w - - 0 1"
         result = sf.get_fen("benedict", fen, ["d2d4"])
-        self.assertEqual(result, "4k3/3N4/8/8/3R4/8/8/4K3 b - - 1 1")
+        self.assertEqual(result, "4k3/3N!4/8/8/3R4/8/8/4K3 b - - 1 1")
 
     def test_benedict_disallows_captures(self):
         fen = "4k3/3n4/8/8/8/8/3R4/4K3 w - - 0 1"
@@ -782,7 +782,7 @@ class TestPyffish(unittest.TestCase):
         self.assertIn("d8a5", moves)
 
         result_fen = sf.get_fen("benedict", fen, ["d8a5"])
-        self.assertEqual(result_fen, "rnb1kbnr/pp1ppppp/2p5/q7/3PP3/8/pPP2PPP/RNBQkBNR w kq - 1 3")
+        self.assertEqual(result_fen, "rnb1kbnr/pp1ppppp/2p5/q7/3PP3/8/p!PP2PPP/RNBQk!BNR w kq - 1 3")
 
         game_end, value = sf.is_immediate_game_end("benedict", result_fen, [])
         self.assertTrue(game_end)
@@ -1161,9 +1161,37 @@ class TestPyffish(unittest.TestCase):
         self.assertEqual(result, -sf.VALUE_MATE)
 
     def test_benedict_dormant_traitor_inactive(self):
-        fen = "r1bqk1nr/pPpP2P1/2nbP3/4qP1P/8/4PN2/PPPP1PPP/RNB1KB1R w KQkq - 4 6"
-        moves = sf.legal_moves("benedict", fen, [])
-        self.assertNotIn("e5f6", moves)
+        fen = sf.start_fen("benedict")
+        moves = ["e2e4", "e7e5", "d1h5"]
+
+        result_fen = sf.get_fen("benedict", fen, moves)
+        self.assertEqual(result_fen, "rnbqkbnr/pppp1P!pP!/8/4P!2Q/4P3/8/PPPP1PPP/RNB1KBNR b KQkq - 1 2")
+
+        legal = sf.legal_moves("benedict", fen, moves)
+        self.assertNotIn("e5f6", legal)
+        self.assertFalse(sf.gives_check("benedict", fen, moves))
+
+    def test_benedict_engine_does_not_claim_false_mate(self):
+        fen = sf.start_fen("benedict")
+        moves = [
+            "e2e3",
+            "e7e6",
+            "d1e2",
+            "f8b4",
+            "e1d1",
+            "b4c5",
+            "e2d3",
+            "b8c6",
+            "d3d6",
+        ]
+
+        result_fen = sf.get_fen("benedict", fen, moves)
+        self.assertEqual(result_fen, "r1bqk1nr/ppP!P!1ppP!/2N!QP!3/2B!5/8/4P!3/PPPP!1PPP/RNBK1BNR b kq - 7 5")
+
+        self.assertEqual(sf.game_result("benedict", fen, moves), 0)
+        game_end, value = sf.is_immediate_game_end("benedict", fen, moves)
+        self.assertFalse(game_end)
+        self.assertEqual(value, 0)
 
         # shogi pawn drop mate
         result = sf.game_result("shogi", "lnsg3nk/1r2b1gs1/ppppppp1p/7N1/7p1/9/PPPPPPPP1/1B5R1/LNSGKGS1L[P] w 0 1", ["P@i8"])

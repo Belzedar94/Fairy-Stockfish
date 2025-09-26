@@ -134,7 +134,7 @@ namespace {
   template<Color Us, GenType Type>
   ExtMove* generate_pawn_moves(const Position& pos, ExtMove* moveList, Bitboard target) {
 
-    Bitboard pawns = pos.pieces(Us, PAWN) & ~pos.dormant_pieces();
+    Bitboard pawns = pos.pieces(Us, PAWN);
     if (!pawns)
         return moveList;
 
@@ -298,7 +298,7 @@ namespace {
 
     assert(Pt != KING && Pt != PAWN);
 
-    Bitboard bb = pos.pieces(Us, Pt) & ~pos.dormant_pieces();
+    Bitboard bb = pos.pieces(Us, Pt);
 
     const bool allowFriendlyCaptures = pos.self_capture()
                                     && (Type == CAPTURES || Type == EVASIONS || Type == NON_EVASIONS);
