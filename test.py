@@ -1193,6 +1193,28 @@ class TestPyffish(unittest.TestCase):
         self.assertFalse(game_end)
         self.assertEqual(value, 0)
 
+    def test_benedict_traitor_can_move_while_dormant(self):
+        fen = sf.start_fen("benedict")
+        moves = [
+            "e2e3",
+            "e7e6",
+            "d1e2",
+            "h7h5",
+            "e2b5",
+            "f7f5",
+            "b5e5",
+            "b8c6",
+            "g1f3",
+            "f8d6",
+            "b7b8b",
+        ]
+
+        traitor_fen = sf.get_fen("benedict", fen, moves)
+        legal = sf.legal_moves("benedict", fen, moves)
+
+        self.assertEqual(traitor_fen, "rBbqk1nr/P!1P!P!2P!1/2nbP!3/4q!P!1P!/8/4PN2/PPPP1PPP/RNB1KB1R b KQkq - 0 6")
+        self.assertIn("e5c3", legal)
+
         # shogi pawn drop mate
         result = sf.game_result("shogi", "lnsg3nk/1r2b1gs1/ppppppp1p/7N1/7p1/9/PPPPPPPP1/1B5R1/LNSGKGS1L[P] w 0 1", ["P@i8"])
         self.assertEqual(result, sf.VALUE_MATE)
