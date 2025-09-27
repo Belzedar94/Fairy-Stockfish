@@ -106,7 +106,7 @@ namespace Stockfish::Eval::NNUE::Features {
   }
 
   bool HalfKAv2Variants::requires_refresh(StateInfo* st, Color perspective, const Position& pos) {
-    return true
+    return true;
   }
 
 }  // namespace Stockfish::Eval::NNUE::Features
