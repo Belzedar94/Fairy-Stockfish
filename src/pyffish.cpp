@@ -41,14 +41,17 @@ void buildPosition(Position& pos, StateListPtr& states, const char *variant, con
         std::string moveStr(PyBytes_AS_STRING(MoveStr));
         Py_XDECREF(MoveStr);
         Move m;
-        if ((m = UCI::to_move(pos, moveStr)) != MOVE_NONE)
+        if ((m = UCI::to_move(pos, moveStr)) != MOVE_NONE && pos.legal(m))
         {
             // do the move
             states->emplace_back();
             pos.do_move(m, states->back());
         }
         else
+        {
             PyErr_SetString(PyExc_ValueError, (std::string("Invalid move '") + moveStr + "'").c_str());
+            return;
+        }
     }
     return;
 }
