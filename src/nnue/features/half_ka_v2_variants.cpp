@@ -106,7 +106,7 @@ namespace Stockfish::Eval::NNUE::Features {
   }
 
   bool HalfKAv2Variants::requires_refresh(StateInfo* st, Color perspective, const Position& pos) {
-    return st->dirtyPiece.piece[0] == make_piece(perspective, pos.nnue_king()) || pos.flip_enclosed_pieces();
+    return true;
   }
 
 }  // namespace Stockfish::Eval::NNUE::Features
