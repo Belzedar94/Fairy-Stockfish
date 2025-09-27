@@ -1634,6 +1634,15 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
   Square from = from_sq(m);
   Square to = to_sq(m);
   Piece pc = moved_piece(m);
+  if (Eval::useNNUE)
+  {
+      dp.piece[0] = pc;
+      dp.newPiece[0] = pc;
+      dp.handPiece[0] = NO_PIECE;
+      dp.handCount[0] = 0;
+      dp.from[0] = from;
+      dp.to[0] = to;
+  }
   if (pc == NO_PIECE)
   {
       assert(is_pass(m));
@@ -1644,6 +1653,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
       st->pass = true;
 
       dp.dirty_num = 0;
+      dp.newPiece[0] = NO_PIECE;
       st->key = k;
       st->checkersBB = Bitboard(0);
       sideToMove = ~sideToMove;
@@ -1759,13 +1769,14 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
       return true;
   };
 
-  auto push_dirty_board_change = [&](Piece piece, Square fromSq, Square toSq) {
-      if (!Eval::useNNUE || piece == NO_PIECE)
+  auto push_dirty_board_change = [&](Piece oldPiece, Piece updatedPiece, Square fromSq, Square toSq) {
+      if (!Eval::useNNUE || (oldPiece == NO_PIECE && updatedPiece == NO_PIECE))
           return;
 
       if (dp.dirty_num < DirtyPiece::Max)
       {
-          dp.piece[dp.dirty_num] = piece;
+          dp.piece[dp.dirty_num] = oldPiece;
+          dp.newPiece[dp.dirty_num] = updatedPiece;
           dp.handPiece[dp.dirty_num] = NO_PIECE;
           dp.handCount[dp.dirty_num] = 0;
           dp.from[dp.dirty_num] = fromSq;
@@ -1818,8 +1829,11 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
       {
           dp.dirty_num = 2;  // 1 piece moved, 1 piece captured
           dp.piece[1] = captured;
+          dp.newPiece[1] = NO_PIECE;
           dp.from[1] = capsq;
           dp.to[1] = SQ_NONE;
+          dp.handPiece[1] = NO_PIECE;
+          dp.handCount[1] = 0;
       }
 
       // Update board and piece lists
@@ -1951,6 +1965,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
       {
           // Add drop piece
           dp.piece[0] = pc;
+          dp.newPiece[0] = pc;
           dp.handPiece[0] = make_piece(us, in_hand_piece_type(m));
           dp.handCount[0] = pieceCountInHand[us][in_hand_piece_type(m)];
           dp.from[0] = SQ_NONE;
@@ -1993,6 +2008,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
       if (Eval::useNNUE)
       {
           dp.piece[0] = pc;
+          dp.newPiece[0] = pc;
           dp.from[0] = from;
           dp.to[0] = to;
       }
@@ -2016,17 +2032,12 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
 
           if (Eval::useNNUE)
           {
-              // Promoting pawn to SQ_NONE, promoted piece from SQ_NONE
-              dp.to[0] = SQ_NONE;
+              dp.newPiece[0] = promotion;
               dp.handPiece[0] = NO_PIECE;
-              dp.piece[dp.dirty_num] = promotion;
-              dp.handPiece[dp.dirty_num] = NO_PIECE;
-              dp.from[dp.dirty_num] = SQ_NONE;
-              dp.to[dp.dirty_num] = to;
-              dp.dirty_num++;
+              dp.to[0] = to;
           }
 
-          // Update hash keys
+      // Update hash keys
           k ^= Zobrist::psq[pc][to] ^ Zobrist::psq[promotion][to];
           st->pawnKey ^= Zobrist::psq[pc][to];
           st->materialKey ^=  Zobrist::psq[promotion][pieceCount[promotion]-1]
@@ -2071,14 +2082,9 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
 
       if (Eval::useNNUE)
       {
-          // Promoting piece to SQ_NONE, promoted piece from SQ_NONE
-          dp.to[0] = SQ_NONE;
+          dp.newPiece[0] = promotion;
           dp.handPiece[0] = NO_PIECE;
-          dp.piece[dp.dirty_num] = promotion;
-          dp.handPiece[dp.dirty_num] = NO_PIECE;
-          dp.from[dp.dirty_num] = SQ_NONE;
-          dp.to[dp.dirty_num] = to;
-          dp.dirty_num++;
+          dp.to[0] = to;
       }
 
       // Update hash keys
@@ -2098,14 +2104,9 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
 
       if (Eval::useNNUE)
       {
-          // Demoting piece to SQ_NONE, demoted piece from SQ_NONE
-          dp.to[0] = SQ_NONE;
+          dp.newPiece[0] = demotion;
           dp.handPiece[0] = NO_PIECE;
-          dp.piece[dp.dirty_num] = demotion;
-          dp.handPiece[dp.dirty_num] = NO_PIECE;
-          dp.from[dp.dirty_num] = SQ_NONE;
-          dp.to[dp.dirty_num] = to;
-          dp.dirty_num++;
+          dp.to[0] = to;
       }
 
       // Update hash keys
@@ -2139,6 +2140,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
       {
           // Add gating piece
           dp.piece[dp.dirty_num] = gating_piece;
+          dp.newPiece[dp.dirty_num] = gating_piece;
           dp.handPiece[dp.dirty_num] = gating_piece;
           dp.handCount[dp.dirty_num] = pieceCountInHand[us][gating_type(m)];
           dp.from[dp.dirty_num] = SQ_NONE;
@@ -2212,7 +2214,9 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
           if (Eval::useNNUE)
           {
               dp.piece[dp.dirty_num] = bpc;
+              dp.newPiece[dp.dirty_num] = NO_PIECE;
               dp.handPiece[dp.dirty_num] = NO_PIECE;
+              dp.handCount[dp.dirty_num] = 0;
               dp.from[dp.dirty_num] = bsq;
               dp.to[dp.dirty_num] = SQ_NONE;
               dp.dirty_num++;
@@ -2304,15 +2308,8 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
 
               Color targetColor = resolve_target_color(var->changingColors.target, us, color_of(moverPieceBeforeChange), captured);
               Piece newPiece = make_piece(targetColor, targetType);
-              if (apply_color_change(to, newPiece, newPromoted, newUnpromoted, false))
-              {
-                  if (Eval::useNNUE)
-                  {
-                      if (dp.to[0] == to)
-                          dp.to[0] = SQ_NONE;
-                      push_dirty_board_change(piece_on(to), SQ_NONE, to);
-                  }
-              }
+              if (apply_color_change(to, newPiece, newPromoted, newUnpromoted, false) && Eval::useNNUE)
+                  dp.newPiece[0] = piece_on(to);
           }
       }
   }
@@ -2358,10 +2355,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
               Piece newPiece = make_piece(newColor, type_of(victim));
               if (apply_color_change(s, newPiece, newPromoted, newUnpromoted,
                                      var->attackedChangingColors.convertedPiecesDormant))
-              {
-                  push_dirty_board_change(victim, s, SQ_NONE);
-                  push_dirty_board_change(piece_on(s), SQ_NONE, s);
-              }
+                  push_dirty_board_change(victim, piece_on(s), s, s);
           }
       }
   }
@@ -2650,11 +2644,17 @@ void Position::do_castling(Color us, Square from, Square& to, Square& rfrom, Squ
   {
       auto& dp = st->dirtyPiece;
       dp.piece[0] = castlingKingPiece;
+      dp.newPiece[0] = castlingKingPiece;
       dp.from[0] = from;
       dp.to[0] = to;
+      dp.handPiece[0] = NO_PIECE;
+      dp.handCount[0] = 0;
       dp.piece[1] = castlingRookPiece;
+      dp.newPiece[1] = castlingRookPiece;
       dp.from[1] = rfrom;
       dp.to[1] = rto;
+      dp.handPiece[1] = NO_PIECE;
+      dp.handCount[1] = 0;
       dp.dirty_num = 2;
   }
 
@@ -2682,6 +2682,7 @@ void Position::do_null_move(StateInfo& newSt) {
 
   st->dirtyPiece.dirty_num = 0;
   st->dirtyPiece.piece[0] = NO_PIECE; // Avoid checks in UpdateAccumulator()
+  st->dirtyPiece.newPiece[0] = NO_PIECE;
   st->accumulator.computed[WHITE] = false;
   st->accumulator.computed[BLACK] = false;
 

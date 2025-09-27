@@ -566,13 +566,14 @@ enum Rank : int {
 // Keep track of what a move changes on the board (used by NNUE)
 struct DirtyPiece {
 
-  static constexpr int Max = 2 * SQUARE_NB + 16;
+  static constexpr int Max = SQUARE_NB + 32;
 
   // Number of changed pieces
   int dirty_num;
 
-  // Changed pieces either on the board or in hand.
+  // Piece states before and after the move (board or hand)
   Piece piece[Max];
+  Piece newPiece[Max];
   Piece handPiece[Max];
   int handCount[Max];
 
