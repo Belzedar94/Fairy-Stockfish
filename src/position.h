@@ -168,6 +168,7 @@ public:
   bool checking_permitted() const;
   bool drop_checks() const;
   bool must_capture() const;
+  bool self_capture() const;
   bool has_capture() const;
   bool must_drop() const;
   bool piece_drops() const;
@@ -646,6 +647,11 @@ inline bool Position::drop_checks() const {
 inline bool Position::must_capture() const {
   assert(var != nullptr);
   return var->mustCapture;
+}
+
+inline bool Position::self_capture() const {
+  assert(var != nullptr);
+  return var->selfCapture;
 }
 
 inline bool Position::has_capture() const {

@@ -72,6 +72,13 @@ namespace {
         v->materialCounting = BLACK_DRAW_ODDS;
         return v;
     }
+    // Capture Anything Chess
+    // https://www.chess.com/terms/capture-anything-chess
+    Variant* capture_anything_variant() {
+        Variant* v = chess_variant()->init();
+        v->selfCapture = true;
+        return v;
+    }
     // Torpedo Chess
     // https://arxiv.org/abs/2009.04374
     Variant* torpedo_variant() {
@@ -623,6 +630,13 @@ namespace {
         v->startFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR[] w KQkq - 0 1";
         v->pieceDrops = true;
         v->capturesToHand = true;
+        return v;
+    }
+    // Recycle Chess
+    // Crazyhouse with friendly captures that pass the piece to the opponent
+    Variant* recycle_variant() {
+        Variant* v = crazyhouse_variant()->init();
+        v->selfCapture = true;
         return v;
     }
     // Loop chess
@@ -1832,6 +1846,7 @@ void VariantMap::init() {
     add("fischerandom", chess960_variant());
     add("nocastle", nocastle_variant());
     add("armageddon", armageddon_variant());
+    add("capture-anything", capture_anything_variant());
     add("torpedo", torpedo_variant());
     add("berolina", berolina_variant());
     add("pawnsideways", pawnsideways_variant());
@@ -1879,6 +1894,7 @@ void VariantMap::init() {
     add("3check", threecheck_variant());
     add("5check", fivecheck_variant());
     add("crazyhouse", crazyhouse_variant());
+    add("recycle", recycle_variant());
     add("loop", loop_variant());
     add("chessgi", chessgi_variant());
     add("bughouse", bughouse_variant());

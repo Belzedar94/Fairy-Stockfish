@@ -149,7 +149,9 @@ namespace {
 
     const Bitboard pawns      = pos.pieces(Us, PAWN);
     const Bitboard movable    = pos.board_bb(Us, PAWN) & ~pos.pieces();
-    const Bitboard capturable = pos.board_bb(Us, PAWN) &  pos.pieces(Them);
+    const Bitboard capturable = pos.board_bb(Us, PAWN)
+                               & (pos.pieces(Them)
+                                  | (pos.self_capture() ? pos.pieces(Us) : Bitboard(0)));
 
     target = Type == EVASIONS ? target : AllSquares;
 
@@ -306,7 +308,9 @@ namespace {
         PieceType promPt = pos.promoted_piece_type(Pt);
         Bitboard b2 = promPt && (!pos.promotion_limit(promPt) || pos.promotion_limit(promPt) > pos.count(Us, promPt)) ? b1 : Bitboard(0);
         Bitboard b3 = pos.piece_demotion() && pos.is_promoted(from) ? b1 : Bitboard(0);
-        Bitboard pawnPromotions = (pos.promotion_pawn_types(Us) & Pt) ? (b & (Type == EVASIONS ? target : ~pos.pieces(Us)) & promotion_zone) : Bitboard(0);
+        Bitboard friendlyTargets = pos.self_capture() ? pos.pieces(Us) : Bitboard(0);
+        Bitboard pawnPromotionMask = Type == EVASIONS ? target : (~pos.pieces(Us) | friendlyTargets);
+        Bitboard pawnPromotions = (pos.promotion_pawn_types(Us) & Pt) ? (b & pawnPromotionMask & promotion_zone) : Bitboard(0);
         Bitboard epSquares = (pos.en_passant_types(Us) & Pt) ? (attacks & ~quiets & pos.ep_squares() & ~pos.pieces()) : Bitboard(0);
 
         // target squares considering pawn promotions
@@ -384,10 +388,18 @@ namespace {
     // Skip generating non-king moves when in double check
     if (Type != EVASIONS || !more_than_one(pos.checkers() & ~pos.non_sliding_riders()))
     {
-        target = Type == EVASIONS     ?  between_bb(ksq, lsb(pos.checkers()))
-               : Type == NON_EVASIONS ? ~pos.pieces( Us)
-               : Type == CAPTURES     ?  pos.pieces(~Us)
-                                      : ~pos.pieces(   ); // QUIETS || QUIET_CHECKS
+        if (Type == EVASIONS)
+            target = between_bb(ksq, lsb(pos.checkers()));
+        else if (Type == NON_EVASIONS)
+            target = pos.self_capture() ? pos.board_bb() : ~pos.pieces(Us);
+        else if (Type == CAPTURES)
+        {
+            target = pos.pieces(~Us);
+            if (pos.self_capture())
+                target |= pos.pieces(Us);
+        }
+        else
+            target = ~pos.pieces(); // QUIETS || QUIET_CHECKS
 
         if (Type == EVASIONS)
         {
@@ -408,7 +420,7 @@ namespace {
         // generate drops
         if (pos.piece_drops() && Type != CAPTURES && (pos.can_drop(Us, ALL_PIECES) || pos.two_boards()))
             for (PieceSet ps = pos.piece_types(); ps;)
-                moveList = generate_drops<Us, Type>(pos, moveList, pop_lsb(ps), target & ~pos.pieces(~Us));
+                moveList = generate_drops<Us, Type>(pos, moveList, pop_lsb(ps), target & ~pos.pieces());
 
         // Castling with non-king piece
         if (!pos.count<KING>(Us) && Type != CAPTURES && pos.can_castle(Us & ANY_CASTLING))

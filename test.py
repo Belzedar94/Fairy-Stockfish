@@ -356,6 +356,30 @@ class TestPyffish(unittest.TestCase):
         result = sf.legal_moves("shogun", SHOGUN, ["c2c4", "b8c6", "b2b4", "b7b5", "c4b5", "c6b8"])
         self.assertIn("b5b6+", result)
 
+    def test_capture_anything_knight_self_capture(self):
+        chess_start = sf.start_fen("chess")
+        chess_moves = sf.legal_moves("chess", chess_start, [])
+        self.assertNotIn("g1e2", chess_moves)
+
+        capture_anything_start = sf.start_fen("capture-anything")
+        capture_anything_moves = sf.legal_moves("capture-anything", capture_anything_start, [])
+        self.assertIn("g1e2", capture_anything_moves)
+
+        san = sf.get_san("capture-anything", capture_anything_start, "g1e2")
+        self.assertIn("x", san)
+
+    def test_capture_anything_pawn_self_capture_resets_rule50(self):
+        fen = "8/8/5N2/8/4P3/8/8/8 w - - 17 1"
+
+        legal = sf.legal_moves("capture-anything", fen, [])
+        self.assertIn("e4f5", legal)
+        self.assertTrue(sf.is_capture("capture-anything", fen, [], "e4f5"))
+
+        new_fen = sf.get_fen("capture-anything", fen, ["e4f5"])
+        fields = new_fen.split()
+        self.assertGreaterEqual(len(fields), 5)
+        self.assertEqual(fields[4], "0")
+
         # Seirawan gating but no castling
         fen = "rnbq3r/pp2bkpp/8/2p1p2K/2p1P3/8/PPPP1PPP/RNB4R[EHeh] b ABCHabcdh - 0 10"
         result = sf.legal_moves("seirawan", fen, [])
