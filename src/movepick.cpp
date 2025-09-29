@@ -38,9 +38,6 @@ namespace {
     QSEARCH_TT, QCAPTURE_INIT, QCAPTURE, QCHECK_INIT, QCHECK
   };
 
-  constexpr int FreezeKingBonus   = 256;
-  constexpr int FreezeHeavyBonus  = 96;
-
   // partial_insertion_sort() sorts moves in descending order up to and including
   // a given limit. The order of moves smaller than the limit is left unspecified.
   void partial_insertion_sort(ExtMove* begin, ExtMove* end, int limit) {
@@ -51,68 +48,79 @@ namespace {
             ExtMove tmp = *p, *q;
             *p = *++sortedEnd;
             for (q = sortedEnd; q != begin && *(q - 1) < tmp; --q)
-            *q = *(q - 1);
+                *q = *(q - 1);
             *q = tmp;
         }
   }
 
-  int freeze_gate_bonus(const Position& pos, Move m) {
+  struct JumpPayoffSummary {
+      bool isJump = false;
+      bool captureValuable = false;
+      bool givesCheck = false;
+      bool escapePressure = false;
+  };
 
-    if (!pos.potions_enabled() || !is_gating(m))
-        return 0;
+  JumpPayoffSummary jump_payoff_summary(const Position& pos, Move m) {
+      JumpPayoffSummary summary;
 
-    PieceType gatingPiece = gating_type(m);
+      if (!pos.potions_enabled() || !is_gating(m))
+          return summary;
 
-    for (int idx = 0; idx < Variant::POTION_TYPE_NB; ++idx)
-    {
-        auto potion = static_cast<Variant::PotionType>(idx);
-        if (pos.potion_piece(potion) != gatingPiece)
-            continue;
+      if (pos.potion_piece(Variant::POTION_JUMP) != gating_type(m))
+          return summary;
 
-        if (potion == Variant::POTION_FREEZE)
-        {
-            Bitboard zone = pos.freeze_zone_from_square(gating_square(m));
-            Color them = ~pos.side_to_move();
+      Square gate = gating_square(m);
+      if (pos.piece_on(gate) == NO_PIECE)
+          return summary;
 
-            int bonus = 0;
+      Bitboard path = between_bb(from_sq(m), to_sq(m), type_of(pos.moved_piece(m)));
+      path &= ~square_bb(to_sq(m));
+      if (!(path & square_bb(gate)))
+          return summary;
 
-            PieceType kingType = pos.king_type();
-            if (kingType != NO_PIECE_TYPE && pos.count(them, kingType) == 1)
-            {
-                Square kingSq = pos.square(them, kingType);
-                if (zone & square_bb(kingSq))
-                    bonus += FreezeKingBonus;
-            }
+      summary.isJump = true;
 
-            Bitboard targets = zone & pos.pieces(them);
-            int heavyCount = 0;
-            Value rookValue = PieceValue[MG][make_piece(WHITE, ROOK)];
+      if (pos.capture(m))
+      {
+          Value captureValue = PieceValue[MG][pos.piece_on(to_sq(m))];
+          Value valuableThreshold = PieceValue[MG][make_piece(WHITE, ROOK)];
+          summary.captureValuable = captureValue >= valuableThreshold;
+      }
 
-            while (targets)
-            {
-                Square s = pop_lsb(targets);
-                Piece pc = pos.piece_on(s);
-                if (pc == NO_PIECE)
-                    continue;
+      summary.givesCheck = pos.gives_check(m);
 
-                PieceType pt = type_of(pc);
-                if (pt == kingType)
-                    continue;
+      Color us = pos.side_to_move();
+      Color them = ~us;
+      Square from = from_sq(m);
 
-                if (PieceValue[MG][pc] >= rookValue)
-                    heavyCount++;
-            }
+      Bitboard attackers = pos.attackers_to(from, them);
+      if (attackers)
+      {
+          int enemyCount = popcount(attackers);
+          int defenderCount = popcount(pos.attackers_to(from, us));
+          bool pinned = pos.blockers_for_king(us) & square_bb(from);
+          summary.escapePressure = pinned
+                                || enemyCount > defenderCount + 1
+                                || (!defenderCount && enemyCount >= 1);
+      }
 
-            if (heavyCount >= 2)
-                bonus += heavyCount * FreezeHeavyBonus;
+      return summary;
+  }
 
-            return bonus;
-        }
+  int jump_payoff_bonus(const Position& pos, Move m) {
+      JumpPayoffSummary summary = jump_payoff_summary(pos, m);
+      if (!summary.isJump)
+          return 0;
 
-        break;
-    }
+      int bonus = 0;
+      if (summary.captureValuable)
+          bonus += 2048;
+      if (summary.givesCheck)
+          bonus += 1024;
+      if (summary.escapePressure && !summary.captureValuable && !summary.givesCheck)
+          bonus += 768;
 
-    return 0;
+      return bonus;
   }
 
 } // namespace
@@ -134,19 +142,29 @@ bool MovePicker::is_useless_potion(Move m) const {
       if (potion == Variant::POTION_FREEZE)
       {
           Bitboard zone = pos.freeze_zone_from_square(gating_square(m));
-          Bitboard enemies = pos.pieces(~pos.side_to_move());
-          return !(zone & enemies);
+          Color us = pos.side_to_move();
+          Color them = ~us;
+
+          Bitboard enemies = pos.pieces(them) & ~pos.freeze_squares(them);
+          int enemyCount = popcount(zone & enemies);
+          if (!enemyCount)
+              return true;
+
+          Bitboard friendlies = pos.pieces(us) & ~pos.freeze_squares(us);
+          int friendlyCount = popcount(zone & friendlies);
+          return friendlyCount > enemyCount;
       }
 
       if (potion == Variant::POTION_JUMP)
       {
-          Square gate = gating_square(m);
-          if (pos.piece_on(gate) == NO_PIECE)
+          JumpPayoffSummary summary = jump_payoff_summary(pos, m);
+          if (!summary.isJump)
               return true;
 
-          Bitboard path = between_bb(from_sq(m), to_sq(m), type_of(pos.moved_piece(m)));
-          path &= ~square_bb(to_sq(m));
-          return !(path & square_bb(gate));
+          if (!(summary.captureValuable || summary.givesCheck || summary.escapePressure))
+              return true;
+
+          break;
       }
 
       break;
@@ -154,6 +172,8 @@ bool MovePicker::is_useless_potion(Move m) const {
 
   return false;
 }
+
+
 /// Constructors of the MovePicker class. As arguments we pass information
 /// to help it to return the (presumably) good moves first, to decide which
 /// moves to return (in the quiescence search, for instance, we only want to
@@ -207,28 +227,20 @@ void MovePicker::score() {
 
   for (auto& m : *this)
       if constexpr (Type == CAPTURES)
-      {
-          int gateScore = (*gateHistory)[pos.side_to_move()][gating_square(m)]
-                        + freeze_gate_bonus(pos, m);
-
           m.value =  int(PieceValue[MG][pos.piece_on(to_sq(m))]) * 6
-                   + gateScore
-                   + (*captureHistory)[pos.moved_piece(m)][to_sq(m)][type_of(pos.piece_on(to_sq(m)))];
-      }
+                   + (*gateHistory)[pos.side_to_move()][gating_square(m)]
+                   + (*captureHistory)[pos.moved_piece(m)][to_sq(m)][type_of(pos.piece_on(to_sq(m)))]
+                   + jump_payoff_bonus(pos, m);
 
       else if constexpr (Type == QUIETS)
-      {
-          int gateScore = (*gateHistory)[pos.side_to_move()][gating_square(m)]
-                        + freeze_gate_bonus(pos, m);
-
           m.value =      (*mainHistory)[pos.side_to_move()][from_to(m)]
-                   +     gateScore
+                   +     (*gateHistory)[pos.side_to_move()][gating_square(m)]
                    + 2 * (*continuationHistory[0])[history_slot(pos.moved_piece(m))][to_sq(m)]
                    +     (*continuationHistory[1])[history_slot(pos.moved_piece(m))][to_sq(m)]
                    +     (*continuationHistory[3])[history_slot(pos.moved_piece(m))][to_sq(m)]
                    +     (*continuationHistory[5])[history_slot(pos.moved_piece(m))][to_sq(m)]
-                   + (ply < MAX_LPH ? std::min(4, depth / 3) * (*lowPlyHistory)[ply][from_to(m)] : 0);
-      }
+                   + (ply < MAX_LPH ? std::min(4, depth / 3) * (*lowPlyHistory)[ply][from_to(m)] : 0)
+                   + jump_payoff_bonus(pos, m);
 
       else // Type == EVASIONS
       {
@@ -239,6 +251,8 @@ void MovePicker::score() {
               m.value =      (*mainHistory)[pos.side_to_move()][from_to(m)]
                        + 2 * (*continuationHistory[0])[history_slot(pos.moved_piece(m))][to_sq(m)]
                        - (1 << 28);
+
+          m.value += jump_payoff_bonus(pos, m);
       }
 }
 
