@@ -76,7 +76,7 @@ namespace {
 
             int bonus = 0;
 
-            PieceType kingType = pos.variant()->king_type();
+            PieceType kingType = pos.king_type();
             if (kingType != NO_PIECE_TYPE && pos.count(them, kingType) == 1)
             {
                 Square kingSq = pos.square(them, kingType);
