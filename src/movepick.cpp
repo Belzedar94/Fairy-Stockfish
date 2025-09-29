@@ -73,12 +73,14 @@ bool MovePicker::is_useless_potion(Move m) const {
       {
           Bitboard zone = pos.freeze_zone_from_square(gating_square(m));
           Color us = pos.side_to_move();
-          Bitboard enemies = pos.pieces(~us);
+          Color them = ~us;
+
+          Bitboard enemies = pos.pieces(them) & ~pos.freeze_squares(them);
           int enemyCount = popcount(zone & enemies);
           if (!enemyCount)
               return true;
 
-          Bitboard friendlies = pos.pieces(us);
+          Bitboard friendlies = pos.pieces(us) & ~pos.freeze_squares(us);
           int friendlyCount = popcount(zone & friendlies);
           return friendlyCount > enemyCount;
       }
