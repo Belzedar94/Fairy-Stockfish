@@ -355,6 +355,88 @@ class TestPyffish(unittest.TestCase):
                 return True
         return False
 
+    @staticmethod
+    def _board_state(fen: str):
+        board = {}
+        board_part = fen.split()[0]
+        rows = board_part.split("/")
+        height = len(rows)
+        width = 0
+        for ch in rows[0]:
+            if ch.isdigit():
+                width += int(ch)
+            elif ch.isalpha():
+                width += 1
+        for rank_index, row in enumerate(rows):
+            file_index = 0
+            for ch in row:
+                if ch.isdigit():
+                    file_index += int(ch)
+                elif ch.isalpha():
+                    square = chr(ord("a") + file_index) + str(height - rank_index)
+                    board[square] = ch
+                    file_index += 1
+        return board, width, height
+
+    @staticmethod
+    def _square_to_coords(square: str):
+        return ord(square[0]) - ord("a"), int(square[1:]) - 1
+
+    @staticmethod
+    def _coords_to_square(file_index: int, rank_index: int):
+        return chr(ord("a") + file_index) + str(rank_index + 1)
+
+    @classmethod
+    def _freeze_zone_has_enemy(cls, board, width, height, square, enemy_color):
+        file_index, rank_index = cls._square_to_coords(square)
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                nx = file_index + dx
+                ny = rank_index + dy
+                if not (0 <= nx < width and 0 <= ny < height):
+                    continue
+                target = cls._coords_to_square(nx, ny)
+                piece = board.get(target)
+                if not piece:
+                    continue
+                if enemy_color == "w" and piece.isupper():
+                    return True
+                if enemy_color == "b" and piece.islower():
+                    return True
+        return False
+
+    @classmethod
+    def _squares_between(cls, origin: str, target: str):
+        ox, oy = cls._square_to_coords(origin)
+        tx, ty = cls._square_to_coords(target)
+        dx = tx - ox
+        dy = ty - oy
+        step_x = (dx > 0) - (dx < 0)
+        step_y = (dy > 0) - (dy < 0)
+        if step_x and step_y and abs(dx) != abs(dy):
+            return []
+        steps = max(abs(dx), abs(dy))
+        squares = []
+        for step in range(1, steps):
+            square = cls._coords_to_square(ox + step_x * step, oy + step_y * step)
+            squares.append(square)
+        return squares
+
+    @classmethod
+    def _jump_uses_gate(cls, move: str, board, width):
+        info = cls._gating_info(move)
+        if not info:
+            return False
+        base = info[0]
+        gate = info[2]
+        if len(base) < 4:
+            return False
+        origin = base[:2]
+        target = base[2:4]
+        if gate not in board:
+            return False
+        return gate in cls._squares_between(origin, target)
+
     def test_version(self):
         result = sf.version()
         self.assertEqual(len(result), 3)
@@ -805,6 +887,39 @@ class TestPyffish(unittest.TestCase):
         leap_moves = [m for m in jump_moves if self._gating_info(m)[0] == "a1a3" and self._gating_info(m)[2] == "a2"]
         self.assertTrue(leap_moves)
         self.assertNotIn("a1a3", moves)
+
+    def test_spell_chess_has_useless_freeze_targets(self):
+        start = sf.start_fen("spell-chess")
+        moves = sf.legal_moves("spell-chess", start, [])
+        freeze_moves = self._filter_potion_moves(moves, "f")
+        self.assertTrue(freeze_moves)
+        board, width, height = self._board_state(start)
+        enemy = "b" if start.split()[1] == "w" else "w"
+        useless = [
+            move
+            for move in freeze_moves
+            if not self._freeze_zone_has_enemy(board, width, height, self._gating_info(move)[2], enemy)
+        ]
+        self.assertTrue(useless)
+
+    def test_spell_chess_has_useless_jump_targets(self):
+        start = sf.start_fen("spell-chess")
+        history = [
+            "e2e4",
+            "e7e5",
+            "f1c4",
+            "f8c5",
+            "f@d7,c4f7",
+            "f@e6,c5f2",
+            "e1f2",
+        ]
+        moves = sf.legal_moves("spell-chess", start, history)
+        jump_moves = self._filter_potion_moves(moves, "j")
+        self.assertTrue(jump_moves)
+        fen_after = sf.get_fen("spell-chess", start, history)
+        board, width, height = self._board_state(fen_after)
+        useless = [m for m in jump_moves if not self._jump_uses_gate(m, board, width)]
+        self.assertIn("j@a1,e8f7", useless)
 
     def test_spell_chess_freeze_cooldown(self):
         start = "4k3/8/8/8/8/8/8/4K1N1[JJFFFFFjjfffff] w - - 0 1"

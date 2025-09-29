@@ -56,6 +56,44 @@ namespace {
 } // namespace
 
 
+bool MovePicker::is_useless_potion(Move m) const {
+
+  if (!pos.potions_enabled() || !is_gating(m))
+      return false;
+
+  PieceType gatingPiece = gating_type(m);
+
+  for (int idx = 0; idx < Variant::POTION_TYPE_NB; ++idx)
+  {
+      auto potion = static_cast<Variant::PotionType>(idx);
+      if (pos.potion_piece(potion) != gatingPiece)
+          continue;
+
+      if (potion == Variant::POTION_FREEZE)
+      {
+          Bitboard zone = pos.freeze_zone_from_square(gating_square(m));
+          Bitboard enemies = pos.pieces(~pos.side_to_move());
+          return !(zone & enemies);
+      }
+
+      if (potion == Variant::POTION_JUMP)
+      {
+          Square gate = gating_square(m);
+          if (pos.piece_on(gate) == NO_PIECE)
+              return true;
+
+          Bitboard path = between_bb(from_sq(m), to_sq(m), type_of(pos.moved_piece(m)));
+          path &= ~square_bb(to_sq(m));
+          return !(path & square_bb(gate));
+      }
+
+      break;
+  }
+
+  return false;
+}
+
+
 /// Constructors of the MovePicker class. As arguments we pass information
 /// to help it to return the (presumably) good moves first, to decide which
 /// moves to return (in the quiescence search, for instance, we only want to
@@ -144,7 +182,9 @@ Move MovePicker::select(Pred filter) {
       if (T == Best)
           std::swap(*cur, *std::max_element(cur, endMoves));
 
-      if (*cur != ttMove && filter())
+      Move move = *cur;
+
+      if (move != ttMove && !is_useless_potion(move) && filter())
           return *cur++;
 
       cur++;
@@ -165,8 +205,13 @@ top:
   case QSEARCH_TT:
   case PROBCUT_TT:
       ++stage;
-      assert(pos.legal(ttMove) == MoveList<LEGAL>(pos).contains(ttMove) || pos.virtual_drop(ttMove));
-      return ttMove;
+      if (ttMove && !is_useless_potion(ttMove))
+      {
+          assert(pos.legal(ttMove) == MoveList<LEGAL>(pos).contains(ttMove) || pos.virtual_drop(ttMove));
+          return ttMove;
+      }
+      ttMove = MOVE_NONE;
+      goto top;
 
   case CAPTURE_INIT:
   case PROBCUT_INIT:
