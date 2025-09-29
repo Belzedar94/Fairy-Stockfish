@@ -16,6 +16,7 @@
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#include <algorithm>
 #include <cassert>
 
 #include "movepick.h"
@@ -53,76 +54,6 @@ namespace {
         }
   }
 
-  struct JumpPayoffSummary {
-      bool isJump = false;
-      bool captureValuable = false;
-      bool givesCheck = false;
-      bool escapePressure = false;
-  };
-
-  JumpPayoffSummary jump_payoff_summary(const Position& pos, Move m) {
-      JumpPayoffSummary summary;
-
-      if (!pos.potions_enabled() || !is_gating(m))
-          return summary;
-
-      if (pos.potion_piece(Variant::POTION_JUMP) != gating_type(m))
-          return summary;
-
-      Square gate = gating_square(m);
-      if (pos.piece_on(gate) == NO_PIECE)
-          return summary;
-
-      Bitboard path = between_bb(from_sq(m), to_sq(m), type_of(pos.moved_piece(m)));
-      path &= ~square_bb(to_sq(m));
-      if (!(path & square_bb(gate)))
-          return summary;
-
-      summary.isJump = true;
-
-      if (pos.capture(m))
-      {
-          Value captureValue = PieceValue[MG][pos.piece_on(to_sq(m))];
-          Value valuableThreshold = PieceValue[MG][make_piece(WHITE, ROOK)];
-          summary.captureValuable = captureValue >= valuableThreshold;
-      }
-
-      summary.givesCheck = pos.gives_check(m);
-
-      Color us = pos.side_to_move();
-      Color them = ~us;
-      Square from = from_sq(m);
-
-      Bitboard attackers = pos.attackers_to(from, them);
-      if (attackers)
-      {
-          int enemyCount = popcount(attackers);
-          int defenderCount = popcount(pos.attackers_to(from, us));
-          bool pinned = pos.blockers_for_king(us) & square_bb(from);
-          summary.escapePressure = pinned
-                                || enemyCount > defenderCount + 1
-                                || (!defenderCount && enemyCount >= 1);
-      }
-
-      return summary;
-  }
-
-  int jump_payoff_bonus(const Position& pos, Move m) {
-      JumpPayoffSummary summary = jump_payoff_summary(pos, m);
-      if (!summary.isJump)
-          return 0;
-
-      int bonus = 0;
-      if (summary.captureValuable)
-          bonus += 2048;
-      if (summary.givesCheck)
-          bonus += 1024;
-      if (summary.escapePressure && !summary.captureValuable && !summary.givesCheck)
-          bonus += 768;
-
-      return bonus;
-  }
-
 } // namespace
 
 
@@ -157,20 +88,68 @@ bool MovePicker::is_useless_potion(Move m) const {
 
       if (potion == Variant::POTION_JUMP)
       {
-          JumpPayoffSummary summary = jump_payoff_summary(pos, m);
-          if (!summary.isJump)
+          Square gate = gating_square(m);
+          if (pos.piece_on(gate) == NO_PIECE)
               return true;
 
-          if (!(summary.captureValuable || summary.givesCheck || summary.escapePressure))
-              return true;
-
-          break;
+          Bitboard path = between_bb(from_sq(m), to_sq(m), type_of(pos.moved_piece(m)));
+          path &= ~square_bb(to_sq(m));
+          return !(path & square_bb(gate));
       }
 
       break;
   }
 
   return false;
+}
+
+
+int MovePicker::potion_inventory_bonus(Move m) const {
+
+  if (!pos.potions_enabled() || !is_gating(m))
+      return 0;
+
+  PieceType gatingPiece = gating_type(m);
+  Color us = pos.side_to_move();
+  const Variant* var = pos.variant();
+
+  for (int idx = 0; idx < Variant::POTION_TYPE_NB; ++idx)
+  {
+      auto potion = static_cast<Variant::PotionType>(idx);
+      if (pos.potion_piece(potion) != gatingPiece)
+          continue;
+
+      int bonus = 0;
+      int stock = pos.count_in_hand(us, gatingPiece);
+      int baseCooldown = var ? var->potionCooldown[idx] : 0;
+      int prevCooldown = 0;
+      if (const StateInfo* previous = pos.state()->previous)
+          prevCooldown = previous->potionCooldown[us][idx];
+
+      if (!pos.potion_cooldown(us, potion) && prevCooldown > 0)
+      {
+          int capped = prevCooldown > 4 ? 4 : prevCooldown;
+          bonus += 80 * capped;
+      }
+
+      if (stock <= 1 && baseCooldown > 1)
+      {
+          int capped = baseCooldown > 4 ? 4 : baseCooldown;
+          int scale = potion == Variant::POTION_FREEZE ? 160 : 120;
+          bonus -= scale * capped;
+      }
+      else if (stock > 1 && baseCooldown > 0)
+      {
+          int capped = stock - 1;
+          if (capped > 3)
+              capped = 3;
+          bonus += 40 * capped;
+      }
+
+      return bonus;
+  }
+
+  return 0;
 }
 
 
@@ -226,11 +205,11 @@ void MovePicker::score() {
   static_assert(Type == CAPTURES || Type == QUIETS || Type == EVASIONS, "Wrong type");
 
   for (auto& m : *this)
+  {
       if constexpr (Type == CAPTURES)
           m.value =  int(PieceValue[MG][pos.piece_on(to_sq(m))]) * 6
                    + (*gateHistory)[pos.side_to_move()][gating_square(m)]
-                   + (*captureHistory)[pos.moved_piece(m)][to_sq(m)][type_of(pos.piece_on(to_sq(m)))]
-                   + jump_payoff_bonus(pos, m);
+                   + (*captureHistory)[pos.moved_piece(m)][to_sq(m)][type_of(pos.piece_on(to_sq(m)))];
 
       else if constexpr (Type == QUIETS)
           m.value =      (*mainHistory)[pos.side_to_move()][from_to(m)]
@@ -239,8 +218,7 @@ void MovePicker::score() {
                    +     (*continuationHistory[1])[history_slot(pos.moved_piece(m))][to_sq(m)]
                    +     (*continuationHistory[3])[history_slot(pos.moved_piece(m))][to_sq(m)]
                    +     (*continuationHistory[5])[history_slot(pos.moved_piece(m))][to_sq(m)]
-                   + (ply < MAX_LPH ? std::min(4, depth / 3) * (*lowPlyHistory)[ply][from_to(m)] : 0)
-                   + jump_payoff_bonus(pos, m);
+                   + (ply < MAX_LPH ? std::min(4, depth / 3) * (*lowPlyHistory)[ply][from_to(m)] : 0);
 
       else // Type == EVASIONS
       {
@@ -251,9 +229,10 @@ void MovePicker::score() {
               m.value =      (*mainHistory)[pos.side_to_move()][from_to(m)]
                        + 2 * (*continuationHistory[0])[history_slot(pos.moved_piece(m))][to_sq(m)]
                        - (1 << 28);
-
-          m.value += jump_payoff_bonus(pos, m);
       }
+
+      m.value += potion_inventory_bonus(m);
+  }
 }
 
 /// MovePicker::select() returns the next move satisfying a predicate function.
