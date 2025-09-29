@@ -847,6 +847,12 @@ class TestPyffish(unittest.TestCase):
         result = sf.game_result("spell-chess", fen, ["j@e3,e6e1"])
         self.assertEqual(result, -sf.VALUE_MATE)
 
+    def test_spell_chess_freeze_check_does_not_win(self):
+        fen = "rnbqk1nr/pppp1ppp/8/1N2p3/1b6/8/PPPPPPPP/R1BQKBNR[JJFFFFFjjfffff] w KQkq - 2 3"
+        result = sf.game_result("spell-chess", fen, ["f@d7,b5c7"])
+        self.assertNotEqual(result, sf.VALUE_MATE)
+        self.assertNotEqual(result, -sf.VALUE_MATE)
+
     def test_get_san(self):
         fen = "4k3/8/3R4/8/1R3R2/8/3R4/4K3 w - - 0 1"
         result = sf.get_san("chess", fen, "b4d4")

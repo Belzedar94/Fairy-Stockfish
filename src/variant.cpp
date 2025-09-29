@@ -89,12 +89,15 @@ namespace {
         v->potionCooldown[Variant::POTION_FREEZE] = 3;
         v->potionCooldown[Variant::POTION_JUMP] = 3;
         v->potionDropOnOccupied = true;
+        v->remove_piece(KING);
+        v->add_piece(COMMONER, 'k');
+        v->castlingKingPiece[WHITE] = v->castlingKingPiece[BLACK] = COMMONER;
         v->pieceToChar[make_piece(WHITE, CUSTOM_PIECE_1)] = 'F';
         v->pieceToChar[make_piece(BLACK, CUSTOM_PIECE_1)] = 'f';
         v->pieceToChar[make_piece(WHITE, CUSTOM_PIECE_2)] = 'J';
         v->pieceToChar[make_piece(BLACK, CUSTOM_PIECE_2)] = 'j';
         v->extinctionValue = -VALUE_MATE;
-        v->extinctionPieceTypes = piece_set(KING);
+        v->extinctionPieceTypes = piece_set(COMMONER);
         v->extinctionPieceCount = 0;
         v->startFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR[JJFFFFFjjfffff] w KQkq - 0 1";
         return v;
