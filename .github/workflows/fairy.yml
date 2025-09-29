@@ -4,10 +4,13 @@ on:
     branches:
       - master
       - work
+      - Experimental-spell-heuristics
+      
   pull_request:
     branches:
       - master
       - work
+      - Experimental-spell-heuristics
 jobs:
   fairy:
     name: ${{ matrix.config.name }}
