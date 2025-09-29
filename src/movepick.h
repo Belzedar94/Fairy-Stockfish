@@ -146,12 +146,6 @@ private:
   template<PickType T, typename Pred> Move select(Pred);
   template<GenType> void score();
   bool is_useless_potion(Move m) const;
-  struct FreezeImpact {
-    int enemyCount = 0;
-    int friendlyCount = 0;
-  };
-  bool freeze_impact(Move m, FreezeImpact& impact) const;
-  int freeze_net_score(Move m) const;
   ExtMove* begin() { return cur; }
   ExtMove* end() { return endMoves; }
 

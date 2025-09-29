@@ -31,8 +31,6 @@ int history_slot(Piece pc) {
 
 namespace {
 
-  constexpr int FreezeNetImpactWeight = 256;
-
   enum Stages {
     MAIN_TT, CAPTURE_INIT, GOOD_CAPTURE, REFUTATION, QUIET_INIT, QUIET, BAD_CAPTURE,
     EVASION_TT, EVASION_INIT, EVASION,
@@ -73,14 +71,22 @@ bool MovePicker::is_useless_potion(Move m) const {
 
       if (potion == Variant::POTION_FREEZE)
       {
-          FreezeImpact impact;
-          if (!freeze_impact(m, impact))
-              return false;
+          Bitboard zone = pos.freeze_zone_from_square(gating_square(m));
+          Color us = pos.side_to_move();
+          Color them = ~us;
 
-          if (!impact.enemyCount)
+          Bitboard existing = pos.potion_zone(us, Variant::POTION_FREEZE);
+          if (!(zone & ~existing))
               return true;
 
-          return impact.friendlyCount > impact.enemyCount;
+          Bitboard enemies = pos.pieces(them) & ~pos.freeze_squares(them);
+          int enemyCount = popcount(zone & enemies);
+          if (!enemyCount)
+              return true;
+
+          Bitboard friendlies = pos.pieces(us) & ~pos.freeze_squares(us);
+          int friendlyCount = popcount(zone & friendlies);
+          return friendlyCount > enemyCount;
       }
 
       if (potion == Variant::POTION_JUMP)
@@ -99,52 +105,6 @@ bool MovePicker::is_useless_potion(Move m) const {
 
   return false;
 }
-
-
-bool MovePicker::freeze_impact(Move m, FreezeImpact& impact) const {
-
-  if (!pos.potions_enabled() || !is_gating(m))
-      return false;
-
-  PieceType gatingPiece = gating_type(m);
-  if (gatingPiece == NO_PIECE_TYPE)
-      return false;
-
-  for (int idx = 0; idx < Variant::POTION_TYPE_NB; ++idx)
-  {
-      auto potion = static_cast<Variant::PotionType>(idx);
-      if (pos.potion_piece(potion) != gatingPiece)
-          continue;
-
-      if (potion != Variant::POTION_FREEZE)
-          return false;
-
-      Bitboard zone = pos.freeze_zone_from_square(gating_square(m));
-      Color us = pos.side_to_move();
-      Color them = ~us;
-
-      Bitboard enemyMask = zone & pos.pieces(them) & ~pos.freeze_squares(them);
-      Bitboard friendlyMask = zone & pos.pieces(us) & ~pos.freeze_squares(us);
-
-      impact.enemyCount = popcount(enemyMask);
-      impact.friendlyCount = popcount(friendlyMask);
-      return true;
-  }
-
-  return false;
-}
-
-
-int MovePicker::freeze_net_score(Move m) const {
-
-  FreezeImpact impact;
-  if (!freeze_impact(m, impact))
-      return 0;
-
-  return (impact.enemyCount - impact.friendlyCount) * FreezeNetImpactWeight;
-}
-
-
 /// Constructors of the MovePicker class. As arguments we pass information
 /// to help it to return the (presumably) good moves first, to decide which
 /// moves to return (in the quiescence search, for instance, we only want to
@@ -200,8 +160,7 @@ void MovePicker::score() {
       if constexpr (Type == CAPTURES)
           m.value =  int(PieceValue[MG][pos.piece_on(to_sq(m))]) * 6
                    + (*gateHistory)[pos.side_to_move()][gating_square(m)]
-                   + (*captureHistory)[pos.moved_piece(m)][to_sq(m)][type_of(pos.piece_on(to_sq(m)))]
-                   + freeze_net_score(m);
+                   + (*captureHistory)[pos.moved_piece(m)][to_sq(m)][type_of(pos.piece_on(to_sq(m)))];
 
       else if constexpr (Type == QUIETS)
           m.value =      (*mainHistory)[pos.side_to_move()][from_to(m)]
@@ -210,20 +169,17 @@ void MovePicker::score() {
                    +     (*continuationHistory[1])[history_slot(pos.moved_piece(m))][to_sq(m)]
                    +     (*continuationHistory[3])[history_slot(pos.moved_piece(m))][to_sq(m)]
                    +     (*continuationHistory[5])[history_slot(pos.moved_piece(m))][to_sq(m)]
-                   + (ply < MAX_LPH ? std::min(4, depth / 3) * (*lowPlyHistory)[ply][from_to(m)] : 0)
-                   + freeze_net_score(m);
+                   + (ply < MAX_LPH ? std::min(4, depth / 3) * (*lowPlyHistory)[ply][from_to(m)] : 0);
 
       else // Type == EVASIONS
       {
           if (pos.capture(m))
               m.value =  PieceValue[MG][pos.piece_on(to_sq(m))]
-                       - Value(type_of(pos.moved_piece(m)))
-                       + freeze_net_score(m);
+                       - Value(type_of(pos.moved_piece(m)));
           else
               m.value =      (*mainHistory)[pos.side_to_move()][from_to(m)]
                        + 2 * (*continuationHistory[0])[history_slot(pos.moved_piece(m))][to_sq(m)]
-                       - (1 << 28)
-                       + freeze_net_score(m);
+                       - (1 << 28);
       }
 }
 
