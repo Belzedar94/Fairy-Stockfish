@@ -74,9 +74,32 @@ namespace Zobrist {
   Key side, noPawns;
   Key inHand[PIECE_NB][SQUARE_NB];
   Key checks[COLOR_NB][CHECKS_NB];
+  Key potionZone[COLOR_NB][Variant::POTION_TYPE_NB][SQUARE_NB];
+  Key potionCooldown[COLOR_NB][Variant::POTION_TYPE_NB][POTION_COOLDOWN_BITS];
   Key wall[SQUARE_NB];
   Key endgame[EG_EVAL_NB];
 }
+
+
+namespace {
+
+  inline void xor_potion_zone(Key& key, Color c, Variant::PotionType potion, Bitboard zone) {
+      while (zone)
+          key ^= Zobrist::potionZone[c][potion][pop_lsb(zone)];
+  }
+
+  inline void xor_potion_cooldown(Key& key, Color c, Variant::PotionType potion, int cooldown) {
+      assert(cooldown >= 0);
+      unsigned value = static_cast<unsigned>(cooldown);
+      assert(value < (1u << POTION_COOLDOWN_BITS));
+      if (!value)
+          return;
+      for (int bit = 0; bit < POTION_COOLDOWN_BITS; ++bit)
+          if (value & (1u << bit))
+              key ^= Zobrist::potionCooldown[c][potion][bit];
+  }
+
+} // namespace
 
 
 /// operator<<(Position) returns an ASCII representation of the position
@@ -205,6 +228,16 @@ void Position::init() {
       for (PieceType pt = PAWN; pt <= KING; ++pt)
           for (int n = 0; n < SQUARE_NB; ++n)
               Zobrist::inHand[make_piece(c, pt)][n] = rng.rand<Key>();
+
+  for (Color c : {WHITE, BLACK})
+      for (int pt = 0; pt < Variant::POTION_TYPE_NB; ++pt)
+      {
+          for (Square s = SQ_A1; s <= SQ_MAX; ++s)
+              Zobrist::potionZone[c][pt][s] = rng.rand<Key>();
+
+          for (int bit = 0; bit < POTION_COOLDOWN_BITS; ++bit)
+              Zobrist::potionCooldown[c][pt][bit] = rng.rand<Key>();
+      }
 
   for (Square s = SQ_A1; s <= SQ_MAX; ++s)
       Zobrist::wall[s] = rng.rand<Key>();
@@ -688,6 +721,18 @@ void Position::set_state(StateInfo* si) const {
           if (piece_drops() || seirawan_gating())
               si->key ^= Zobrist::inHand[pc][pieceCountInHand[c][pt]];
       }
+
+  if (potions_enabled())
+      for (Color c : {WHITE, BLACK})
+          for (int pt = 0; pt < Variant::POTION_TYPE_NB; ++pt)
+          {
+              Variant::PotionType potion = static_cast<Variant::PotionType>(pt);
+              if (potion_piece(potion) == NO_PIECE_TYPE)
+                  continue;
+
+              xor_potion_zone(si->key, c, potion, si->potionZones[c][pt]);
+              xor_potion_cooldown(si->key, c, potion, si->potionCooldown[c][pt]);
+          }
 
   if (check_counting())
       for (Color c : {WHITE, BLACK})
@@ -2251,11 +2296,27 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
 
   if (potions_enabled())
   {
+      auto togglePotionHashes = [&](Key& key) {
+          for (Color c : {WHITE, BLACK})
+              for (int pt = 0; pt < Variant::POTION_TYPE_NB; ++pt)
+              {
+                  Variant::PotionType potion = static_cast<Variant::PotionType>(pt);
+                  if (potion_piece(potion) == NO_PIECE_TYPE)
+                      continue;
+
+                  xor_potion_zone(key, c, potion, st->potionZones[c][pt]);
+                  xor_potion_cooldown(key, c, potion, st->potionCooldown[c][pt]);
+              }
+      };
+
+      togglePotionHashes(k);
+
       for (int pt = 0; pt < Variant::POTION_TYPE_NB; ++pt)
       {
           Variant::PotionType potion = static_cast<Variant::PotionType>(pt);
           if (potion_piece(potion) == NO_PIECE_TYPE)
               continue;
+
           if (gatingPotion == potion)
               st->potionCooldown[us][pt] = var->potionCooldown[pt];
           else if (st->potionCooldown[us][pt] > 0)
@@ -2265,8 +2326,10 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
       st->potionZones[us][Variant::POTION_FREEZE] = gatingPotion == Variant::POTION_FREEZE ? freezeExtra : Bitboard(0);
       st->potionZones[us][Variant::POTION_JUMP] = Bitboard(0);
 
-      st->potionZones[them][Variant::POTION_FREEZE] = 0;
-      st->potionZones[them][Variant::POTION_JUMP] = 0;
+      st->potionZones[them][Variant::POTION_FREEZE] = Bitboard(0);
+      st->potionZones[them][Variant::POTION_JUMP] = Bitboard(0);
+
+      togglePotionHashes(k);
   }
 
   // Update the key with the final value
