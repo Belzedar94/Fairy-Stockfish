@@ -6,11 +6,13 @@ on:
       - tools
       - github_ci
       - work
+      - Experimental-spell-heuristics
   pull_request:
     branches:
       - master
       - tools
       - work
+      - Experimental-spell-heuristics
 jobs:
   Stockfish:
     name: ${{ matrix.config.name }}
