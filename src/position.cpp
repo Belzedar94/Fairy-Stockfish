@@ -53,7 +53,7 @@ namespace {
     bool active;
 
     SpellContextScope(const Position& position, Bitboard freezeExtra, Bitboard jumpRemoved)
-        : pos(const_cast<Position&>(position)), active((freezeExtra | jumpRemoved) != 0) {
+        : pos(const_cast<Position&>(position)), active((freezeExtra | jumpRemoved) != Bitboard(0)) {
         if (active)
             pos.set_spell_context(freezeExtra, jumpRemoved);
     }
