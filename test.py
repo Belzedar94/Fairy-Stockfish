@@ -304,6 +304,51 @@ invalid_variant_positions = {
 
 
 class TestPyffish(unittest.TestCase):
+
+    @staticmethod
+    def _gating_info(move: str):
+        if len(move) < 5:
+            return None
+        rank_last = move[-1]
+        if rank_last not in "0123456789":
+            return None
+        if len(move) >= 6 and move[-2] in "0123456789":
+            square = move[-3:]
+            gate_index = -4
+        else:
+            square = move[-2:]
+            gate_index = -3
+        if square[0] not in "abcdefghijklmnopqrstuvwxyz":
+            return None
+        gate_char = move[gate_index]
+        if not gate_char.isalpha():
+            return None
+        return move[:gate_index], gate_char.lower(), square
+
+    @staticmethod
+    def _first_normal_move(moves):
+        for move in moves:
+            if TestPyffish._gating_info(move) is None and "@" not in move:
+                return move
+        raise AssertionError("No normal move available")
+
+    @classmethod
+    def _filter_potion_moves(cls, moves, kind):
+        result = []
+        for move in moves:
+            info = cls._gating_info(move)
+            if info and info[1] == kind:
+                result.append(move)
+        return result
+
+    @classmethod
+    def _has_potion_move(cls, moves, kind):
+        for move in moves:
+            info = cls._gating_info(move)
+            if info and info[1] == kind:
+                return True
+        return False
+
     def test_version(self):
         result = sf.version()
         self.assertEqual(len(result), 3)
@@ -723,6 +768,65 @@ class TestPyffish(unittest.TestCase):
 
         new_fen = sf.get_fen("capture-anything", fen, ["e4f5"])
         self.assertEqual(int(new_fen.split()[4]), 0)
+
+    def test_spell_chess_freeze_blocks_origin(self):
+        start = sf.start_fen("spell-chess")
+        moves = sf.legal_moves("spell-chess", start, [])
+        freeze_moves = self._filter_potion_moves(moves, "f")
+        self.assertTrue(freeze_moves)
+
+        freeze_on_e2 = [m for m in freeze_moves if self._gating_info(m)[2] == "e2"]
+        self.assertTrue(freeze_on_e2)
+
+        for move in freeze_on_e2:
+            base, _, _ = self._gating_info(move)
+            self.assertNotEqual(base[:2], "e2")
+
+    def test_spell_chess_jump_allows_leap(self):
+        fen = "4k3/8/8/8/8/8/P7/R3K3[JJFFFFFjjfffff] w - - 0 1"
+        moves = sf.legal_moves("spell-chess", fen, [])
+        jump_moves = self._filter_potion_moves(moves, "j")
+        self.assertTrue(jump_moves)
+
+        leap_moves = [m for m in jump_moves if self._gating_info(m)[0] == "a1a3" and self._gating_info(m)[2] == "a2"]
+        self.assertTrue(leap_moves)
+        self.assertNotIn("a1a3", moves)
+
+    def test_spell_chess_freeze_cooldown(self):
+        start = "4k3/8/8/8/8/8/8/4K1N1[JJFFFFFjjfffff] w - - 0 1"
+        history = []
+
+        moves = sf.legal_moves("spell-chess", start, history)
+        freeze_moves = self._filter_potion_moves(moves, "f")
+        self.assertTrue(freeze_moves)
+        history.append(freeze_moves[0])
+
+        moves = sf.legal_moves("spell-chess", start, history)
+        history.append(self._first_normal_move(moves))
+
+        moves = sf.legal_moves("spell-chess", start, history)
+        self.assertFalse(self._has_potion_move(moves, "f"))
+        history.append(self._first_normal_move(moves))
+
+        moves = sf.legal_moves("spell-chess", start, history)
+        history.append(self._first_normal_move(moves))
+
+        moves = sf.legal_moves("spell-chess", start, history)
+        self.assertFalse(self._has_potion_move(moves, "f"))
+        history.append(self._first_normal_move(moves))
+
+        moves = sf.legal_moves("spell-chess", start, history)
+        history.append(self._first_normal_move(moves))
+
+        moves = sf.legal_moves("spell-chess", start, history)
+        self.assertFalse(self._has_potion_move(moves, "f"))
+        history.append(self._first_normal_move(moves))
+
+        moves = sf.legal_moves("spell-chess", start, history)
+        history.append(self._first_normal_move(moves))
+
+        moves = sf.legal_moves("spell-chess", start, history)
+        self.assertTrue(self._has_potion_move(moves, "f"))
 
     def test_get_san(self):
         fen = "4k3/8/3R4/8/1R3R2/8/3R4/4K3 w - - 0 1"
