@@ -307,6 +307,12 @@ class TestPyffish(unittest.TestCase):
 
     @staticmethod
     def _gating_info(move: str):
+        if "," in move:
+            prefix, suffix = move.split(",", 1)
+            if "@" in prefix:
+                tag, square = prefix.split("@", 1)
+                if len(tag) == 1 and tag.isalpha() and square and square.isalnum():
+                    return suffix, tag.lower(), square
         if len(move) < 5:
             return None
         rank_last = move[-1]
@@ -774,6 +780,10 @@ class TestPyffish(unittest.TestCase):
         moves = sf.legal_moves("spell-chess", start, [])
         freeze_moves = self._filter_potion_moves(moves, "f")
         self.assertTrue(freeze_moves)
+        for move in freeze_moves:
+            self.assertIn(",", move)
+            self.assertEqual(move[0].lower(), "f")
+            self.assertEqual(move[1], "@")
 
         freeze_on_e2 = [m for m in freeze_moves if self._gating_info(m)[2] == "e2"]
         self.assertTrue(freeze_on_e2)
@@ -787,6 +797,10 @@ class TestPyffish(unittest.TestCase):
         moves = sf.legal_moves("spell-chess", fen, [])
         jump_moves = self._filter_potion_moves(moves, "j")
         self.assertTrue(jump_moves)
+        for move in jump_moves:
+            self.assertIn(",", move)
+            self.assertEqual(move[0].lower(), "j")
+            self.assertEqual(move[1], "@")
 
         leap_moves = [m for m in jump_moves if self._gating_info(m)[0] == "a1a3" and self._gating_info(m)[2] == "a2"]
         self.assertTrue(leap_moves)
