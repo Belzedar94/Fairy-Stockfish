@@ -2318,7 +2318,10 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
               continue;
 
           if (gatingPotion == potion)
-              st->potionCooldown[us][pt] = var->potionCooldown[pt];
+          {
+              int cooldown = var->potionCooldown[pt];
+              st->potionCooldown[us][pt] = std::max(cooldown - 1, 0);
+          }
           else if (st->potionCooldown[us][pt] > 0)
               --st->potionCooldown[us][pt];
       }

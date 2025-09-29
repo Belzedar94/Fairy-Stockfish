@@ -815,32 +815,68 @@ class TestPyffish(unittest.TestCase):
         self.assertTrue(freeze_moves)
         history.append(freeze_moves[0])
 
-        moves = sf.legal_moves("spell-chess", start, history)
-        history.append(self._first_normal_move(moves))
+        cooldown_full_moves = 3
+        for _ in range(max(cooldown_full_moves - 1, 0)):
+            moves = sf.legal_moves("spell-chess", start, history)
+            history.append(self._first_normal_move(moves))
 
-        moves = sf.legal_moves("spell-chess", start, history)
-        self.assertFalse(self._has_potion_move(moves, "f"))
-        history.append(self._first_normal_move(moves))
-
-        moves = sf.legal_moves("spell-chess", start, history)
-        history.append(self._first_normal_move(moves))
-
-        moves = sf.legal_moves("spell-chess", start, history)
-        self.assertFalse(self._has_potion_move(moves, "f"))
-        history.append(self._first_normal_move(moves))
-
-        moves = sf.legal_moves("spell-chess", start, history)
-        history.append(self._first_normal_move(moves))
-
-        moves = sf.legal_moves("spell-chess", start, history)
-        self.assertFalse(self._has_potion_move(moves, "f"))
-        history.append(self._first_normal_move(moves))
+            moves = sf.legal_moves("spell-chess", start, history)
+            self.assertFalse(self._has_potion_move(moves, "f"))
+            history.append(self._first_normal_move(moves))
 
         moves = sf.legal_moves("spell-chess", start, history)
         history.append(self._first_normal_move(moves))
 
         moves = sf.legal_moves("spell-chess", start, history)
         self.assertTrue(self._has_potion_move(moves, "f"))
+
+    def test_spell_chess_freeze_cooldown_regression(self):
+        history = [
+            "d2d4",
+            "e7e6",
+            "c2c3",
+            "c7c6",
+            "e2e4",
+            "g8f6",
+            "f1d3",
+            "f8e7",
+            "f@e7,e4e5",
+            "b8a6",
+            "e5f6",
+            "e7f6",
+            "j@b2,c1a3",
+            "d8a5",
+            "e1f1",
+            "d7d6",
+            "d1e2",
+            "f6e7",
+            "a3d6",
+            "a5g5",
+            "g1f3",
+            "g5f6",
+            "d6e5",
+            "f@f1,f6f3",
+            "f@f4,b1d2",
+            "j@h7,h8h2",
+            "e2f3",
+            "h2h1",
+            "j@f1,a1h1",
+            "c8d7",
+            "h1h7",
+            "e8d8",
+            "f3f7",
+            "d7e8",
+            "f@d8,f7e7",
+            "f@f6,a8b8",
+            "h7g7",
+            "d8c8",
+            "e7e6",
+            "e8d7",
+            "e6d7",
+        ]
+
+        moves = sf.legal_moves("spell-chess", "startpos", history)
+        self.assertIn("f@f6,c8d7", moves)
 
     def test_spell_chess_jump_capture_wins_immediately(self):
         fen = "5rk1/1p2ppb1/2p1q1p1/3p2Np/3P2n1/3BP3/PPP2PPP/R1B1K2R[JFFFFjffff] b KQ - 5 12"
