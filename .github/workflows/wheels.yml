@@ -5,10 +5,14 @@ on:
       branches:
         - master
         - work
+        - Experimental-spell-heuristics
+        - 'codex/implement-freeze-net-impact-scoring-heuristic-b2cbre'
     pull_request:
       branches:
         - master
         - work
+        - Experimental-spell-heuristics
+        - 'codex/implement-freeze-net-impact-scoring-heuristic-b2cbre'
 
 jobs:
   build_wheels:

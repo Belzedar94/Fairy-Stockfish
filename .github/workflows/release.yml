@@ -2,9 +2,17 @@ name: Release
 
 on:
   push:
-    branches: [ master, work ]
+    branches:
+      - master
+      - work
+      - Experimental-spell-heuristics
+      - 'codex/implement-freeze-net-impact-scoring-heuristic-b2cbre'
   pull_request:
-    branches: [ master, work ]
+    branches:
+      - master
+      - work
+      - Experimental-spell-heuristics
+      - 'codex/implement-freeze-net-impact-scoring-heuristic-b2cbre'
 
 jobs:
   windows:

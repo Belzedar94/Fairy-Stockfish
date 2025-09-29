@@ -6,11 +6,15 @@ on:
       - tools
       - github_ci
       - work
+      - Experimental-spell-heuristics
+      - 'codex/implement-freeze-net-impact-scoring-heuristic-b2cbre'
   pull_request:
     branches:
       - master
       - tools
       - work
+      - Experimental-spell-heuristics
+      - 'codex/implement-freeze-net-impact-scoring-heuristic-b2cbre'
 jobs:
   Stockfish:
     name: ${{ matrix.config.name }}
