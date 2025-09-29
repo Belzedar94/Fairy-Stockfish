@@ -239,7 +239,7 @@ constexpr int MAX_PLY = 60;
 #endif
 /// endif USE_HEAP_INSTEAD_OF_STACK_FOR_MOVE_LIST
 #else
-constexpr int MAX_MOVES = 1024;
+constexpr int MAX_MOVES = 4096;
 constexpr int MAX_PLY = 246;
 #endif
 /// endif ALLVARS
@@ -297,6 +297,8 @@ enum CastlingRights {
 enum CheckCount : int {
   CHECKS_0 = 0, CHECKS_NB = 11
 };
+
+constexpr int POTION_COOLDOWN_BITS = 16;
 
 enum MaterialCounting {
   NO_MATERIAL_COUNTING, JANGGI_MATERIAL, UNWEIGHTED_MATERIAL, WHITE_DRAW_ODDS, BLACK_DRAW_ODDS
