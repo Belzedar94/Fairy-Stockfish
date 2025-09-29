@@ -80,6 +80,22 @@ namespace {
         v->doubleStepRegion[BLACK] = AllSquares;
         return v;
     }
+    Variant* spell_chess_variant() {
+        Variant* v = chess_variant()->init();
+        v->variantTemplate = "spell-chess";
+        v->potions = true;
+        v->potionPiece[Variant::POTION_FREEZE] = CUSTOM_PIECE_1;
+        v->potionPiece[Variant::POTION_JUMP] = CUSTOM_PIECE_2;
+        v->potionCooldown[Variant::POTION_FREEZE] = 3;
+        v->potionCooldown[Variant::POTION_JUMP] = 3;
+        v->potionDropOnOccupied = true;
+        v->pieceToChar[make_piece(WHITE, CUSTOM_PIECE_1)] = 'F';
+        v->pieceToChar[make_piece(BLACK, CUSTOM_PIECE_1)] = 'f';
+        v->pieceToChar[make_piece(WHITE, CUSTOM_PIECE_2)] = 'J';
+        v->pieceToChar[make_piece(BLACK, CUSTOM_PIECE_2)] = 'j';
+        v->startFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR[JJFFFFFjjfffff] w KQkq - 0 1";
+        return v;
+    }
     // Berolina Chess
     // https://www.chessvariants.com/dpieces.dir/berlin.html
     Variant* berolina_variant() {
@@ -1852,6 +1868,7 @@ void VariantMap::init() {
     add("nocastle", nocastle_variant());
     add("armageddon", armageddon_variant());
     add("torpedo", torpedo_variant());
+    add("spell-chess", spell_chess_variant());
     add("berolina", berolina_variant());
     add("pawnsideways", pawnsideways_variant());
     add("pawnback", pawnback_variant());
