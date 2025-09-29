@@ -842,6 +842,11 @@ class TestPyffish(unittest.TestCase):
         moves = sf.legal_moves("spell-chess", start, history)
         self.assertTrue(self._has_potion_move(moves, "f"))
 
+    def test_spell_chess_jump_capture_wins_immediately(self):
+        fen = "5rk1/1p2ppb1/2p1q1p1/3p2Np/3P2n1/3BP3/PPP2PPP/R1B1K2R[JFFFFjffff] b KQ - 5 12"
+        result = sf.game_result("spell-chess", fen, ["j@e3,e6e1"])
+        self.assertEqual(result, -sf.VALUE_MATE)
+
     def test_get_san(self):
         fen = "4k3/8/3R4/8/1R3R2/8/3R4/4K3 w - - 0 1"
         result = sf.get_san("chess", fen, "b4d4")

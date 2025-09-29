@@ -93,6 +93,9 @@ namespace {
         v->pieceToChar[make_piece(BLACK, CUSTOM_PIECE_1)] = 'f';
         v->pieceToChar[make_piece(WHITE, CUSTOM_PIECE_2)] = 'J';
         v->pieceToChar[make_piece(BLACK, CUSTOM_PIECE_2)] = 'j';
+        v->extinctionValue = -VALUE_MATE;
+        v->extinctionPieceTypes = piece_set(KING);
+        v->extinctionPieceCount = 0;
         v->startFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR[JJFFFFFjjfffff] w KQkq - 0 1";
         return v;
     }
