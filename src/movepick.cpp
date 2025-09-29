@@ -38,6 +38,9 @@ namespace {
     QSEARCH_TT, QCAPTURE_INIT, QCAPTURE, QCHECK_INIT, QCHECK
   };
 
+  constexpr int FreezeKingBonus   = 256;
+  constexpr int FreezeHeavyBonus  = 96;
+
   // partial_insertion_sort() sorts moves in descending order up to and including
   // a given limit. The order of moves smaller than the limit is left unspecified.
   void partial_insertion_sort(ExtMove* begin, ExtMove* end, int limit) {
@@ -48,9 +51,68 @@ namespace {
             ExtMove tmp = *p, *q;
             *p = *++sortedEnd;
             for (q = sortedEnd; q != begin && *(q - 1) < tmp; --q)
-                *q = *(q - 1);
+            *q = *(q - 1);
             *q = tmp;
         }
+  }
+
+  int freeze_gate_bonus(const Position& pos, Move m) {
+
+    if (!pos.potions_enabled() || !is_gating(m))
+        return 0;
+
+    PieceType gatingPiece = gating_type(m);
+
+    for (int idx = 0; idx < Variant::POTION_TYPE_NB; ++idx)
+    {
+        auto potion = static_cast<Variant::PotionType>(idx);
+        if (pos.potion_piece(potion) != gatingPiece)
+            continue;
+
+        if (potion == Variant::POTION_FREEZE)
+        {
+            Bitboard zone = pos.freeze_zone_from_square(gating_square(m));
+            Color them = ~pos.side_to_move();
+
+            int bonus = 0;
+
+            PieceType kingType = pos.variant()->king_type();
+            if (kingType != NO_PIECE_TYPE && pos.count(them, kingType) == 1)
+            {
+                Square kingSq = pos.square(them, kingType);
+                if (zone & square_bb(kingSq))
+                    bonus += FreezeKingBonus;
+            }
+
+            Bitboard targets = zone & pos.pieces(them);
+            int heavyCount = 0;
+            Value rookValue = PieceValue[MG][make_piece(WHITE, ROOK)];
+
+            while (targets)
+            {
+                Square s = pop_lsb(targets);
+                Piece pc = pos.piece_on(s);
+                if (pc == NO_PIECE)
+                    continue;
+
+                PieceType pt = type_of(pc);
+                if (pt == kingType)
+                    continue;
+
+                if (PieceValue[MG][pc] >= rookValue)
+                    heavyCount++;
+            }
+
+            if (heavyCount >= 2)
+                bonus += heavyCount * FreezeHeavyBonus;
+
+            return bonus;
+        }
+
+        break;
+    }
+
+    return 0;
   }
 
 } // namespace
@@ -72,21 +134,8 @@ bool MovePicker::is_useless_potion(Move m) const {
       if (potion == Variant::POTION_FREEZE)
       {
           Bitboard zone = pos.freeze_zone_from_square(gating_square(m));
-          Color us = pos.side_to_move();
-          Color them = ~us;
-
-          Bitboard existing = pos.potion_zone(us, Variant::POTION_FREEZE);
-          if (!(zone & ~existing))
-              return true;
-
-          Bitboard enemies = pos.pieces(them) & ~pos.freeze_squares(them);
-          int enemyCount = popcount(zone & enemies);
-          if (!enemyCount)
-              return true;
-
-          Bitboard friendlies = pos.pieces(us) & ~pos.freeze_squares(us);
-          int friendlyCount = popcount(zone & friendlies);
-          return friendlyCount > enemyCount;
+          Bitboard enemies = pos.pieces(~pos.side_to_move());
+          return !(zone & enemies);
       }
 
       if (potion == Variant::POTION_JUMP)
@@ -158,18 +207,28 @@ void MovePicker::score() {
 
   for (auto& m : *this)
       if constexpr (Type == CAPTURES)
+      {
+          int gateScore = (*gateHistory)[pos.side_to_move()][gating_square(m)]
+                        + freeze_gate_bonus(pos, m);
+
           m.value =  int(PieceValue[MG][pos.piece_on(to_sq(m))]) * 6
-                   + (*gateHistory)[pos.side_to_move()][gating_square(m)]
+                   + gateScore
                    + (*captureHistory)[pos.moved_piece(m)][to_sq(m)][type_of(pos.piece_on(to_sq(m)))];
+      }
 
       else if constexpr (Type == QUIETS)
+      {
+          int gateScore = (*gateHistory)[pos.side_to_move()][gating_square(m)]
+                        + freeze_gate_bonus(pos, m);
+
           m.value =      (*mainHistory)[pos.side_to_move()][from_to(m)]
-                   +     (*gateHistory)[pos.side_to_move()][gating_square(m)]
+                   +     gateScore
                    + 2 * (*continuationHistory[0])[history_slot(pos.moved_piece(m))][to_sq(m)]
                    +     (*continuationHistory[1])[history_slot(pos.moved_piece(m))][to_sq(m)]
                    +     (*continuationHistory[3])[history_slot(pos.moved_piece(m))][to_sq(m)]
                    +     (*continuationHistory[5])[history_slot(pos.moved_piece(m))][to_sq(m)]
                    + (ply < MAX_LPH ? std::min(4, depth / 3) * (*lowPlyHistory)[ply][from_to(m)] : 0);
+      }
 
       else // Type == EVASIONS
       {
