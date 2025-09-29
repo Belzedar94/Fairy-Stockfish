@@ -2100,7 +2100,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
           if (Eval::useNNUE)
           {
               dp.handPiece[dp.dirty_num] = gating_piece;
-              dp.handCount[dp.dirty_num] = pieceCountInHand[us][gating_type(m)];
+              dp.handCount[dp.dirty_num] = oldCount;
               dp.piece[dp.dirty_num] = gating_piece;
               dp.from[dp.dirty_num] = SQ_NONE;
               dp.to[dp.dirty_num] = SQ_NONE;
