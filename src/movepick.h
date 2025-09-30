@@ -146,7 +146,18 @@ private:
   template<PickType T, typename Pred> Move select(Pred);
   template<GenType> void score();
   bool is_useless_potion(Move m) const;
-  int jump_gate_bonus(Move m) const;
+  Variant::PotionType gating_potion(Move m) const;
+  struct FreezeImpact {
+    int enemyValue = 0;
+    int friendlyValue = 0;
+    int enemyCount = 0;
+    int friendlyCount = 0;
+    bool hitsEnemyKing = false;
+    bool hitsFriendlyKing = false;
+  };
+  int freeze_piece_weight(Piece pc) const;
+  FreezeImpact freeze_impact(Move m) const;
+  int freeze_gate_bonus(Move m) const;
   ExtMove* begin() { return cur; }
   ExtMove* end() { return endMoves; }
 
