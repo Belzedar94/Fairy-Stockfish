@@ -146,6 +146,7 @@ private:
   template<PickType T, typename Pred> Move select(Pred);
   template<GenType> void score();
   bool is_useless_potion(Move m) const;
+  int jump_gate_bonus(Move m) const;
   ExtMove* begin() { return cur; }
   ExtMove* end() { return endMoves; }
 

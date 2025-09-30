@@ -38,6 +38,23 @@ namespace {
     QSEARCH_TT, QCAPTURE_INIT, QCAPTURE, QCHECK_INIT, QCHECK
   };
 
+  Variant::PotionType gating_potion_type(const Position& pos, Move m) {
+
+    if (!pos.potions_enabled() || !is_gating(m))
+        return Variant::POTION_TYPE_NB;
+
+    PieceType gatingPiece = gating_type(m);
+
+    for (int idx = 0; idx < Variant::POTION_TYPE_NB; ++idx)
+    {
+        auto potion = static_cast<Variant::PotionType>(idx);
+        if (pos.potion_piece(potion) == gatingPiece)
+            return potion;
+    }
+
+    return Variant::POTION_TYPE_NB;
+  }
+
   // partial_insertion_sort() sorts moves in descending order up to and including
   // a given limit. The order of moves smaller than the limit is left unspecified.
   void partial_insertion_sort(ExtMove* begin, ExtMove* end, int limit) {
@@ -58,56 +75,82 @@ namespace {
 
 bool MovePicker::is_useless_potion(Move m) const {
 
-  if (!pos.potions_enabled() || !is_gating(m))
+  Variant::PotionType potion = gating_potion_type(pos, m);
+
+  if (potion == Variant::POTION_TYPE_NB)
       return false;
 
-  PieceType gatingPiece = gating_type(m);
-
-  for (int idx = 0; idx < Variant::POTION_TYPE_NB; ++idx)
+  if (potion == Variant::POTION_FREEZE)
   {
-      auto potion = static_cast<Variant::PotionType>(idx);
-      if (pos.potion_piece(potion) != gatingPiece)
-          continue;
+      Bitboard zone = pos.freeze_zone_from_square(gating_square(m));
+      Color us = pos.side_to_move();
+      Color them = ~us;
 
-      if (potion == Variant::POTION_FREEZE)
-      {
-          Bitboard zone = pos.freeze_zone_from_square(gating_square(m));
-          Color us = pos.side_to_move();
-          Color them = ~us;
+      Bitboard enemies = pos.pieces(them) & ~pos.freeze_squares(them);
+      int enemyCount = popcount(zone & enemies);
+      if (!enemyCount)
+          return true;
 
-          if (pos.count<KING>(us) && (zone & pos.square<KING>(us)))
-              return true;
+      Bitboard friendlies = pos.pieces(us) & ~pos.freeze_squares(us);
+      int friendlyCount = popcount(zone & friendlies);
+      return friendlyCount > enemyCount;
+  }
 
-          Square activated = to_sq(m);
-          if (type_of(m) == CASTLING)
-          {
-              File kingFile = to_sq(m) > from_sq(m) ? pos.castling_kingside_file()
-                                                    : pos.castling_queenside_file();
-              activated = make_square(kingFile, pos.castling_rank(us));
-          }
+  if (potion == Variant::POTION_JUMP)
+  {
+      Square gate = gating_square(m);
+      if (pos.piece_on(gate) == NO_PIECE)
+          return true;
 
-          if (zone & square_bb(activated))
-              return true;
-
-          Bitboard enemies = pos.pieces(them);
-          return !(zone & enemies);
-      }
-
-      if (potion == Variant::POTION_JUMP)
-      {
-          Square gate = gating_square(m);
-          if (pos.piece_on(gate) == NO_PIECE)
-              return true;
-
-          Bitboard path = between_bb(from_sq(m), to_sq(m), type_of(pos.moved_piece(m)));
-          path &= ~square_bb(to_sq(m));
-          return !(path & square_bb(gate));
-      }
-
-      break;
+      Bitboard path = between_bb(from_sq(m), to_sq(m), type_of(pos.moved_piece(m)));
+      path &= ~square_bb(to_sq(m));
+      return !(path & square_bb(gate));
   }
 
   return false;
+}
+
+int MovePicker::jump_gate_bonus(Move m) const {
+
+  Variant::PotionType potion = gating_potion_type(pos, m);
+
+  if (potion != Variant::POTION_JUMP)
+      return 0;
+
+  Color us = pos.side_to_move();
+  int bonus = 0;
+
+  bool capture = pos.capture(m);
+  bool givesCheck = pos.gives_check(m);
+
+  if (capture)
+  {
+      Piece target = pos.piece_on(to_sq(m));
+      if (target != NO_PIECE)
+          bonus += 2 * PieceValue[MG][type_of(target)];
+  }
+
+  if (givesCheck)
+      bonus += 400;
+
+  Square gate = gating_square(m);
+  Piece vaulted = pos.piece_on(gate);
+  if (vaulted != NO_PIECE)
+  {
+      int gateValue = PieceValue[MG][type_of(vaulted)];
+      bonus += (color_of(vaulted) == us ? gateValue / 4 : gateValue / 2);
+  }
+
+  int cooldownLength = pos.variant()->potionCooldown[Variant::POTION_JUMP];
+  if (!capture && !givesCheck)
+      bonus -= 100 * (cooldownLength + 1);
+
+  PieceType stockType = pos.potion_piece(Variant::POTION_JUMP);
+  int stock = stockType != NO_PIECE_TYPE ? pos.count_in_hand(us, stockType) : 0;
+  if (!capture && !givesCheck && stock <= 1)
+      bonus -= 200;
+
+  return bonus;
 }
 
 
@@ -166,11 +209,13 @@ void MovePicker::score() {
       if constexpr (Type == CAPTURES)
           m.value =  int(PieceValue[MG][pos.piece_on(to_sq(m))]) * 6
                    + (*gateHistory)[pos.side_to_move()][gating_square(m)]
+                   + jump_gate_bonus(m)
                    + (*captureHistory)[pos.moved_piece(m)][to_sq(m)][type_of(pos.piece_on(to_sq(m)))];
 
       else if constexpr (Type == QUIETS)
           m.value =      (*mainHistory)[pos.side_to_move()][from_to(m)]
                    +     (*gateHistory)[pos.side_to_move()][gating_square(m)]
+                   +     jump_gate_bonus(m)
                    + 2 * (*continuationHistory[0])[history_slot(pos.moved_piece(m))][to_sq(m)]
                    +     (*continuationHistory[1])[history_slot(pos.moved_piece(m))][to_sq(m)]
                    +     (*continuationHistory[3])[history_slot(pos.moved_piece(m))][to_sq(m)]
@@ -181,10 +226,12 @@ void MovePicker::score() {
       {
           if (pos.capture(m))
               m.value =  PieceValue[MG][pos.piece_on(to_sq(m))]
-                       - Value(type_of(pos.moved_piece(m)));
+                       - Value(type_of(pos.moved_piece(m)))
+                       + jump_gate_bonus(m);
           else
               m.value =      (*mainHistory)[pos.side_to_move()][from_to(m)]
                        + 2 * (*continuationHistory[0])[history_slot(pos.moved_piece(m))][to_sq(m)]
+                       +     jump_gate_bonus(m)
                        - (1 << 28);
       }
 }
