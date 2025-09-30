@@ -18,6 +18,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <utility>
 
 #include "movepick.h"
 
@@ -38,6 +39,56 @@ namespace {
     PROBCUT_TT, PROBCUT_INIT, PROBCUT,
     QSEARCH_TT, QCAPTURE_INIT, QCAPTURE, QCHECK_INIT, QCHECK
   };
+
+  struct NullMoveScope {
+    Position& pos;
+    StateInfo st;
+    bool active;
+
+    explicit NullMoveScope(const Position& position)
+        : pos(const_cast<Position&>(position)), active(!position.checkers()) {
+        if (active)
+            pos.do_null_move(st);
+    }
+
+    ~NullMoveScope() {
+        if (active)
+            pos.undo_null_move();
+    }
+
+    bool is_active() const { return active; }
+  };
+
+  struct FreezeContextScope {
+    Position& pos;
+    bool active;
+
+    FreezeContextScope(const Position& position, Bitboard freezeExtra)
+        : pos(const_cast<Position&>(position)), active(freezeExtra != Bitboard(0)) {
+        if (active)
+            pos.set_spell_context(freezeExtra, Bitboard(0));
+    }
+
+    ~FreezeContextScope() {
+        if (active)
+            pos.clear_spell_context();
+    }
+  };
+
+  std::pair<int, int> mobility_counts(const Position& pos) {
+
+    auto count_for_side = [](const Position& position) {
+        return position.checkers() ? int(MoveList<EVASIONS>(position).size())
+                                   : int(MoveList<NON_EVASIONS>(position).size());
+    };
+
+    int ourMoves = count_for_side(pos);
+
+    NullMoveScope nullScope(pos);
+    int theirMoves = nullScope.is_active() ? count_for_side(pos) : 0;
+
+    return {ourMoves, theirMoves};
+  }
 
   // partial_insertion_sort() sorts moves in descending order up to and including
   // a given limit. The order of moves smaller than the limit is left unspecified.
@@ -104,14 +155,12 @@ bool MovePicker::is_useless_potion(Move m) const {
 }
 
 
-int MovePicker::potion_inventory_bonus(Move m) const {
+int MovePicker::freeze_mobility_bonus(Move m) const {
 
   if (!pos.potions_enabled() || !is_gating(m))
       return 0;
 
   PieceType gatingPiece = gating_type(m);
-  Color us = pos.side_to_move();
-  const Variant* var = pos.variant();
 
   for (int idx = 0; idx < Variant::POTION_TYPE_NB; ++idx)
   {
@@ -119,34 +168,28 @@ int MovePicker::potion_inventory_bonus(Move m) const {
       if (pos.potion_piece(potion) != gatingPiece)
           continue;
 
-      int bonus = 0;
-      int stock = pos.count_in_hand(us, gatingPiece);
-      int baseCooldown = var ? var->potionCooldown[idx] : 0;
-      int prevCooldown = 0;
-      if (const StateInfo* previous = pos.state()->previous)
-          prevCooldown = previous->potionCooldown[us][idx];
+      if (potion != Variant::POTION_FREEZE)
+          return 0;
 
-      if (!pos.potion_cooldown(us, potion) && prevCooldown > 0)
-      {
-          int capped = prevCooldown > 4 ? 4 : prevCooldown;
-          bonus += 80 * capped;
-      }
+      Bitboard freezeExtra = pos.freeze_zone_from_square(gating_square(m));
+      if (!freezeExtra)
+          return 0;
 
-      if (stock <= 1 && baseCooldown > 1)
-      {
-          int capped = baseCooldown > 4 ? 4 : baseCooldown;
-          int scale = potion == Variant::POTION_FREEZE ? 160 : 120;
-          bonus -= scale * capped;
-      }
-      else if (stock > 1 && baseCooldown > 0)
-      {
-          int capped = stock - 1;
-          if (capped > 3)
-              capped = 3;
-          bonus += 40 * capped;
-      }
+      auto [ourBefore, theirBefore] = mobility_counts(pos);
 
-      return bonus;
+      FreezeContextScope scope(pos, freezeExtra);
+      auto [ourAfter, theirAfter] = mobility_counts(pos);
+
+      int ourLost = ourBefore - ourAfter;
+      int theirLost = theirBefore - theirAfter;
+
+      int netDelta = theirLost - ourLost;
+
+      constexpr int Scale = 32;
+      constexpr int MaxSwing = 2048;
+      int bonus = netDelta * Scale;
+
+      return std::clamp(bonus, -MaxSwing, MaxSwing);
   }
 
   return 0;
@@ -205,20 +248,29 @@ void MovePicker::score() {
   static_assert(Type == CAPTURES || Type == QUIETS || Type == EVASIONS, "Wrong type");
 
   for (auto& m : *this)
-  {
       if constexpr (Type == CAPTURES)
+      {
+          int gateScore = (*gateHistory)[pos.side_to_move()][gating_square(m)]
+                        + freeze_mobility_bonus(m);
+
           m.value =  int(PieceValue[MG][pos.piece_on(to_sq(m))]) * 6
-                   + (*gateHistory)[pos.side_to_move()][gating_square(m)]
+                   + gateScore
                    + (*captureHistory)[pos.moved_piece(m)][to_sq(m)][type_of(pos.piece_on(to_sq(m)))];
+      }
 
       else if constexpr (Type == QUIETS)
+      {
+          int gateScore = (*gateHistory)[pos.side_to_move()][gating_square(m)]
+                        + freeze_mobility_bonus(m);
+
           m.value =      (*mainHistory)[pos.side_to_move()][from_to(m)]
-                   +     (*gateHistory)[pos.side_to_move()][gating_square(m)]
+                   +     gateScore
                    + 2 * (*continuationHistory[0])[history_slot(pos.moved_piece(m))][to_sq(m)]
                    +     (*continuationHistory[1])[history_slot(pos.moved_piece(m))][to_sq(m)]
                    +     (*continuationHistory[3])[history_slot(pos.moved_piece(m))][to_sq(m)]
                    +     (*continuationHistory[5])[history_slot(pos.moved_piece(m))][to_sq(m)]
                    + (ply < MAX_LPH ? std::min(4, depth / 3) * (*lowPlyHistory)[ply][from_to(m)] : 0);
+      }
 
       else // Type == EVASIONS
       {
@@ -230,9 +282,6 @@ void MovePicker::score() {
                        + 2 * (*continuationHistory[0])[history_slot(pos.moved_piece(m))][to_sq(m)]
                        - (1 << 28);
       }
-
-      m.value += potion_inventory_bonus(m);
-  }
 }
 
 /// MovePicker::select() returns the next move satisfying a predicate function.
