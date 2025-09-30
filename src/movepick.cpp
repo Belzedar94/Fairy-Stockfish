@@ -61,45 +61,208 @@ bool MovePicker::is_useless_potion(Move m) const {
   if (!pos.potions_enabled() || !is_gating(m))
       return false;
 
+  Variant::PotionType potion = gating_potion(m);
+
+  if (potion == Variant::POTION_FREEZE)
+  {
+      FreezeImpact impact = freeze_impact(m);
+
+      if (impact.hitsFriendlyKing && !impact.hitsEnemyKing)
+          return true;
+
+      if (impact.enemyValue <= 0 && !impact.hitsEnemyKing)
+          return true;
+
+      if (impact.enemyValue <= impact.friendlyValue && !impact.hitsEnemyKing)
+          return true;
+
+      return false;
+  }
+
+  if (potion == Variant::POTION_JUMP)
+  {
+      Square gate = gating_square(m);
+      if (pos.piece_on(gate) == NO_PIECE)
+          return true;
+
+      Bitboard path = between_bb(from_sq(m), to_sq(m), type_of(pos.moved_piece(m)));
+      path &= ~square_bb(to_sq(m));
+      return !(path & square_bb(gate));
+  }
+
+  return false;
+}
+
+Variant::PotionType MovePicker::gating_potion(Move m) const {
+
+  if (!is_gating(m))
+      return Variant::POTION_TYPE_NB;
+
   PieceType gatingPiece = gating_type(m);
 
   for (int idx = 0; idx < Variant::POTION_TYPE_NB; ++idx)
   {
       auto potion = static_cast<Variant::PotionType>(idx);
-      if (pos.potion_piece(potion) != gatingPiece)
-          continue;
-
-      if (potion == Variant::POTION_FREEZE)
-      {
-          Bitboard zone = pos.freeze_zone_from_square(gating_square(m));
-          Color us = pos.side_to_move();
-          Color them = ~us;
-
-          Bitboard enemies = pos.pieces(them) & ~pos.freeze_squares(them);
-          int enemyCount = popcount(zone & enemies);
-          if (!enemyCount)
-              return true;
-
-          Bitboard friendlies = pos.pieces(us) & ~pos.freeze_squares(us);
-          int friendlyCount = popcount(zone & friendlies);
-          return friendlyCount > enemyCount;
-      }
-
-      if (potion == Variant::POTION_JUMP)
-      {
-          Square gate = gating_square(m);
-          if (pos.piece_on(gate) == NO_PIECE)
-              return true;
-
-          Bitboard path = between_bb(from_sq(m), to_sq(m), type_of(pos.moved_piece(m)));
-          path &= ~square_bb(to_sq(m));
-          return !(path & square_bb(gate));
-      }
-
-      break;
+      if (pos.potion_piece(potion) == gatingPiece)
+          return potion;
   }
 
-  return false;
+  return Variant::POTION_TYPE_NB;
+}
+
+int MovePicker::freeze_piece_weight(Piece pc) const {
+
+  PieceType pt = type_of(pc);
+  if (pt == NO_PIECE_TYPE)
+      return 0;
+
+  if (pt == KING)
+      return QueenValueMg * 8;
+
+  int value = int(PieceValue[MG][pc]);
+  if (value == 0)
+      value = int(PieceValue[MG][make_piece(color_of(pc), pt)]);
+
+  return std::max<int>(PawnValueMg / 2, value);
+}
+
+MovePicker::FreezeImpact MovePicker::freeze_impact(Move m) const {
+
+  FreezeImpact impact;
+
+  Square gate = gating_square(m);
+  Bitboard zone = pos.freeze_zone_from_square(gate);
+  Color us = pos.side_to_move();
+  Color them = ~us;
+
+  Bitboard friendlyExisting = pos.freeze_squares(us);
+  Bitboard enemyExisting = pos.freeze_squares(them);
+
+  Square from = from_sq(m);
+  Square to = to_sq(m);
+  Piece moved = pos.moved_piece(m);
+  Piece captured = pos.piece_on(to);
+  bool isCapture = pos.capture(m);
+
+  Bitboard friendlyMask = zone & pos.pieces(us);
+  Bitboard enemyMask = zone & pos.pieces(them);
+
+  if (type_of(m) != DROP && from != SQ_NONE && (zone & square_bb(from)))
+      friendlyMask &= ~square_bb(from);
+
+  if (zone & square_bb(to))
+  {
+      friendlyMask |= square_bb(to);
+      if (isCapture)
+          enemyMask &= ~square_bb(to);
+  }
+
+  Bitboard newFriendly = friendlyMask & ~friendlyExisting;
+  Bitboard newEnemy = enemyMask & ~enemyExisting;
+
+  Bitboard gatingFrom = from != SQ_NONE ? square_bb(from) : Bitboard(0);
+  Bitboard gatingTo = to != SQ_NONE ? square_bb(to) : Bitboard(0);
+  Bitboard occupancyAfter = pos.pieces();
+  if (from != SQ_NONE)
+      occupancyAfter &= ~square_bb(from);
+  if (isCapture)
+      occupancyAfter &= ~square_bb(to);
+  if (gatingTo)
+      occupancyAfter |= gatingTo;
+
+  Bitboard gatingAttacks = Bitboard(0);
+  if (gatingTo && moved != NO_PIECE)
+      gatingAttacks = attacks_bb(us, type_of(moved), to, occupancyAfter);
+
+  Bitboard mask = newEnemy;
+  while (mask)
+  {
+      Square sq = pop_lsb(mask);
+      Piece pc = pos.piece_on(sq);
+      if (sq == to && isCapture)
+          pc = captured;
+
+      impact.enemyValue += freeze_piece_weight(pc);
+      ++impact.enemyCount;
+      if (type_of(pc) == KING)
+          impact.hitsEnemyKing = true;
+
+      Bitboard attackers = pos.attackers_to(sq, us);
+      if (gatingFrom)
+          attackers &= ~gatingFrom;
+      if (gatingTo && (gatingAttacks & square_bb(sq)))
+          attackers |= gatingTo;
+
+      if (attackers)
+      {
+          impact.enemyThreatValue += freeze_piece_weight(pc);
+          ++impact.enemyThreatCount;
+      }
+  }
+
+  mask = newFriendly;
+  while (mask)
+  {
+      Square sq = pop_lsb(mask);
+      Piece pc = (sq == to ? moved : pos.piece_on(sq));
+      if (pc == NO_PIECE)
+          continue;
+
+      impact.friendlyValue += freeze_piece_weight(pc);
+      ++impact.friendlyCount;
+      if (type_of(pc) == KING)
+          impact.hitsFriendlyKing = true;
+
+      Bitboard attackers = pos.attackers_to(sq, them);
+      if (isCapture && captured != NO_PIECE && color_of(captured) == them)
+          attackers &= ~square_bb(to);
+
+      if (attackers)
+      {
+          impact.friendlyThreatValue += freeze_piece_weight(pc);
+          ++impact.friendlyThreatCount;
+      }
+  }
+
+  if (!impact.hitsEnemyKing && pos.count<KING>(them) && (zone & square_bb(pos.square<KING>(them))))
+      impact.hitsEnemyKing = true;
+
+  if (!impact.hitsFriendlyKing && pos.count<KING>(us) && (zone & square_bb(pos.square<KING>(us))))
+      impact.hitsFriendlyKing = true;
+
+  return impact;
+}
+
+int MovePicker::freeze_gate_bonus(Move m) const {
+
+  if (gating_potion(m) != Variant::POTION_FREEZE)
+      return 0;
+
+  FreezeImpact impact = freeze_impact(m);
+
+  if (impact.enemyValue <= 0 && !impact.hitsEnemyKing)
+      return -QueenValueMg / 4;
+
+  constexpr int ValueScale = 16;
+  constexpr int CountWeight = 64;
+  constexpr int ThreatValueScale = 12;
+  constexpr int ThreatCountWeight = 96;
+  constexpr int FriendlyThreatExtra = 48;
+
+  int bonus = (impact.enemyValue - impact.friendlyValue) / ValueScale;
+  bonus += (impact.enemyCount - impact.friendlyCount) * CountWeight;
+  bonus += impact.enemyThreatValue / ThreatValueScale;
+  bonus += impact.enemyThreatCount * ThreatCountWeight;
+  bonus -= impact.friendlyThreatValue / ThreatValueScale;
+  bonus -= impact.friendlyThreatCount * (ThreatCountWeight + FriendlyThreatExtra);
+
+  if (impact.hitsEnemyKing)
+      bonus += QueenValueMg;
+
+  if (impact.hitsFriendlyKing)
+      bonus -= QueenValueMg + 2 * CountWeight;
+
+  return bonus;
 }
 
 
@@ -155,10 +318,14 @@ void MovePicker::score() {
   static_assert(Type == CAPTURES || Type == QUIETS || Type == EVASIONS, "Wrong type");
 
   for (auto& m : *this)
+  {
+      int gatingBonus = freeze_gate_bonus(m);
+
       if constexpr (Type == CAPTURES)
           m.value =  int(PieceValue[MG][pos.piece_on(to_sq(m))]) * 6
                    + (*gateHistory)[pos.side_to_move()][gating_square(m)]
-                   + (*captureHistory)[pos.moved_piece(m)][to_sq(m)][type_of(pos.piece_on(to_sq(m)))];
+                   + (*captureHistory)[pos.moved_piece(m)][to_sq(m)][type_of(pos.piece_on(to_sq(m)))]
+                   + gatingBonus;
 
       else if constexpr (Type == QUIETS)
           m.value =      (*mainHistory)[pos.side_to_move()][from_to(m)]
@@ -167,18 +334,22 @@ void MovePicker::score() {
                    +     (*continuationHistory[1])[history_slot(pos.moved_piece(m))][to_sq(m)]
                    +     (*continuationHistory[3])[history_slot(pos.moved_piece(m))][to_sq(m)]
                    +     (*continuationHistory[5])[history_slot(pos.moved_piece(m))][to_sq(m)]
-                   + (ply < MAX_LPH ? std::min(4, depth / 3) * (*lowPlyHistory)[ply][from_to(m)] : 0);
+                   + (ply < MAX_LPH ? std::min(4, depth / 3) * (*lowPlyHistory)[ply][from_to(m)] : 0)
+                   + gatingBonus;
 
       else // Type == EVASIONS
       {
           if (pos.capture(m))
-              m.value =  PieceValue[MG][pos.piece_on(to_sq(m))]
-                       - Value(type_of(pos.moved_piece(m)));
+              m.value =  int(PieceValue[MG][pos.piece_on(to_sq(m))])
+                       - int(Value(type_of(pos.moved_piece(m))))
+                       + gatingBonus;
           else
               m.value =      (*mainHistory)[pos.side_to_move()][from_to(m)]
                        + 2 * (*continuationHistory[0])[history_slot(pos.moved_piece(m))][to_sq(m)]
+                       + gatingBonus
                        - (1 << 28);
       }
+  }
 }
 
 /// MovePicker::select() returns the next move satisfying a predicate function.
