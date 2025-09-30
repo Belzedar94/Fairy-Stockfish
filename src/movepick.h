@@ -152,6 +152,10 @@ private:
     int friendlyValue = 0;
     int enemyCount = 0;
     int friendlyCount = 0;
+    int enemyThreatValue = 0;
+    int friendlyThreatValue = 0;
+    int enemyThreatCount = 0;
+    int friendlyThreatCount = 0;
     bool hitsEnemyKing = false;
     bool hitsFriendlyKing = false;
   };

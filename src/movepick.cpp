@@ -160,6 +160,20 @@ MovePicker::FreezeImpact MovePicker::freeze_impact(Move m) const {
   Bitboard newFriendly = friendlyMask & ~friendlyExisting;
   Bitboard newEnemy = enemyMask & ~enemyExisting;
 
+  Bitboard gatingFrom = from != SQ_NONE ? square_bb(from) : Bitboard(0);
+  Bitboard gatingTo = to != SQ_NONE ? square_bb(to) : Bitboard(0);
+  Bitboard occupancyAfter = pos.pieces();
+  if (from != SQ_NONE)
+      occupancyAfter &= ~square_bb(from);
+  if (isCapture)
+      occupancyAfter &= ~square_bb(to);
+  if (gatingTo)
+      occupancyAfter |= gatingTo;
+
+  Bitboard gatingAttacks = Bitboard(0);
+  if (gatingTo && moved != NO_PIECE)
+      gatingAttacks = attacks_bb(us, type_of(moved), to, occupancyAfter);
+
   Bitboard mask = newEnemy;
   while (mask)
   {
@@ -172,6 +186,18 @@ MovePicker::FreezeImpact MovePicker::freeze_impact(Move m) const {
       ++impact.enemyCount;
       if (type_of(pc) == KING)
           impact.hitsEnemyKing = true;
+
+      Bitboard attackers = pos.attackers_to(sq, us);
+      if (gatingFrom)
+          attackers &= ~gatingFrom;
+      if (gatingTo && (gatingAttacks & square_bb(sq)))
+          attackers |= gatingTo;
+
+      if (attackers)
+      {
+          impact.enemyThreatValue += freeze_piece_weight(pc);
+          ++impact.enemyThreatCount;
+      }
   }
 
   mask = newFriendly;
@@ -186,6 +212,16 @@ MovePicker::FreezeImpact MovePicker::freeze_impact(Move m) const {
       ++impact.friendlyCount;
       if (type_of(pc) == KING)
           impact.hitsFriendlyKing = true;
+
+      Bitboard attackers = pos.attackers_to(sq, them);
+      if (isCapture && captured != NO_PIECE && color_of(captured) == them)
+          attackers &= ~square_bb(to);
+
+      if (attackers)
+      {
+          impact.friendlyThreatValue += freeze_piece_weight(pc);
+          ++impact.friendlyThreatCount;
+      }
   }
 
   if (!impact.hitsEnemyKing && pos.count<KING>(them) && (zone & square_bb(pos.square<KING>(them))))
@@ -209,9 +245,16 @@ int MovePicker::freeze_gate_bonus(Move m) const {
 
   constexpr int ValueScale = 16;
   constexpr int CountWeight = 64;
+  constexpr int ThreatValueScale = 12;
+  constexpr int ThreatCountWeight = 96;
+  constexpr int FriendlyThreatExtra = 48;
 
   int bonus = (impact.enemyValue - impact.friendlyValue) / ValueScale;
   bonus += (impact.enemyCount - impact.friendlyCount) * CountWeight;
+  bonus += impact.enemyThreatValue / ThreatValueScale;
+  bonus += impact.enemyThreatCount * ThreatCountWeight;
+  bonus -= impact.friendlyThreatValue / ThreatValueScale;
+  bonus -= impact.friendlyThreatCount * (ThreatCountWeight + FriendlyThreatExtra);
 
   if (impact.hitsEnemyKing)
       bonus += QueenValueMg;
