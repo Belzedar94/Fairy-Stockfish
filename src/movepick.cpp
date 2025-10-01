@@ -47,38 +47,32 @@ namespace {
         && pos.gating_piece_after(BLACK, QUEEN)  == COMMONER;
   }
 
-  struct BattleKingsContext {
+  struct BattleKingsHeuristic {
 
     static constexpr std::array<PieceType, 6> CaptureOrder = {PAWN, KNIGHT, BISHOP, ROOK, QUEEN, COMMONER};
 
     bool enabled = false;
     Color us = WHITE;
     Color them = BLACK;
-    Rank maxRank = RANK_8;
-    int ranks = 0;
-    int files = 0;
-    std::array<int, CaptureOrder.size()> remaining{};
+    std::array<int, CaptureOrder.size()> enemyRemaining{};
     int friendlyYoung = 0;
     int enemyYoung = 0;
-    int youngBalance = 0;
+    Rank maxRank = RANK_8;
 
-    explicit BattleKingsContext(const Position& pos) {
+    explicit BattleKingsHeuristic(const Position& pos) {
       enabled = is_battle_kings(pos);
       if (!enabled)
           return;
 
       us = pos.side_to_move();
       them = ~us;
-      maxRank = pos.max_rank();
-      ranks = pos.ranks();
-      files = pos.files();
 
       for (size_t i = 0; i < CaptureOrder.size(); ++i)
-          remaining[i] = pos.count(them, CaptureOrder[i]);
+          enemyRemaining[i] = pos.count(them, CaptureOrder[i]);
 
       friendlyYoung = pos.count(us, PAWN) + pos.count(us, KNIGHT) + pos.count(us, BISHOP);
       enemyYoung = pos.count(them, PAWN) + pos.count(them, KNIGHT) + pos.count(them, BISHOP);
-      youngBalance = friendlyYoung - enemyYoung;
+      maxRank = pos.max_rank();
     }
 
     int category_index(PieceType pt) const {
@@ -88,230 +82,190 @@ namespace {
       return -1;
     }
 
-    int axis_weight(int coord, int dimension) const {
-      if (dimension <= 1)
-          return 0;
-
-      int span = dimension - 1;
-      int diff = 2 * coord - span;
-      if (diff < 0)
-          diff = -diff;
-      return span - diff;
+    int next_target_index() const {
+      for (size_t i = 0; i < CaptureOrder.size(); ++i)
+          if (enemyRemaining[i])
+              return int(i);
+      return -1;
     }
 
-    int centrality(Square sq) const {
-      if (sq == SQ_NONE)
-          return 0;
-      return axis_weight(file_of(sq), files) + axis_weight(rank_of(sq), ranks);
+    int young_remaining() const {
+      return enemyRemaining[0] + enemyRemaining[1] + enemyRemaining[2];
     }
 
-    int territory(Square sq) const {
-      if (sq == SQ_NONE || ranks <= 1)
-          return 0;
-
-      int rel = int(relative_rank(us, sq, maxRank));
-      int mid = (ranks - 1) / 2;
-      return rel - mid;
-    }
-
-    int sequential_capture(PieceType victim) const {
+    int capture_score(PieceType victim) const {
       if (victim == NO_PIECE_TYPE)
           return 0;
-
-      if (victim == COMMONER)
-          return 10000;
 
       int idx = category_index(victim);
       if (idx == -1)
           return 0;
 
-      for (int earlier = 0; earlier < idx; ++earlier)
-          if (remaining[earlier])
-              return -320 * (idx - earlier) - 60 * remaining[earlier];
+      if (victim == COMMONER)
+          return 6000;
 
-      int base = 600 + (int(CaptureOrder.size()) - 1 - idx) * 130;
-      if (remaining[idx] == 1)
-          base += 220;
-      return base;
+      int target = next_target_index();
+      if (target == -1)
+          return 0;
+
+      int score = 700 + (int(CaptureOrder.size()) - 1 - idx) * 140;
+      if (idx == target)
+          score += 450;
+      else if (idx > target)
+          score -= 300 * (idx - target);
+      if (enemyRemaining[idx] == 1)
+          score += 180;
+      return score;
     }
 
-    int mover_plan(const Position& pos, Move m, PieceType mover, bool isCapture) const {
-      Square from = from_sq(m);
-      Square to = to_sq(m);
-      int centDiff = centrality(to) - centrality(from);
-      int terrDiff = territory(to) - territory(from);
-      int forwardTo = territory(to);
+    int mover_score(PieceType mover, bool isCapture) const {
       int score = 0;
 
       switch (mover)
       {
       case PAWN:
-          score += 480;
-          score += terrDiff * 220;
-          score += centDiff * 35;
-          if (terrDiff <= 0 && !isCapture)
-              score -= 180;
+          score += 460;
+          if (!isCapture)
+              score += 120;
           break;
 
       case KNIGHT:
-          score += 260;
-          score += centDiff * 60;
-          score += std::max(0, forwardTo) * 90;
-          if (pos.count(us, KNIGHT) > pos.count(them, KNIGHT))
-              score += 90;
+          score += 320;
           break;
 
       case BISHOP:
-          score += 150;
-          score += centDiff * 45;
-          score += std::max(0, forwardTo) * 70;
+          score += 200;
           break;
 
       case ROOK:
           score -= 220;
           if (isCapture)
-              score += 160;
-          score += centDiff * 20;
+              score += 140;
           break;
 
       case QUEEN:
           score -= 900;
+          if (!isCapture)
+              score -= 450;
           break;
 
       case COMMONER:
-          score -= 400;
+          score -= 480;
           break;
 
       default:
           break;
       }
 
-      if (youngBalance < 0 && (mover == PAWN || mover == KNIGHT || mover == BISHOP))
+      if (friendlyYoung <= enemyYoung && (mover == PAWN || mover == KNIGHT || mover == BISHOP))
           score += 180;
 
-      if (youngBalance > 0 && (mover == ROOK || mover == QUEEN))
+      if (friendlyYoung > enemyYoung && (mover == ROOK || mover == QUEEN))
           score -= 120;
+
+      if (young_remaining())
+      {
+          if (mover == PAWN || mover == KNIGHT || mover == BISHOP)
+              score += 120;
+          else if (mover == ROOK || mover == QUEEN)
+              score -= 140;
+      }
 
       return score;
     }
 
-    int gating_bonus(const Position& pos, Move m) const {
+    int gating_score(const Position& pos, Move m) const {
       PieceType gate = gating_type(m);
       if (gate == NO_PIECE_TYPE)
           return 0;
-
-      Square sq = gating_square(m);
-      int cent = centrality(sq);
-      int terr = territory(sq);
-
-      Bitboard enemyAttackers = sq != SQ_NONE ? pos.attackers_to(sq, them) : Bitboard(0);
-      Bitboard friendlyAttackers = sq != SQ_NONE ? pos.attackers_to(sq, us) : Bitboard(0);
 
       int score = 0;
       switch (gate)
       {
       case KNIGHT:
-          score += 1500;
-          score += cent * 60;
-          score += std::max(0, terr) * 120;
-          score += std::max(0, -youngBalance) * 60;
+          score += 1300;
+          if (friendlyYoung <= enemyYoung)
+              score += 160;
+          if (young_remaining())
+              score += 120;
           break;
 
       case BISHOP:
-          score += 1100;
-          score += cent * 55;
-          score += std::max(0, terr) * 90;
-          score += std::max(0, -youngBalance) * 45;
+          score += 950;
+          if (friendlyYoung <= enemyYoung)
+              score += 120;
+          if (young_remaining())
+              score += 80;
           break;
 
       case ROOK:
-          score -= 500;
-          score += cent * 25;
+          score -= 320;
+          if (young_remaining())
+              score -= 220;
           break;
 
       case QUEEN:
-          score -= 1600;
+          score -= 1500;
+          if (young_remaining())
+              score -= 240;
           break;
 
       case COMMONER:
-          score -= 5200;
+          score -= 3800;
           break;
 
       default:
           break;
       }
 
+      Square sq = gating_square(m);
       if (sq != SQ_NONE)
       {
-          Bitboard occupied = pos.pieces();
-          Square from = from_sq(m);
-          if (from != SQ_NONE)
-              occupied ^= square_bb(from);
-          occupied |= square_bb(to_sq(m));
-          occupied |= square_bb(sq);
+          int attackers = popcount(pos.attackers_to(sq, them));
+          int defenders = popcount(pos.attackers_to(sq, us));
 
           if (gate == KNIGHT || gate == BISHOP)
           {
-              Bitboard attacks = attacks_bb(us, gate, sq, occupied);
-
-              if (attacks & pos.pieces(them, PAWN))
-                  score += 260;
-
-              if (gate == KNIGHT && (attacks & pos.pieces(them, KNIGHT)))
-                  score += 140;
-
-              if (gate == BISHOP && (attacks & pos.pieces(them, KNIGHT)))
+              score += defenders * 60;
+              if (!attackers)
                   score += 160;
           }
-      }
 
-      if (enemyAttackers)
-      {
-          int attackers = std::min(3, popcount(enemyAttackers));
-          score -= 200 * attackers;
-          if (!friendlyAttackers)
-              score -= 320;
+          if (attackers > defenders)
+              score -= 200 * (attackers - defenders);
       }
-      else
-          score += 120;
 
       return score;
     }
 
-    int queen_timing(const Position& pos, Move m, PieceType mover, bool isCapture, PieceType victim) const {
+    int queen_penalty(const Position& pos, Move m, PieceType mover, bool isCapture, PieceType victim) const {
       if (mover != QUEEN)
           return 0;
 
-      int score = -900;
+      int score = -600;
 
       if (!isCapture)
-          score -= 600;
+          score -= 500;
+
+      if (young_remaining())
+          score -= 500;
 
       if (gating_type(m) == COMMONER)
           score -= 1600;
 
-      if (friendlyYoung <= 2)
-          score /= 2;
-
-      if (remaining[0] || remaining[1] || remaining[2])
-          score -= 360;
+      if (victim == COMMONER)
+          score += 6000;
+      else if (isCapture)
+          score += capture_score(victim) / 2;
 
       Square from = from_sq(m);
       if (from != SQ_NONE && pos.attackers_to(from, them))
-          score /= 2;
-
-      if (isCapture)
-      {
-          if (victim == COMMONER)
-              return 12000;
-
-          score += sequential_capture(victim) + 480;
-      }
+          score -= 220;
 
       return score;
     }
 
-    int bonus(const Position& pos, Move m) const {
+    int score(const Position& pos, Move m) const {
       if (!enabled)
           return 0;
 
@@ -321,16 +275,31 @@ namespace {
       Piece captured = isCapture ? pos.piece_on(to_sq(m)) : NO_PIECE;
       PieceType victim = captured != NO_PIECE ? type_of(captured) : NO_PIECE_TYPE;
 
-      int score = 0;
-      score += mover_plan(pos, m, mover, isCapture);
-      score += gating_bonus(pos, m);
+      int total = mover_score(mover, isCapture);
+      total += gating_score(pos, m);
 
-      if (isCapture && victim != NO_PIECE_TYPE)
-          score += sequential_capture(victim);
+      if (victim != NO_PIECE_TYPE)
+          total += capture_score(victim);
 
-      score += queen_timing(pos, m, mover, isCapture, victim);
+      total += queen_penalty(pos, m, mover, isCapture, victim);
 
-      return score;
+      Square from = from_sq(m);
+      Square to = to_sq(m);
+      if (from != SQ_NONE && to != SQ_NONE)
+      {
+          int fromRank = int(relative_rank(us, from, maxRank));
+          int toRank = int(relative_rank(us, to, maxRank));
+          int delta = toRank - fromRank;
+
+          if (mover == PAWN)
+              total += delta * 140;
+          else if (mover == KNIGHT || mover == BISHOP)
+              total += delta * 80;
+          else if (mover == ROOK || mover == QUEEN)
+              total += delta * 40;
+      }
+
+      return total;
     }
   };
 
@@ -410,7 +379,7 @@ void MovePicker::score() {
 
   static_assert(Type == CAPTURES || Type == QUIETS || Type == EVASIONS, "Wrong type");
 
-  const BattleKingsContext battle(pos);
+  const BattleKingsHeuristic battle(pos);
 
   for (auto& m : *this)
       if constexpr (Type == CAPTURES)
@@ -420,7 +389,7 @@ void MovePicker::score() {
                    + (*captureHistory)[pos.moved_piece(m)][to_sq(m)][type_of(pos.piece_on(to_sq(m)))];
 
           if (battle.enabled)
-              m.value += battle.bonus(pos, m);
+              m.value += battle.score(pos, m);
       }
 
       else if constexpr (Type == QUIETS)
@@ -434,7 +403,7 @@ void MovePicker::score() {
                    + (ply < MAX_LPH ? std::min(4, depth / 3) * (*lowPlyHistory)[ply][from_to(m)] : 0);
 
           if (battle.enabled)
-              m.value += battle.bonus(pos, m);
+              m.value += battle.score(pos, m);
       }
 
       else // Type == EVASIONS
