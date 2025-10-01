@@ -16,6 +16,7 @@
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#include <algorithm>
 #include <cassert>
 
 #include "movepick.h"
@@ -45,63 +46,142 @@ namespace {
         && pos.gating_piece_after(BLACK, QUEEN)  == COMMONER;
   }
 
-  int battle_kings_mover_bonus(PieceType pt) {
+  int battle_kings_stage_index(PieceType pt) {
     switch (pt)
     {
-    case PAWN:     return 900;
-    case KNIGHT:   return 600;
-    case BISHOP:   return 400;
-    case ROOK:     return -600;
-    case QUEEN:    return -2000;
-    case COMMONER: return -800;
-    default:       return 0;
+    case PAWN:     return 0;
+    case KNIGHT:   return 1;
+    case BISHOP:   return 2;
+    case ROOK:     return 3;
+    case QUEEN:    return 4;
+    case COMMONER:
+    case KING:     return 5;
+    default:       return -1;
     }
   }
 
-  int battle_kings_gate_bonus(PieceType pt) {
-    switch (pt)
-    {
-    case KNIGHT:   return 1000;
-    case BISHOP:   return 700;
-    case ROOK:     return -500;
-    case QUEEN:    return -1500;
-    case COMMONER: return -4000;
-    default:       return 0;
-    }
-  }
+  int battle_kings_nearest_royal_distance(const Position& pos, Color c, Square sq) {
+    Bitboard royals = pos.pieces(c, KING) | pos.pieces(c, COMMONER);
+    if (!royals)
+        return 0;
 
-  int battle_kings_capture_bonus(PieceType pt) {
-    switch (pt)
+    const int boardSpan = std::max(int(pos.max_rank()) + 1, int(pos.max_file()) + 1);
+    int best = boardSpan;
+
+    while (royals)
     {
-    case COMMONER: return 9000;
-    case PAWN:     return 5000;
-    case KNIGHT:   return 3200;
-    case BISHOP:   return 2200;
-    case ROOK:     return 1200;
-    case QUEEN:    return 600;
-    default:       return 0;
+        Square ks = pop_lsb(royals);
+        best = std::min(best, distance(ks, sq));
     }
+
+    return best;
   }
 
   int battle_kings_adjustment(const Position& pos, Move m) {
+    static constexpr int MoverBase[]   = { 720, 520, 280, -560, -1680, -5040 };
+    static constexpr int SpawnBase[]   = { 640, 420, 260, -660, -2160, -5760 };
+    static constexpr int CaptureBase[] = { 480, 760, 1100, 1560, 2120, 5600 };
+
+    const Color us = pos.side_to_move();
+    const Color them = ~us;
+    const Square from = from_sq(m);
+    const Square to = to_sq(m);
+
     int bonus = 0;
 
-    PieceType mover = type_of(pos.moved_piece(m));
-    bonus += battle_kings_mover_bonus(mover);
+    const PieceType mover = type_of(pos.moved_piece(m));
+    const int moverStage = battle_kings_stage_index(mover);
+    if (moverStage >= 0)
+        bonus += MoverBase[moverStage];
 
-    if (PieceType gate = gating_type(m); gate != NO_PIECE_TYPE)
-        bonus += battle_kings_gate_bonus(gate);
+    const int boardHeight = int(pos.max_rank()) + 1;
+    const int relFrom = int(relative_rank(us, from, pos.max_rank()));
+    const int relTo   = int(relative_rank(us, to,   pos.max_rank()));
+    const int forward = relTo - relFrom;
+    const int fileCentrality = edge_distance(file_of(from), pos.max_file());
+
+    if (moverStage >= 0)
+    {
+        if (moverStage <= 2)
+            bonus += 85 * forward + 40 * fileCentrality;
+        else
+            bonus -= 75 * forward + 35 * fileCentrality;
+    }
+
+    const int lightInventory = pos.count<PAWN>(us) + pos.count<KNIGHT>(us) + pos.count<BISHOP>(us);
+    const int heavyInventory = pos.count<ROOK>(us) + pos.count<QUEEN>(us);
+    const int royalInventory = pos.count<COMMONER>(us) + pos.count<KING>(us);
+    const int enemyRoyalInventory = pos.count<COMMONER>(them) + pos.count<KING>(them);
+
+    if (PieceType spawn = gating_type(m); spawn != NO_PIECE_TYPE)
+    {
+        const int spawnStage = battle_kings_stage_index(spawn);
+        bonus += SpawnBase[spawnStage];
+
+        const int halfBoundary = (boardHeight - 1) / 2;
+        const int homeDepth  = std::max(0, halfBoundary - relFrom + 1);
+        const int enemyDepth = std::max(0, relFrom - halfBoundary);
+
+        if (spawnStage >= 3)
+            bonus += -170 * homeDepth + 120 * enemyDepth;
+        else
+            bonus += 70 * relFrom + 35 * fileCentrality;
+
+        if (spawnStage <= 2 && heavyInventory > lightInventory)
+            bonus += 60 * std::min(heavyInventory - lightInventory, 4);
+
+        if (spawnStage >= 3 && heavyInventory >= lightInventory)
+            bonus -= 80 * std::min(heavyInventory - lightInventory + 1, 5);
+
+        const int balance = popcount(pos.attackers_to(from, us)) - popcount(pos.attackers_to(from, them));
+        bonus += (spawnStage >= 3 ? 200 : 140) * balance;
+
+        if (spawn == COMMONER)
+        {
+            bonus -= 1800 * (royalInventory - enemyRoyalInventory + 1);
+
+            const int nearest = battle_kings_nearest_royal_distance(pos, us, from);
+            if (nearest && nearest < 3)
+                bonus -= 500 * (3 - nearest);
+        }
+        else
+        {
+            Bitboard mobility = pos.attacks_from(us, spawn, from) & ~pos.pieces(us);
+            const int mobilityCount = popcount(mobility);
+            bonus += 90 * mobilityCount;
+
+            if (!mobilityCount)
+                bonus -= spawnStage >= 3 ? 700 : 260;
+        }
+
+        if (moverStage >= 0)
+        {
+            if (spawnStage > moverStage)
+                bonus += 80 * (spawnStage - moverStage);
+            else
+                bonus -= 60 * (moverStage - spawnStage);
+        }
+    }
+    else if (mover == KING)
+    {
+        const int safety = popcount(pos.attackers_to(to, us)) - popcount(pos.attackers_to(to, them));
+        bonus += 120 * safety;
+    }
 
     if (pos.capture(m))
     {
-        Piece captured = pos.piece_on(to_sq(m));
-        if (captured != NO_PIECE)
+        if (Piece captured = pos.piece_on(to); captured != NO_PIECE)
         {
-            PieceType victim = type_of(captured);
-            bonus += battle_kings_capture_bonus(victim);
+            const PieceType victim = type_of(captured);
+            const int victimStage = battle_kings_stage_index(victim);
 
-            if (mover == QUEEN && victim != COMMONER)
-                bonus -= 2500;
+            if (victimStage >= 0)
+                bonus += CaptureBase[victimStage];
+
+            if (victim == COMMONER || victim == KING)
+                bonus += 5000;
+            else if (victim == QUEEN)
+                bonus += 2000;
         }
     }
 
