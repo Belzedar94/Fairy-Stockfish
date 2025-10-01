@@ -152,6 +152,7 @@ namespace {
     {
         Bitboard occ = pos.pieces();
         Bitboard ours = pos.pieces(us);
+        Bitboard theirs = pos.pieces(~us);
 
         Bitboard fromBB = square_bb(from);
         Bitboard toBB = square_bb(to);
@@ -160,12 +161,16 @@ namespace {
         ours ^= fromBB;
 
         if (pos.capture(m))
+        {
             occ ^= toBB;
+            theirs ^= toBB;
+        }
 
         occ |= toBB;
         ours |= toBB;
 
-        const int enemyAttackers = popcount(pos.attackers_to(to, occ, ~us));
+        const Bitboard remainingEnemies = pos.attackers_to(to, occ, ~us) & theirs;
+        const int enemyAttackers = popcount(remainingEnemies);
         const int friendlyGuard = popcount(pos.attackers_to(to, occ, us)) + 1;
 
         bonus += 480 * (friendlyGuard - enemyAttackers);
@@ -175,7 +180,7 @@ namespace {
         while (breathing)
         {
             Square s = pop_lsb(breathing);
-            if (!pos.attackers_to(s, occ, ~us))
+            if (!(pos.attackers_to(s, occ, ~us) & theirs))
                 ++safe;
         }
         bonus += 260 * (safe - 1);
