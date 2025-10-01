@@ -1119,7 +1119,7 @@ bool Position::legal(Move m) const {
       Bitboard occupied = (type_of(m) != DROP ? pieces() ^ from : pieces());
       if (walling_rule() == DUCK)
           occupied ^= st->wallSquares;
-      if (walling() || is_gating(m))
+      if (walling() || (gating() && is_gating(m)))
           occupied |= gating_square(m);
       if (type_of(m) == CASTLING)
       {
@@ -1244,7 +1244,7 @@ bool Position::legal(Move m) const {
 
       // Will the gate be blocked by king or rook?
       Square rto = to + (to_sq(m) > from_sq(m) ? WEST : EAST);
-      if (is_gating(m) && (gating_square(m) == to || gating_square(m) == rto))
+      if (gating() && is_gating(m) && (gating_square(m) == to || gating_square(m) == rto))
           return false;
 
       // Non-royal pieces can not be impeded from castling
@@ -1262,6 +1262,21 @@ bool Position::legal(Move m) const {
   }
 
   Bitboard occupied = (type_of(m) != DROP ? pieces() ^ from : pieces()) | to;
+
+  bool gatingCreatesExtinctionPiece =   gating_type(m) != NO_PIECE_TYPE
+                                     && (extinction_piece_types() & piece_set(gating_type(m)));
+
+  if (   gating() && is_gating(m)
+      && (   gating_type(m) == KING
+          || (   gatingCreatesExtinctionPiece
+              && (extinction_pseudo_royal() || extinction_first_capture()))))
+  {
+      Bitboard occ = occupied | gating_square(m);
+      if (type_of(m) == EN_PASSANT)
+          occ ^= capture_square(to);
+      if (attackers_to(gating_square(m), occ, ~us))
+          return false;
+  }
 
   // Flying general rule and bikjang
   // In case of bikjang passing is always allowed, even when in check
@@ -1325,7 +1340,7 @@ bool Position::pseudo_legal(const Move m) const {
 
   // Use a slower but simpler function for uncommon cases
   // yet we skip the legality check of MoveList<LEGAL>().
-  if (type_of(m) != NORMAL || is_gating(m))
+  if (type_of(m) != NORMAL || (gating() && is_gating(m)))
       return checkers() ? MoveList<    EVASIONS>(*this).contains(m)
                         : MoveList<NON_EVASIONS>(*this).contains(m);
 
@@ -1480,7 +1495,7 @@ bool Position::gives_check(Move m) const {
       return true;
 
   // Is there a check by gated pieces?
-  if (    is_gating(m)
+  if (    gating() && is_gating(m)
       && attacks_bb(sideToMove, gating_type(m), gating_square(m), (pieces() ^ from) | to) & square<KING>(~sideToMove))
       return true;
 
@@ -1959,7 +1974,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
   st->capturedPiece = captured;
 
   // Add gating piece
-  if (is_gating(m))
+  if (gating() && is_gating(m))
   {
       Square gate = gating_square(m);
       Piece gating_piece = make_piece(us, gating_type(m));
@@ -1968,15 +1983,24 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
       {
           // Add gating piece
           dp.piece[dp.dirty_num] = gating_piece;
-          dp.handPiece[dp.dirty_num] = gating_piece;
-          dp.handCount[dp.dirty_num] = pieceCountInHand[us][gating_type(m)];
+          if (gating_from_hand())
+          {
+              dp.handPiece[dp.dirty_num] = gating_piece;
+              dp.handCount[dp.dirty_num] = pieceCountInHand[us][gating_type(m)];
+          }
+          else
+          {
+              dp.handPiece[dp.dirty_num] = NO_PIECE;
+              dp.handCount[dp.dirty_num] = 0;
+          }
           dp.from[dp.dirty_num] = SQ_NONE;
           dp.to[dp.dirty_num] = gate;
           dp.dirty_num++;
       }
 
       put_piece(gating_piece, gate);
-      remove_from_hand(gating_piece);
+      if (gating_from_hand())
+          remove_from_hand(gating_piece);
 
       st->gatesBB[us] ^= gate;
       k ^= Zobrist::psq[gating_piece][gate];
@@ -1991,8 +2015,11 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
           st->gatesBB[us] ^= from;
       if (type_of(m) == CASTLING && (gates(us) & to_sq(m)))
           st->gatesBB[us] ^= to_sq(m);
-      if (gates(them) & to)
-          st->gatesBB[them] ^= to;
+      Square captureGate = to;
+      if (type_of(m) == EN_PASSANT)
+          captureGate = st->captureSquare;
+      if (gates(them) & captureGate)
+          st->gatesBB[them] ^= captureGate;
       if (seirawan_gating() && count_in_hand(us, ALL_PIECES) == 0 && !captures_to_hand())
           st->gatesBB[us] = 0;
   }
@@ -2165,7 +2192,7 @@ void Position::undo_move(Move m) {
   Square to = to_sq(m);
   Piece pc = piece_on(to);
 
-  assert(type_of(m) == DROP || empty(from) || type_of(m) == CASTLING || is_gating(m)
+  assert(type_of(m) == DROP || empty(from) || type_of(m) == CASTLING || (gating() && is_gating(m))
          || (type_of(m) == PROMOTION && sittuyin_promotion())
          || (is_pass(m) && (pass(us) || var->wallOrMove)));
   assert(type_of(st->capturedPiece) != KING);
@@ -2199,12 +2226,13 @@ void Position::undo_move(Move m) {
   }
 
   // Remove gated piece
-  if (is_gating(m))
+  if (gating() && is_gating(m))
   {
       Piece gating_piece = make_piece(us, gating_type(m));
       remove_piece(gating_square(m));
       board[gating_square(m)] = NO_PIECE;
-      add_to_hand(gating_piece);
+      if (gating_from_hand())
+          add_to_hand(gating_piece);
       st->gatesBB[us] |= gating_square(m);
   }
 
@@ -2465,6 +2493,10 @@ Value Position::blast_see(Move m) const {
   }
   else
   {
+      if (   extinction_first_capture()
+          && piece_on(to)
+          && (extinction_piece_types() & type_of(piece_on(to))))
+          return -extinction_value();
       if (extinctsUs)
           return extinction_value();
       if (extinctsThem)
@@ -2498,6 +2530,10 @@ bool Position::see_ge(Move m, Value threshold) const {
       return blast_see(m) >= threshold;
 
   // Extinction
+  if (   extinction_first_capture()
+      && piece_on(to)
+      && (extinction_piece_types() & type_of(piece_on(to))))
+      return extinction_value() < VALUE_ZERO;
   if (   extinction_value() != VALUE_NONE
       && piece_on(to)
       && (   (   (extinction_piece_types() & type_of(piece_on(to)))
@@ -2507,7 +2543,7 @@ bool Position::see_ge(Move m, Value threshold) const {
       return extinction_value() < VALUE_ZERO;
 
   // Do not evaluate SEE if value would be unreliable
-  if (must_capture() || !checking_permitted() || is_gating(m) || count<CLOBBER_PIECE>() == count<ALL_PIECES>())
+  if (must_capture() || !checking_permitted() || (gating() && is_gating(m)) || count<CLOBBER_PIECE>() == count<ALL_PIECES>())
       return VALUE_ZERO >= threshold;
 
   Piece victim = piece_on(to);
@@ -2777,6 +2813,21 @@ bool Position::is_optional_game_end(Value& result, int ply, int countStarted) co
 
 bool Position::is_immediate_game_end(Value& result, int ply) const {
 
+  if (extinction_first_capture() && captured_piece() != NO_PIECE)
+  {
+      Piece captured = captured_piece();
+      PieceType capturedType = type_of(captured);
+      Color capturedColor = color_of(captured);
+      if (   (extinction_piece_types() & piece_set(capturedType))
+          && capturedColor == sideToMove
+          && (   !(extinction_must_appear() & piece_set(capturedType))
+              || (st->extinctionSeen[capturedColor] & piece_set(capturedType))))
+      {
+          result = extinction_value(ply);
+          return true;
+      }
+  }
+
   // Extinction
   // Extinction does not apply for pseudo-royal pieces, because they can not be captured
   if (extinction_value() != VALUE_NONE && (!var->extinctionPseudoRoyal || blast_on_capture()))
@@ -2785,6 +2836,8 @@ bool Position::is_immediate_game_end(Value& result, int ply) const {
           for (PieceSet ps = extinction_piece_types(); ps;)
           {
               PieceType pt = pop_lsb(ps);
+              if ((extinction_must_appear() & piece_set(pt)) && !(st->extinctionSeen[c] & piece_set(pt)))
+                  continue;
               if (   count_with_hand( c, pt) <= var->extinctionPieceCount
                   && count_with_hand(~c, pt) >= var->extinctionOpponentPieceCount + (extinction_claim() && c == sideToMove))
               {
