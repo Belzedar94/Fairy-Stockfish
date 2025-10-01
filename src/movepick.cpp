@@ -45,64 +45,146 @@ namespace {
         && pos.gating_piece_after(BLACK, QUEEN)  == COMMONER;
   }
 
-  int battle_kings_mover_bonus(PieceType pt) {
+  int battle_kings_stage(PieceType pt) {
     switch (pt)
     {
-    case PAWN:     return 900;
-    case KNIGHT:   return 600;
-    case BISHOP:   return 400;
-    case ROOK:     return -600;
-    case QUEEN:    return -2000;
-    case COMMONER: return -800;
-    default:       return 0;
-    }
-  }
-
-  int battle_kings_gate_bonus(PieceType pt) {
-    switch (pt)
-    {
-    case KNIGHT:   return 1000;
-    case BISHOP:   return 700;
-    case ROOK:     return -500;
-    case QUEEN:    return -1500;
-    case COMMONER: return -4000;
-    default:       return 0;
-    }
-  }
-
-  int battle_kings_capture_bonus(PieceType pt) {
-    switch (pt)
-    {
-    case COMMONER: return 9000;
-    case PAWN:     return 5000;
-    case KNIGHT:   return 3200;
-    case BISHOP:   return 2200;
-    case ROOK:     return 1200;
-    case QUEEN:    return 600;
-    default:       return 0;
+    case PAWN:     return 0;
+    case KNIGHT:   return 1;
+    case BISHOP:   return 2;
+    case ROOK:     return 3;
+    case QUEEN:    return 4;
+    case COMMONER: return 5;
+    default:       return -1;
     }
   }
 
   int battle_kings_adjustment(const Position& pos, Move m) {
+    const Color us = pos.side_to_move();
+    const Square from = from_sq(m);
+    const Square to = to_sq(m);
+    const PieceType mover = type_of(pos.moved_piece(m));
+    const PieceType gate = gating_type(m);
+    const PieceType captured = pos.capture(m) ? type_of(pos.piece_on(to)) : NO_PIECE_TYPE;
+
     int bonus = 0;
 
-    PieceType mover = type_of(pos.moved_piece(m));
-    bonus += battle_kings_mover_bonus(mover);
-
-    if (PieceType gate = gating_type(m); gate != NO_PIECE_TYPE)
-        bonus += battle_kings_gate_bonus(gate);
-
-    if (pos.capture(m))
+    if (int moverStage = battle_kings_stage(mover); moverStage >= 0)
     {
-        Piece captured = pos.piece_on(to_sq(m));
-        if (captured != NO_PIECE)
-        {
-            PieceType victim = type_of(captured);
-            bonus += battle_kings_capture_bonus(victim);
+        static constexpr int StageBias[] = { 420, 280, 140, -160, -460, -1200 };
+        bonus += StageBias[moverStage];
+    }
 
-            if (mover == QUEEN && victim != COMMONER)
-                bonus -= 2500;
+    if (gate != NO_PIECE_TYPE)
+    {
+        const int gateStage = battle_kings_stage(gate);
+        const Square gateSq = gating_square(m);
+
+        Bitboard occ = pos.pieces();
+        Bitboard ours = pos.pieces(us);
+        Bitboard theirs = pos.pieces(~us);
+
+        Bitboard fromBB = square_bb(from);
+        Bitboard toBB = square_bb(to);
+
+        occ ^= fromBB;
+        ours ^= fromBB;
+
+        if (pos.capture(m))
+        {
+            occ ^= toBB;
+            theirs ^= toBB;
         }
+
+        occ |= toBB;
+        ours |= toBB;
+
+        occ |= fromBB;
+        ours |= fromBB;
+
+        static constexpr int GateStageBias[] = { 640, 480, 220, -360, -940, -2600 };
+        bonus += GateStageBias[gateStage];
+
+        const int enemyAttackers = popcount(pos.attackers_to(gateSq, occ, ~us));
+        const int friendlyGuard = popcount(pos.attackers_to(gateSq, occ, us)) + 1;
+
+        static constexpr int SafetyWeight[] = { 180, 220, 260, 420, 720, 1320 };
+        bonus += SafetyWeight[gateStage] * (friendlyGuard - enemyAttackers);
+
+        Bitboard spawnTargets = moves_bb<false>(us, gate, gateSq, occ) & ~ours;
+        const int mobility = popcount(spawnTargets);
+
+        static constexpr int MobilityWeight[] = { 70, 60, 50, 28, 16, -40 };
+        bonus += MobilityWeight[gateStage] * mobility;
+
+        Bitboard spawnAttacks = attacks_bb(us, gate, gateSq, occ) & theirs;
+        bonus += 240 * popcount(spawnAttacks);
+
+        const int centrality = edge_distance(file_of(gateSq)) + edge_distance(rank_of(gateSq));
+        static constexpr int CentralWeight[] = { 70, 50, 30, -20, -70, -140 };
+        bonus += CentralWeight[gateStage] * centrality;
+
+        if (gate == COMMONER)
+        {
+            int safeEscapes = 0;
+            Bitboard escapes = spawnTargets;
+            while (escapes)
+            {
+                Square s = pop_lsb(escapes);
+                if (!pos.attackers_to(s, occ, ~us))
+                    ++safeEscapes;
+            }
+
+            bonus += 520 * (safeEscapes - 1);
+            bonus -= 280 * enemyAttackers;
+        }
+        else if (gateStage >= 3)
+        {
+            int unprotected = enemyAttackers - friendlyGuard;
+            if (unprotected > 0)
+                bonus -= 260 * unprotected;
+        }
+
+        int ourCommoners = pos.count(us, COMMONER);
+        if (gateStage >= 4 && ourCommoners > 0)
+            bonus -= 300 * ourCommoners;
+    }
+    else if (mover == COMMONER)
+    {
+        Bitboard occ = pos.pieces();
+        Bitboard ours = pos.pieces(us);
+
+        Bitboard fromBB = square_bb(from);
+        Bitboard toBB = square_bb(to);
+
+        occ ^= fromBB;
+        ours ^= fromBB;
+
+        if (pos.capture(m))
+            occ ^= toBB;
+
+        occ |= toBB;
+        ours |= toBB;
+
+        const int enemyAttackers = popcount(pos.attackers_to(to, occ, ~us));
+        const int friendlyGuard = popcount(pos.attackers_to(to, occ, us)) + 1;
+
+        bonus += 480 * (friendlyGuard - enemyAttackers);
+
+        Bitboard breathing = moves_bb<false>(us, COMMONER, to, occ) & ~ours;
+        int safe = 0;
+        while (breathing)
+        {
+            Square s = pop_lsb(breathing);
+            if (!pos.attackers_to(s, occ, ~us))
+                ++safe;
+        }
+        bonus += 260 * (safe - 1);
+    }
+
+    if (captured != NO_PIECE_TYPE)
+    {
+        if (int capturedStage = battle_kings_stage(captured); capturedStage >= 0)
+            bonus += 180 * capturedStage;
     }
 
     return bonus;

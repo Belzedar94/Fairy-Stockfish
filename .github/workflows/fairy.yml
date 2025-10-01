@@ -2,12 +2,10 @@ name: fairy
 on:
   push:
     branches:
-      - master
-      - codex/implement-chess-heuristics-for-move-prioritization
+      - '**'
   pull_request:
     branches:
-      - master
-      - codex/implement-chess-heuristics-for-move-prioritization
+      - '**'
 jobs:
   fairy:
     name: ${{ matrix.config.name }}
