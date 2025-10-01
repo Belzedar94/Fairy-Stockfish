@@ -8,7 +8,7 @@ on:
     pull_request:
       branches:
         - master
-        - codex/implement-chess-heuristics-for-move-prioritization
+        - codex/implement-chess-heuristics-for-move-prioritization-s1f0h7
 
 jobs:
   build_wheels:
