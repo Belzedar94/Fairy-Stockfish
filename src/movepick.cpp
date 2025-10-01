@@ -392,6 +392,68 @@ namespace {
   [[maybe_unused]] int battle_kings_adjustment(const Position& pos, Move m) {
     BattleKingsContext ctx(pos);
     return battle_kings_adjustment(pos, m, ctx);
+=======
+  int battle_kings_mover_bonus(PieceType pt) {
+    switch (pt)
+    {
+    case PAWN:     return 900;
+    case KNIGHT:   return 600;
+    case BISHOP:   return 400;
+    case ROOK:     return -600;
+    case QUEEN:    return -2000;
+    case COMMONER: return -800;
+    default:       return 0;
+    }
+  }
+
+  int battle_kings_gate_bonus(PieceType pt) {
+    switch (pt)
+    {
+    case KNIGHT:   return 1000;
+    case BISHOP:   return 700;
+    case ROOK:     return -500;
+    case QUEEN:    return -1500;
+    case COMMONER: return -4000;
+    default:       return 0;
+    }
+  }
+
+  int battle_kings_capture_bonus(PieceType pt) {
+    switch (pt)
+    {
+    case COMMONER: return 9000;
+    case PAWN:     return 5000;
+    case KNIGHT:   return 3200;
+    case BISHOP:   return 2200;
+    case ROOK:     return 1200;
+    case QUEEN:    return 600;
+    default:       return 0;
+    }
+  }
+
+  int battle_kings_adjustment(const Position& pos, Move m) {
+    int bonus = 0;
+
+    PieceType mover = type_of(pos.moved_piece(m));
+    bonus += battle_kings_mover_bonus(mover);
+
+    if (PieceType gate = gating_type(m); gate != NO_PIECE_TYPE)
+        bonus += battle_kings_gate_bonus(gate);
+
+    if (pos.capture(m))
+    {
+        Piece captured = pos.piece_on(to_sq(m));
+        if (captured != NO_PIECE)
+        {
+            PieceType victim = type_of(captured);
+            bonus += battle_kings_capture_bonus(victim);
+
+            if (mover == QUEEN && victim != COMMONER)
+                bonus -= 2500;
+        }
+    }
+
+    return bonus;
   }
 
   enum Stages {
@@ -469,6 +531,7 @@ template<GenType Type>
 void MovePicker::score() {
 
   static_assert(Type == CAPTURES || Type == QUIETS || Type == EVASIONS, "Wrong type");
+
 
   const BattleKingsContext battle(pos);
 
