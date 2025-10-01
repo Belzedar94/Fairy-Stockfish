@@ -83,14 +83,140 @@ namespace {
     }
   }
 
+  int center_metric(const Position& pos, Square s) {
+    if (s == SQ_NONE)
+        return 0;
+
+    const int maxFile = int(pos.max_file());
+    const int maxRank = int(pos.max_rank());
+    int df = 2 * int(file_of(s)) - maxFile;
+    int dr = 2 * int(rank_of(s)) - maxRank;
+    df = df < 0 ? -df : df;
+    dr = dr < 0 ? -dr : dr;
+    return -(df + dr);
+  }
+
+  int battle_kings_territory_bonus(const Position& pos, Move m) {
+    Square from = from_sq(m);
+    if (from == SQ_NONE)
+        return 0;
+
+    Piece moved = pos.moved_piece(m);
+    if (moved == NO_PIECE)
+        return 0;
+
+    Square to = to_sq(m);
+    PieceType mover = type_of(moved);
+    Color us = pos.side_to_move();
+
+    int territoryGain = int(relative_rank(us, to, pos.max_rank()))
+                      - int(relative_rank(us, from, pos.max_rank()));
+
+    int territoryWeight = 0;
+    switch (mover)
+    {
+    case PAWN:     territoryWeight = 140; break;
+    case KNIGHT:   territoryWeight = 110; break;
+    case BISHOP:   territoryWeight = 90;  break;
+    case ROOK:     territoryWeight = -60; break;
+    case QUEEN:    territoryWeight = -120; break;
+    case COMMONER: territoryWeight = -260; break;
+    default:       break;
+    }
+
+    int bonus = territoryGain * territoryWeight;
+
+    int centerGain = center_metric(pos, to) - center_metric(pos, from);
+    int centerWeight = 0;
+    switch (mover)
+    {
+    case PAWN:     centerWeight = 25; break;
+    case KNIGHT:   centerWeight = 70; break;
+    case BISHOP:   centerWeight = 60; break;
+    case ROOK:     centerWeight = -20; break;
+    case QUEEN:    centerWeight = -45; break;
+    case COMMONER: centerWeight = -120; break;
+    default:       break;
+    }
+
+    bonus += centerGain * centerWeight;
+
+    return bonus;
+  }
+
+  int battle_kings_gate_deficit_bonus(const Position& pos, PieceType gate) {
+    if (gate != KNIGHT && gate != BISHOP)
+        return 0;
+
+    Color us = pos.side_to_move();
+    int myCount = pos.count(us, gate);
+    int theirCount = pos.count(~us, gate);
+    int diff = theirCount - myCount;
+    int weight = gate == KNIGHT ? 320 : 240;
+
+    if (diff > 0)
+        return diff * weight;
+
+    if (diff < 0)
+        return diff * (weight / 2);
+
+    return 0;
+  }
+
+  int battle_kings_gate_influence(const Position& pos, Move m, PieceType gate) {
+    if (gate != KNIGHT && gate != BISHOP)
+        return 0;
+
+    Square gateSq = gating_square(m);
+    if (gateSq == SQ_NONE)
+        return 0;
+
+    Color us = pos.side_to_move();
+    Square from = from_sq(m);
+    Square to = to_sq(m);
+
+    Bitboard occupancy = pos.pieces();
+
+    if (from != SQ_NONE)
+        occupancy &= ~square_bb(from);
+
+    occupancy |= square_bb(to);
+    occupancy |= square_bb(gateSq);
+
+    Bitboard influence = attacks_bb(us, gate, gateSq, occupancy) & pos.board_bb();
+
+    int score = 0;
+    int midRank = int(pos.max_rank()) / 2;
+
+    while (influence)
+    {
+        Square s = pop_lsb(influence);
+        int rel = int(relative_rank(us, s, pos.max_rank()));
+        score += 1;
+        if (rel > midRank)
+            score += 2;
+        else if (rel == midRank)
+            score += 1;
+    }
+
+    int weight = gate == KNIGHT ? 45 : 35;
+    return score * weight;
+  }
+
   int battle_kings_adjustment(const Position& pos, Move m) {
     int bonus = 0;
 
     PieceType mover = type_of(pos.moved_piece(m));
     bonus += battle_kings_mover_bonus(mover);
 
+    bonus += battle_kings_territory_bonus(pos, m);
+
     if (PieceType gate = gating_type(m); gate != NO_PIECE_TYPE)
+    {
         bonus += battle_kings_gate_bonus(gate);
+        bonus += battle_kings_gate_deficit_bonus(pos, gate);
+        bonus += battle_kings_gate_influence(pos, m, gate);
+    }
 
     if (pos.capture(m))
     {
