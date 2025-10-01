@@ -5,12 +5,12 @@ on:
       - master
       - tools
       - github_ci
-      - codex/implement-chess-heuristics-for-move-prioritization
+      - codex/implement-chess-heuristics-for-move-prioritization-s1f0h7
   pull_request:
     branches:
       - master
       - tools
-      - codex/implement-chess-heuristics-for-move-prioritization
+      - codex/implement-chess-heuristics-for-move-prioritization-s1f0h7
 jobs:
   Stockfish:
     name: ${{ matrix.config.name }}
