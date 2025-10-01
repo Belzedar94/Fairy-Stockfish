@@ -48,7 +48,7 @@ namespace {
         && pos.gating_piece_after(BLACK, QUEEN)  == COMMONER;
   }
 
-  struct BattleKingsHeuristic {
+  struct BattleKingsContext {
 
     static constexpr std::array<PieceType, 6> CaptureOrder = {PAWN, KNIGHT, BISHOP, ROOK, QUEEN, COMMONER};
 
@@ -64,7 +64,7 @@ namespace {
     int friendlyHeavy = 0;
     int enemyHeavy = 0;
 
-    explicit BattleKingsHeuristic(const Position& pos) {
+    explicit BattleKingsContext(const Position& pos) {
       enabled = is_battle_kings(pos);
       if (!enabled)
           return;
@@ -334,7 +334,7 @@ namespace {
       return balance * scale;
     }
 
-    int score(const Position& pos, Move m) const {
+    int evaluate(const Position& pos, Move m) const {
       if (!enabled)
           return 0;
 
@@ -384,6 +384,15 @@ namespace {
       return total;
     }
   };
+
+  int battle_kings_adjustment(const Position& pos, Move m, const BattleKingsContext& ctx) {
+    return ctx.evaluate(pos, m);
+  }
+
+  [[maybe_unused]] int battle_kings_adjustment(const Position& pos, Move m) {
+    BattleKingsContext ctx(pos);
+    return battle_kings_adjustment(pos, m, ctx);
+  }
 
   enum Stages {
     MAIN_TT, CAPTURE_INIT, GOOD_CAPTURE, REFUTATION, QUIET_INIT, QUIET, BAD_CAPTURE,
@@ -461,7 +470,7 @@ void MovePicker::score() {
 
   static_assert(Type == CAPTURES || Type == QUIETS || Type == EVASIONS, "Wrong type");
 
-  const BattleKingsHeuristic battle(pos);
+  const BattleKingsContext battle(pos);
 
   for (auto& m : *this)
       if constexpr (Type == CAPTURES)
@@ -471,7 +480,7 @@ void MovePicker::score() {
                    + (*captureHistory)[pos.moved_piece(m)][to_sq(m)][type_of(pos.piece_on(to_sq(m)))];
 
           if (battle.enabled)
-              m.value += battle.score(pos, m);
+              m.value += battle_kings_adjustment(pos, m, battle);
       }
 
       else if constexpr (Type == QUIETS)
@@ -485,7 +494,7 @@ void MovePicker::score() {
                    + (ply < MAX_LPH ? std::min(4, depth / 3) * (*lowPlyHistory)[ply][from_to(m)] : 0);
 
           if (battle.enabled)
-              m.value += battle.score(pos, m);
+              m.value += battle_kings_adjustment(pos, m, battle);
       }
 
       else // Type == EVASIONS
