@@ -70,6 +70,123 @@ namespace {
     }
   }
 
+  int battle_kings_gate_safety_weight(PieceType pt) {
+    switch (pt)
+    {
+    case PAWN:     return 500;
+    case KNIGHT:   return 800;
+    case BISHOP:   return 650;
+    case COMMONER: return 2000;
+    default:       return 0;
+    }
+  }
+
+  int battle_kings_gate_safety_bonus(const Position& pos, Move m) {
+    PieceType gate = gating_type(m);
+    if (gate == NO_PIECE_TYPE)
+        return 0;
+
+    Square gateSq = gating_square(m);
+    if (!is_ok(gateSq))
+        return 0;
+
+    int weight = battle_kings_gate_safety_weight(gate);
+    if (weight == 0)
+        return 0;
+
+    Bitboard occAfter = pos.pieces();
+    Square from = from_sq(m);
+    Square to = to_sq(m);
+    MoveType mt = type_of(m);
+
+    if (mt != DROP && is_ok(from))
+        occAfter ^= square_bb(from);
+
+    if (pos.capture(m))
+    {
+        if (mt == EN_PASSANT)
+            occAfter ^= square_bb(pos.capture_square(to));
+        else
+            occAfter ^= square_bb(to);
+    }
+
+    occAfter |= square_bb(to);
+    occAfter |= square_bb(gateSq);
+
+    Color us = pos.side_to_move();
+    Color them = ~us;
+
+    Bitboard enemyAttackers = pos.attackers_to(gateSq, occAfter, them);
+    if (!enemyAttackers)
+        return weight;
+
+    Bitboard friendlyDefenders = pos.attackers_to(gateSq, occAfter, us);
+    int attackers = popcount(enemyAttackers);
+    int defenders = popcount(friendlyDefenders);
+
+    if (defenders >= attackers)
+        return weight / 2;
+
+    int deficit = attackers - defenders;
+    int penalty = std::max(1, weight / 2);
+    return -penalty * deficit;
+  }
+
+  int battle_kings_space_bonus(const Position& pos, Move m) {
+    Square to = to_sq(m);
+    Square from = from_sq(m);
+    Piece moved = pos.moved_piece(m);
+    PieceType mover = type_of(moved);
+    Color us = pos.side_to_move();
+
+    auto relative_index = [&](Square s) {
+        return is_ok(s) ? int(relative_rank(us, s)) : 0;
+    };
+
+    int fileIndex = int(file_of(to));
+    auto file_distance = [](int fileIdx, int target) {
+        int diff = fileIdx - target;
+        return diff >= 0 ? diff : -diff;
+    };
+    int centerDist = std::min(file_distance(fileIndex, int(FILE_D)), file_distance(fileIndex, int(FILE_E)));
+    int centerScore = std::max(0, 2 - centerDist);
+
+    int fromRank = relative_index(from);
+    int toRank = relative_index(to);
+
+    int bonus = 0;
+
+    if (mover == PAWN)
+    {
+        int forward = std::max(0, toRank - fromRank);
+        bonus += 160 * forward;
+        bonus += centerScore * 120;
+        if (pos.capture(m))
+            bonus += 120;
+    }
+    else if (mover == KNIGHT)
+    {
+        if (toRank > fromRank)
+            bonus += 180;
+        bonus += centerScore * 140;
+    }
+    else if (mover == BISHOP)
+    {
+        if (toRank > fromRank)
+            bonus += 150;
+        bonus += centerScore * 120;
+    }
+    else if (mover == COMMONER)
+    {
+        if (toRank > fromRank)
+            bonus -= 600;
+        if (centerScore > 0)
+            bonus -= centerScore * 200;
+    }
+
+    return bonus;
+  }
+
   int battle_kings_capture_bonus(PieceType pt) {
     switch (pt)
     {
@@ -88,9 +205,13 @@ namespace {
 
     PieceType mover = type_of(pos.moved_piece(m));
     bonus += battle_kings_mover_bonus(mover);
+    bonus += battle_kings_space_bonus(pos, m);
 
     if (PieceType gate = gating_type(m); gate != NO_PIECE_TYPE)
+    {
         bonus += battle_kings_gate_bonus(gate);
+        bonus += battle_kings_gate_safety_bonus(pos, m);
+    }
 
     if (pos.capture(m))
     {
