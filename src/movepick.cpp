@@ -18,6 +18,7 @@
 
 #include <cassert>
 
+#include "bitboard.h"
 #include "movepick.h"
 
 namespace Stockfish {
@@ -45,65 +46,228 @@ namespace {
         && pos.gating_piece_after(BLACK, QUEEN)  == COMMONER;
   }
 
-  int battle_kings_mover_bonus(PieceType pt) {
-    switch (pt)
-    {
-    case PAWN:     return 900;
-    case KNIGHT:   return 600;
-    case BISHOP:   return 400;
-    case ROOK:     return -600;
-    case QUEEN:    return -2000;
-    case COMMONER: return -800;
-    default:       return 0;
-    }
+  constexpr PieceType BattleKingsOrder[] = {PAWN, KNIGHT, BISHOP, ROOK, QUEEN, COMMONER};
+  constexpr int BattleKingsOrderCount = int(sizeof(BattleKingsOrder) / sizeof(BattleKingsOrder[0]));
+
+  constexpr int StageBaseMover[BattleKingsOrderCount]   = {900, 620, 280, -420, -1300, -1800};
+  constexpr int StageBaseGate[BattleKingsOrderCount]    = {740, 540, 260, -560, -1700, -3400};
+  constexpr int StageScarcityScale[BattleKingsOrderCount] = {140, 160, 190, 250, 380, 560};
+  constexpr int StageAgingScale[BattleKingsOrderCount]    = {70, 90, 130, 200, 300, 420};
+  constexpr int StageSafetyScale[BattleKingsOrderCount]   = {160, 190, 220, 320, 460, 680};
+  constexpr int StageCaptureBase[BattleKingsOrderCount]   = {1800, 1600, 1300, 1100, 900, 700};
+  constexpr int StageCaptureSwing[BattleKingsOrderCount]  = {140, 180, 220, 300, 380, 480};
+  constexpr int StageCentralWeight[BattleKingsOrderCount] = {140, 170, 180, 110, 70, 40};
+  constexpr int StageForwardWeight[BattleKingsOrderCount] = {220, 180, 130, 50, 20, 0};
+
+  int battle_kings_stage_index(PieceType pt) {
+    for (int i = 0; i < BattleKingsOrderCount; ++i)
+        if (BattleKingsOrder[i] == pt)
+            return i;
+
+    return BattleKingsOrderCount;
   }
 
-  int battle_kings_gate_bonus(PieceType pt) {
-    switch (pt)
-    {
-    case KNIGHT:   return 1000;
-    case BISHOP:   return 700;
-    case ROOK:     return -500;
-    case QUEEN:    return -1500;
-    case COMMONER: return -4000;
-    default:       return 0;
+  struct BattleKingsContext {
+    Color us;
+    Color them;
+    int boardArea;
+    int occupancy;
+    int ourCount[BattleKingsOrderCount];
+    int theirCount[BattleKingsOrderCount];
+
+    explicit BattleKingsContext(const Position& pos)
+      : us(pos.side_to_move()),
+        them(~pos.side_to_move()),
+        boardArea((int(pos.max_file()) + 1) * (int(pos.max_rank()) + 1)),
+        occupancy(popcount(pos.pieces())) {
+
+      for (int i = 0; i < BattleKingsOrderCount; ++i)
+      {
+          ourCount[i]   = pos.count(us,   BattleKingsOrder[i]);
+          theirCount[i] = pos.count(them, BattleKingsOrder[i]);
+      }
     }
+  };
+
+  int battle_kings_mover_flow(const BattleKingsContext& ctx, PieceType mover) {
+    int stage = battle_kings_stage_index(mover);
+    if (stage >= BattleKingsOrderCount)
+        return 0;
+
+    int bonus = StageBaseMover[stage];
+    int imbalance = ctx.ourCount[stage] - ctx.theirCount[stage];
+
+    bonus -= imbalance * StageScarcityScale[stage];
+
+    int oldLead = 0;
+    for (int i = stage + 1; i < BattleKingsOrderCount; ++i)
+        oldLead += std::max(0, ctx.ourCount[i] - ctx.theirCount[i]);
+
+    if (stage <= 2)
+        bonus += oldLead * StageAgingScale[stage];
+    else
+        bonus -= oldLead * StageAgingScale[stage];
+
+    return bonus;
   }
 
-  int battle_kings_capture_bonus(PieceType pt) {
-    switch (pt)
-    {
-    case COMMONER: return 9000;
-    case PAWN:     return 5000;
-    case KNIGHT:   return 3200;
-    case BISHOP:   return 2200;
-    case ROOK:     return 1200;
-    case QUEEN:    return 600;
-    default:       return 0;
-    }
+  int battle_kings_spawn_preference(const BattleKingsContext& ctx, PieceType gate) {
+    int stage = battle_kings_stage_index(gate);
+    if (stage >= BattleKingsOrderCount)
+        return 0;
+
+    int bonus = StageBaseGate[stage];
+    int scarcity = ctx.theirCount[stage] - ctx.ourCount[stage];
+
+    bonus += scarcity * (StageScarcityScale[stage] + StageScarcityScale[stage] / 2);
+
+    int excessAged = 0;
+    for (int i = stage + 1; i < BattleKingsOrderCount; ++i)
+        excessAged += std::max(0, ctx.ourCount[i] - ctx.theirCount[i]);
+
+    bonus -= excessAged * StageAgingScale[stage];
+
+    if (stage <= 2)
+        bonus += (ctx.boardArea - ctx.occupancy) * 8;
+    else
+        bonus -= ctx.occupancy * (stage - 2) * 6;
+
+    if (ctx.ourCount[stage] > ctx.theirCount[stage] + 1)
+        bonus -= (ctx.ourCount[stage] - ctx.theirCount[stage] - 1) * StageScarcityScale[stage] * (stage + 1);
+
+    return bonus;
+  }
+
+  int battle_kings_spawn_safety(const Position& pos, const BattleKingsContext& ctx, Move m, PieceType gate, Bitboard occAfter) {
+    Square gateSq = gating_square(m);
+    if (gateSq == SQ_NONE)
+        gateSq = from_sq(m);
+
+    if (gateSq == SQ_NONE)
+        return 0;
+
+    int stage = battle_kings_stage_index(gate);
+    if (stage >= BattleKingsOrderCount)
+        return 0;
+
+    Bitboard enemyAttackers = pos.attackers_to(gateSq, occAfter, ctx.them);
+    Bitboard ourAttackers   = pos.attackers_to(gateSq, occAfter, ctx.us);
+
+    int enemyCount = popcount(enemyAttackers);
+    int ourCount   = popcount(ourAttackers);
+
+    int deficit = enemyCount - ourCount;
+    int scale = StageSafetyScale[stage];
+
+    if (deficit <= 0)
+        return (ourCount + 1) * (scale / 2 + (stage <= 2 ? 70 : 30));
+
+    int territory = int(relative_rank(ctx.us, gateSq, pos.max_rank()));
+    return -(deficit * scale * (stage + 1) + territory * (stage + 1) * 20);
+  }
+
+  int battle_kings_flow_bonus(const Position& pos, const BattleKingsContext& ctx, Move m, PieceType mover, bool isCapture) {
+    Square from = from_sq(m);
+    Square to = to_sq(m);
+    if (from == SQ_NONE || to == SQ_NONE)
+        return 0;
+
+    int stage = battle_kings_stage_index(mover);
+    if (stage >= BattleKingsOrderCount)
+        stage = BattleKingsOrderCount - 1;
+
+    int forwardGain = int(relative_rank(ctx.us, to, pos.max_rank())) - int(relative_rank(ctx.us, from, pos.max_rank()));
+    int centralGain =   edge_distance(file_of(to), pos.max_file())
+                      + edge_distance(rank_of(to), pos.max_rank())
+                      - edge_distance(file_of(from), pos.max_file())
+                      - edge_distance(rank_of(from), pos.max_rank());
+
+    int bonus = forwardGain * StageForwardWeight[stage] + centralGain * StageCentralWeight[stage];
+
+    if (ctx.occupancy > ctx.boardArea * 3 / 4 && stage <= 2)
+        bonus += (ctx.occupancy - ctx.boardArea * 3 / 4) * 6;
+
+    if (forwardGain < 0 && stage <= 2)
+        bonus += forwardGain * StageForwardWeight[stage] / 2;
+
+    if (isCapture)
+        bonus /= 2;
+
+    return bonus;
+  }
+
+  int battle_kings_capture_swing(const BattleKingsContext& ctx, PieceType mover, PieceType victim) {
+    int victimStage = battle_kings_stage_index(victim);
+    if (victimStage >= BattleKingsOrderCount)
+        return 0;
+
+    int moverStage = battle_kings_stage_index(mover);
+    if (moverStage >= BattleKingsOrderCount)
+        moverStage = BattleKingsOrderCount - 1;
+
+    int bonus = StageCaptureBase[victimStage];
+
+    int scarcity = ctx.theirCount[victimStage] - ctx.ourCount[victimStage];
+    bonus += scarcity * StageCaptureSwing[victimStage];
+
+    if (victim == COMMONER)
+        bonus += 3000 + 400 * ctx.theirCount[victimStage];
+
+    bonus += (victimStage - moverStage) * StageCaptureSwing[victimStage];
+
+    if (victimStage >= 3 && ctx.occupancy > ctx.boardArea / 2)
+        bonus += (ctx.occupancy - ctx.boardArea / 2) * 6;
+
+    return bonus;
   }
 
   int battle_kings_adjustment(const Position& pos, Move m) {
-    int bonus = 0;
+    BattleKingsContext ctx(pos);
 
+    Square from = from_sq(m);
+    Square to = to_sq(m);
     PieceType mover = type_of(pos.moved_piece(m));
-    bonus += battle_kings_mover_bonus(mover);
+    PieceType gate = gating_type(m);
+    Square gateSq = gating_square(m);
+    if (gateSq == SQ_NONE)
+        gateSq = from;
 
-    if (PieceType gate = gating_type(m); gate != NO_PIECE_TYPE)
-        bonus += battle_kings_gate_bonus(gate);
-
+    Square captureSq = SQ_NONE;
+    Piece captured = NO_PIECE;
     if (pos.capture(m))
     {
-        Piece captured = pos.piece_on(to_sq(m));
-        if (captured != NO_PIECE)
-        {
-            PieceType victim = type_of(captured);
-            bonus += battle_kings_capture_bonus(victim);
-
-            if (mover == QUEEN && victim != COMMONER)
-                bonus -= 2500;
-        }
+        captureSq = type_of(m) == EN_PASSANT ? pos.capture_square(to) : to;
+        captured = pos.piece_on(captureSq);
     }
+
+    Bitboard occAfter = pos.pieces();
+    if (is_ok(from))
+        occAfter &= ~square_bb(from);
+    if (is_ok(captureSq))
+        occAfter &= ~square_bb(captureSq);
+    if (is_ok(to))
+        occAfter |= square_bb(to);
+    if (gate != NO_PIECE_TYPE && is_ok(gateSq))
+        occAfter |= square_bb(gateSq);
+
+    int bonus = battle_kings_mover_flow(ctx, mover);
+
+    if (gate != NO_PIECE_TYPE)
+    {
+        bonus += battle_kings_spawn_preference(ctx, gate);
+        bonus += battle_kings_spawn_safety(pos, ctx, m, gate, occAfter);
+    }
+    else if (mover == COMMONER || mover == KING)
+    {
+        int idx = battle_kings_stage_index(COMMONER);
+        if (idx < BattleKingsOrderCount)
+            bonus -= (ctx.ourCount[idx] - ctx.theirCount[idx]) * 400;
+    }
+
+    if (captured != NO_PIECE)
+        bonus += battle_kings_capture_swing(ctx, mover, type_of(captured));
+
+    bonus += battle_kings_flow_bonus(pos, ctx, m, mover, captured != NO_PIECE);
 
     return bonus;
   }
