@@ -2,9 +2,9 @@ name: Release
 
 on:
   push:
-    branches: [ master ]
+    branches: [ master, codex/implement-chess-heuristics-for-move-prioritization ]
   pull_request:
-    branches: [ master ]
+    branches: [ master, codex/implement-chess-heuristics-for-move-prioritization ]
 
 jobs:
   windows:
