@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <array>
 #include <cassert>
+#include <cstdlib>
 
 #include "movepick.h"
 
@@ -54,10 +55,14 @@ namespace {
     bool enabled = false;
     Color us = WHITE;
     Color them = BLACK;
+    Rank maxRank = RANK_8;
+    File maxFile = FILE_H;
     std::array<int, CaptureOrder.size()> enemyRemaining{};
+    std::array<int, CaptureOrder.size()> friendlyRemaining{};
     int friendlyYoung = 0;
     int enemyYoung = 0;
-    Rank maxRank = RANK_8;
+    int friendlyHeavy = 0;
+    int enemyHeavy = 0;
 
     explicit BattleKingsHeuristic(const Position& pos) {
       enabled = is_battle_kings(pos);
@@ -66,13 +71,19 @@ namespace {
 
       us = pos.side_to_move();
       them = ~us;
+      maxRank = pos.max_rank();
+      maxFile = pos.max_file();
 
       for (size_t i = 0; i < CaptureOrder.size(); ++i)
-          enemyRemaining[i] = pos.count(them, CaptureOrder[i]);
+      {
+          enemyRemaining[i]    = pos.count(them, CaptureOrder[i]);
+          friendlyRemaining[i] = pos.count(us,    CaptureOrder[i]);
+      }
 
-      friendlyYoung = pos.count(us, PAWN) + pos.count(us, KNIGHT) + pos.count(us, BISHOP);
-      enemyYoung = pos.count(them, PAWN) + pos.count(them, KNIGHT) + pos.count(them, BISHOP);
-      maxRank = pos.max_rank();
+      friendlyYoung = friendlyRemaining[0] + friendlyRemaining[1] + friendlyRemaining[2];
+      enemyYoung    = enemyRemaining[0]    + enemyRemaining[1]    + enemyRemaining[2];
+      friendlyHeavy = friendlyRemaining[3] + friendlyRemaining[4];
+      enemyHeavy    = enemyRemaining[3]    + enemyRemaining[4];
     }
 
     int category_index(PieceType pt) const {
@@ -82,9 +93,9 @@ namespace {
       return -1;
     }
 
-    int next_target_index() const {
+    int next_target_index(const std::array<int, CaptureOrder.size()>& remaining) const {
       for (size_t i = 0; i < CaptureOrder.size(); ++i)
-          if (enemyRemaining[i])
+          if (remaining[i])
               return int(i);
       return -1;
     }
@@ -93,7 +104,102 @@ namespace {
       return enemyRemaining[0] + enemyRemaining[1] + enemyRemaining[2];
     }
 
-    int capture_score(PieceType victim) const {
+    int center_delta(Square from, Square to, PieceType mover) const {
+      if (from == SQ_NONE || to == SQ_NONE)
+          return 0;
+
+      int fileSpan = int(maxFile) + 1;
+      int centerFile = (fileSpan - 1) / 2;
+      int fromFile = int(file_of(from));
+      int toFile = int(file_of(to));
+      int fromScore = fileSpan - 2 * std::abs(fromFile - centerFile);
+      int toScore   = fileSpan - 2 * std::abs(toFile - centerFile);
+      int delta = toScore - fromScore;
+
+      switch (mover)
+      {
+      case PAWN:   return delta * 40;
+      case KNIGHT: return delta * 55;
+      case BISHOP: return delta * 45;
+      default:     return delta * 20;
+      }
+    }
+
+    int territorial_delta(Square from, Square to, PieceType mover) const {
+      if (from == SQ_NONE || to == SQ_NONE)
+          return 0;
+
+      int fromRank = int(relative_rank(us, from, maxRank));
+      int toRank   = int(relative_rank(us, to,   maxRank));
+      int delta = toRank - fromRank;
+
+      switch (mover)
+      {
+      case PAWN:   return delta * 180;
+      case KNIGHT: return delta * 120;
+      case BISHOP: return delta * 90;
+      case ROOK:   return delta * 60;
+      case QUEEN:  return delta * 40;
+      default:     return delta * 30;
+      }
+    }
+
+    int mover_bonus(PieceType mover, bool isCapture) const {
+      int bonus = 0;
+
+      switch (mover)
+      {
+      case PAWN:
+          bonus += 650;
+          if (!isCapture)
+              bonus += 180;
+          break;
+
+      case KNIGHT:
+          bonus += 520;
+          break;
+
+      case BISHOP:
+          bonus += 420;
+          break;
+
+      case ROOK:
+          bonus -= 420;
+          if (isCapture)
+              bonus += 240;
+          break;
+
+      case QUEEN:
+          bonus -= 1600;
+          if (!isCapture)
+              bonus -= 600;
+          break;
+
+      case COMMONER:
+          bonus -= 700;
+          break;
+
+      default:
+          break;
+      }
+
+      if (friendlyYoung <= enemyYoung)
+      {
+          if (mover == PAWN || mover == KNIGHT || mover == BISHOP)
+              bonus += 220;
+          else if (mover == ROOK || mover == QUEEN)
+              bonus -= 220;
+      }
+      else if (friendlyYoung > enemyYoung + 1 && (mover == ROOK || mover == QUEEN))
+          bonus += 120;
+
+      if (enemyYoung > friendlyYoung && mover == COMMONER)
+          bonus -= 240;
+
+      return bonus;
+    }
+
+    int capture_sequence_bonus(PieceType victim, PieceType mover) const {
       if (victim == NO_PIECE_TYPE)
           return 0;
 
@@ -102,116 +208,63 @@ namespace {
           return 0;
 
       if (victim == COMMONER)
-          return 6000;
+          return 9000;
 
-      int target = next_target_index();
+      int target = next_target_index(enemyRemaining);
       if (target == -1)
           return 0;
 
-      int score = 700 + (int(CaptureOrder.size()) - 1 - idx) * 140;
+      int bonus = 1500 - idx * 220;
       if (idx == target)
-          score += 450;
+          bonus += 900;
       else if (idx > target)
-          score -= 300 * (idx - target);
+          bonus -= 600 * (idx - target);
+      else if (target - idx >= 2)
+          bonus += 160 * (target - idx);
+
       if (enemyRemaining[idx] == 1)
-          score += 180;
-      return score;
+          bonus += 260;
+
+      if ((mover == ROOK || mover == QUEEN) && idx < 3 && enemyHeavy > 0)
+          bonus -= 240;
+
+      return bonus;
     }
 
-    int mover_score(PieceType mover, bool isCapture) const {
-      int score = 0;
-
-      switch (mover)
-      {
-      case PAWN:
-          score += 460;
-          if (!isCapture)
-              score += 120;
-          break;
-
-      case KNIGHT:
-          score += 320;
-          break;
-
-      case BISHOP:
-          score += 200;
-          break;
-
-      case ROOK:
-          score -= 220;
-          if (isCapture)
-              score += 140;
-          break;
-
-      case QUEEN:
-          score -= 900;
-          if (!isCapture)
-              score -= 450;
-          break;
-
-      case COMMONER:
-          score -= 480;
-          break;
-
-      default:
-          break;
-      }
-
-      if (friendlyYoung <= enemyYoung && (mover == PAWN || mover == KNIGHT || mover == BISHOP))
-          score += 180;
-
-      if (friendlyYoung > enemyYoung && (mover == ROOK || mover == QUEEN))
-          score -= 120;
-
-      if (young_remaining())
-      {
-          if (mover == PAWN || mover == KNIGHT || mover == BISHOP)
-              score += 120;
-          else if (mover == ROOK || mover == QUEEN)
-              score -= 140;
-      }
-
-      return score;
-    }
-
-    int gating_score(const Position& pos, Move m) const {
+    int gating_bonus(const Position& pos, Move m) const {
       PieceType gate = gating_type(m);
       if (gate == NO_PIECE_TYPE)
           return 0;
 
-      int score = 0;
+      int bonus = 0;
       switch (gate)
       {
       case KNIGHT:
-          score += 1300;
+          bonus += 1600;
           if (friendlyYoung <= enemyYoung)
-              score += 160;
-          if (young_remaining())
-              score += 120;
+              bonus += 240;
           break;
 
       case BISHOP:
-          score += 950;
+          bonus += 1200;
           if (friendlyYoung <= enemyYoung)
-              score += 120;
-          if (young_remaining())
-              score += 80;
+              bonus += 160;
           break;
 
       case ROOK:
-          score -= 320;
+          bonus -= 520;
           if (young_remaining())
-              score -= 220;
+              bonus -= 380;
           break;
 
       case QUEEN:
-          score -= 1500;
+          bonus -= 2100;
           if (young_remaining())
-              score -= 240;
+              bonus -= 600;
           break;
 
       case COMMONER:
-          score -= 3800;
+          bonus -= 5000;
           break;
 
       default:
@@ -221,48 +274,64 @@ namespace {
       Square sq = gating_square(m);
       if (sq != SQ_NONE)
       {
+          int defenders = 1 + popcount(pos.attackers_to(sq, us));
           int attackers = popcount(pos.attackers_to(sq, them));
-          int defenders = popcount(pos.attackers_to(sq, us));
+
+          bonus += (defenders - attackers) * 140;
 
           if (gate == KNIGHT || gate == BISHOP)
           {
-              score += defenders * 60;
-              if (!attackers)
-                  score += 160;
+              int gateRank = int(relative_rank(us, sq, maxRank));
+              bonus += gateRank * 80;
           }
-
-          if (attackers > defenders)
-              score -= 200 * (attackers - defenders);
       }
 
-      return score;
+      return bonus;
     }
 
     int queen_penalty(const Position& pos, Move m, PieceType mover, bool isCapture, PieceType victim) const {
       if (mover != QUEEN)
           return 0;
 
-      int score = -600;
+      int penalty = -900;
 
       if (!isCapture)
-          score -= 500;
+          penalty -= 800;
 
       if (young_remaining())
-          score -= 500;
+          penalty -= 800;
 
       if (gating_type(m) == COMMONER)
-          score -= 1600;
+          penalty -= 2200;
 
       if (victim == COMMONER)
-          score += 6000;
-      else if (isCapture)
-          score += capture_score(victim) / 2;
+          penalty += 9500;
+      else if (victim != NO_PIECE_TYPE)
+          penalty += capture_sequence_bonus(victim, mover) / 2;
 
-      Square from = from_sq(m);
-      if (from != SQ_NONE && pos.attackers_to(from, them))
-          score -= 220;
+      Square to = to_sq(m);
+      if (to != SQ_NONE)
+      {
+          int attackers = popcount(pos.attackers_to(to, them));
+          int defenders = 1 + popcount(pos.attackers_to(to, us));
+          penalty -= 200 * (attackers - defenders);
+      }
 
-      return score;
+      return penalty;
+    }
+
+    int support_bonus(const Position& pos, Move m, PieceType mover) const {
+      Square to = to_sq(m);
+      if (to == SQ_NONE)
+          return 0;
+
+      int defenders = 1 + popcount(pos.attackers_to(to, us));
+      int attackers = popcount(pos.attackers_to(to, them));
+
+      int balance = defenders - attackers;
+      int scale = (mover == PAWN) ? 120 : (mover == KNIGHT || mover == BISHOP ? 90 : 60);
+
+      return balance * scale;
     }
 
     int score(const Position& pos, Move m) const {
@@ -275,28 +344,41 @@ namespace {
       Piece captured = isCapture ? pos.piece_on(to_sq(m)) : NO_PIECE;
       PieceType victim = captured != NO_PIECE ? type_of(captured) : NO_PIECE_TYPE;
 
-      int total = mover_score(mover, isCapture);
-      total += gating_score(pos, m);
+      int total = mover_bonus(mover, isCapture);
+      total += gating_bonus(pos, m);
 
       if (victim != NO_PIECE_TYPE)
-          total += capture_score(victim);
+          total += capture_sequence_bonus(victim, mover);
 
       total += queen_penalty(pos, m, mover, isCapture, victim);
 
       Square from = from_sq(m);
       Square to = to_sq(m);
-      if (from != SQ_NONE && to != SQ_NONE)
-      {
-          int fromRank = int(relative_rank(us, from, maxRank));
-          int toRank = int(relative_rank(us, to, maxRank));
-          int delta = toRank - fromRank;
+      total += territorial_delta(from, to, mover);
+      total += center_delta(from, to, mover);
+      total += support_bonus(pos, m, mover);
 
-          if (mover == PAWN)
-              total += delta * 140;
-          else if (mover == KNIGHT || mover == BISHOP)
-              total += delta * 80;
-          else if (mover == ROOK || mover == QUEEN)
-              total += delta * 40;
+      if (!isCapture)
+      {
+          int targetIdx = next_target_index(enemyRemaining);
+          if (targetIdx != -1)
+          {
+              PieceType targetType = CaptureOrder[targetIdx];
+              Bitboard victims = pos.pieces(them, targetType);
+              if (victims)
+              {
+                  Bitboard attacks = pos.attacks_from(us, mover, to);
+                  if (attacks & victims)
+                  {
+                      int pressure = 240;
+                      if (mover == PAWN)
+                          pressure += 80;
+                      else if (mover == KNIGHT || mover == BISHOP)
+                          pressure += 60;
+                      total += pressure;
+                  }
+              }
+          }
       }
 
       return total;
