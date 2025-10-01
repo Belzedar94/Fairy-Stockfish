@@ -105,7 +105,9 @@ namespace Stockfish::Eval::NNUE::Features {
     return pos.count<ALL_PIECES>();
   }
 
-  bool HalfKAv2Variants::requires_refresh(StateInfo* st, Color perspective, const Position& pos) {
+  bool HalfKAv2Variants::requires_refresh([[maybe_unused]] StateInfo* st,
+                                          [[maybe_unused]] Color perspective,
+                                          [[maybe_unused]] const Position& pos) {
     return true;
   }
 
