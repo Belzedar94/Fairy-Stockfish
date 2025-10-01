@@ -16,6 +16,7 @@
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#include <algorithm>
 #include <cassert>
 
 #include "movepick.h"
@@ -31,6 +32,18 @@ int history_slot(Piece pc) {
 
 namespace {
 
+  constexpr PieceType BattleKingsOrder[] = {PAWN, KNIGHT, BISHOP, ROOK, QUEEN, COMMONER};
+  constexpr int BattleKingsOrderCount = int(sizeof(BattleKingsOrder) / sizeof(BattleKingsOrder[0]));
+
+  struct BattleKingsStats {
+    PieceType target = NO_PIECE_TYPE;
+    PieceType shortage = NO_PIECE_TYPE;
+    int pressureDiff = 0;
+    int kingBalance = 0;
+    File maxFile = FILE_H;
+    Rank maxRank = RANK_8;
+  };
+
   bool is_battle_kings(const Position& pos) {
     return  pos.gating()
         && pos.gating_piece_after(WHITE, PAWN)   == KNIGHT
@@ -43,6 +56,55 @@ namespace {
         && pos.gating_piece_after(BLACK, BISHOP) == ROOK
         && pos.gating_piece_after(BLACK, ROOK)   == QUEEN
         && pos.gating_piece_after(BLACK, QUEEN)  == COMMONER;
+  }
+
+  constexpr int battle_kings_stage_index(PieceType pt) {
+    for (int i = 0; i < BattleKingsOrderCount; ++i)
+        if (BattleKingsOrder[i] == pt)
+            return i;
+
+    return BattleKingsOrderCount;
+  }
+
+  PieceType battle_kings_target_piece(const Position& pos, Color attacker) {
+    Color defender = ~attacker;
+
+    for (PieceType pt : BattleKingsOrder)
+        if (pos.count(defender, pt))
+            return pt;
+
+    return NO_PIECE_TYPE;
+  }
+
+  PieceType battle_kings_shortage_piece(const Position& pos, Color us) {
+    Color them = ~us;
+
+    for (PieceType pt : BattleKingsOrder)
+        if (pos.count(us, pt) < pos.count(them, pt))
+            return pt;
+
+    return NO_PIECE_TYPE;
+  }
+
+  BattleKingsStats battle_kings_collect(const Position& pos) {
+    Color us = pos.side_to_move();
+    BattleKingsStats stats;
+
+    stats.target = battle_kings_target_piece(pos, us);
+    stats.shortage = battle_kings_shortage_piece(pos, us);
+
+    for (int i = 0; i < BattleKingsOrderCount; ++i)
+    {
+        PieceType pt = BattleKingsOrder[i];
+        int weight = (i + 1) * 6;
+        stats.pressureDiff += weight * (pos.count(us, pt) - pos.count(~us, pt));
+    }
+
+    stats.kingBalance = pos.count(us, COMMONER) - pos.count(~us, COMMONER);
+    stats.maxFile = pos.max_file();
+    stats.maxRank = pos.max_rank();
+
+    return stats;
   }
 
   int battle_kings_mover_bonus(PieceType pt) {
@@ -70,6 +132,95 @@ namespace {
     }
   }
 
+  int battle_kings_gate_alignment_bonus(PieceType shortage, PieceType gate) {
+    if (shortage == NO_PIECE_TYPE || gate == NO_PIECE_TYPE)
+        return 0;
+
+    int gateStage = battle_kings_stage_index(gate);
+    int shortageStage = battle_kings_stage_index(shortage);
+
+    if (gateStage == shortageStage)
+        return 1600;
+
+    if (gateStage == shortageStage + 1)
+        return 600;
+
+    if (gateStage > shortageStage + 1)
+        return -500 * (gateStage - shortageStage);
+
+    return 300 * (shortageStage - gateStage);
+  }
+
+  int battle_kings_gate_pressure_bonus(int pressureDiff, PieceType gate) {
+    if (gate == NO_PIECE_TYPE)
+        return 0;
+
+    int gateStage = battle_kings_stage_index(gate);
+    if (gateStage >= BattleKingsOrderCount)
+        return 0;
+
+    if (pressureDiff > 0 && gateStage >= 3)
+        return -std::min(2400, pressureDiff * (gateStage - 2) * 40);
+
+    if (pressureDiff < 0 && gateStage <= 2)
+        return std::min(1800, (-pressureDiff) * (3 - gateStage) * 30);
+
+    return 0;
+  }
+
+  int battle_kings_centrality(File f, Rank r, File maxFile, Rank maxRank) {
+    return edge_distance(f, maxFile) + edge_distance(r, maxRank);
+  }
+
+  int battle_kings_gate_safety(const Position& pos, Move m, PieceType gate, const BattleKingsStats& stats) {
+    if (gate == NO_PIECE_TYPE)
+        return 0;
+
+    Square gateSq = gating_square(m);
+    if (gateSq == SQ_NONE)
+        return 0;
+
+    Color us = pos.side_to_move();
+    Square from = from_sq(m);
+    Square to = to_sq(m);
+
+    Bitboard occ = pos.pieces();
+
+    if (from != SQ_NONE)
+        occ ^= from;
+
+    occ |= to;
+
+    if (pos.capture(m))
+    {
+        Square csq = type_of(m) == EN_PASSANT ? pos.capture_square(to) : to;
+        occ -= csq;
+    }
+
+    occ |= gateSq;
+
+    Bitboard attackers = pos.attackers_to(gateSq, occ, ~us);
+    Bitboard defenders = pos.attackers_to(gateSq, occ, us);
+
+    int stage = battle_kings_stage_index(gate);
+    int centrality = battle_kings_centrality(file_of(gateSq), rank_of(gateSq), stats.maxFile, stats.maxRank);
+    int base = 140 + stage * 90 + centrality * 20;
+
+    if (!attackers)
+        return (stage <= 1 ? 120 : 60) * (1 + centrality);
+
+    if (defenders)
+        return -base / 2;
+
+    int penalty = base;
+    if (stage >= BattleKingsOrderCount - 1)
+        penalty *= 3;
+    else if (stage >= BattleKingsOrderCount - 2)
+        penalty *= 2;
+
+    return -penalty;
+  }
+
   int battle_kings_capture_bonus(PieceType pt) {
     switch (pt)
     {
@@ -83,25 +234,81 @@ namespace {
     }
   }
 
-  int battle_kings_adjustment(const Position& pos, Move m) {
+  int battle_kings_adjustment(const Position& pos, Move m, const BattleKingsStats& stats) {
     int bonus = 0;
 
     PieceType mover = type_of(pos.moved_piece(m));
     bonus += battle_kings_mover_bonus(mover);
 
-    if (PieceType gate = gating_type(m); gate != NO_PIECE_TYPE)
+    PieceType gate = gating_type(m);
+    if (gate != NO_PIECE_TYPE)
+    {
         bonus += battle_kings_gate_bonus(gate);
+        bonus += battle_kings_gate_alignment_bonus(stats.shortage, gate);
+        bonus += battle_kings_gate_pressure_bonus(stats.pressureDiff, gate);
+        bonus += battle_kings_gate_safety(pos, m, gate, stats);
+
+        if (gate == COMMONER)
+        {
+            if (stats.kingBalance >= 0)
+                bonus -= 3000 + 300 * stats.kingBalance;
+            else
+                bonus += 400 * (-stats.kingBalance);
+        }
+    }
+
+    if (stats.shortage != NO_PIECE_TYPE && mover == stats.shortage)
+        bonus += 500;
+
+    Piece captured = NO_PIECE;
+    PieceType victim = NO_PIECE_TYPE;
 
     if (pos.capture(m))
     {
-        Piece captured = pos.piece_on(to_sq(m));
+        Square capSq = type_of(m) == EN_PASSANT ? pos.capture_square(to_sq(m)) : to_sq(m);
+        captured = pos.piece_on(capSq);
         if (captured != NO_PIECE)
-        {
-            PieceType victim = type_of(captured);
-            bonus += battle_kings_capture_bonus(victim);
+            victim = type_of(captured);
+    }
 
-            if (mover == QUEEN && victim != COMMONER)
-                bonus -= 2500;
+    if (victim != NO_PIECE_TYPE)
+    {
+        int victimStage = battle_kings_stage_index(victim);
+
+        bonus += battle_kings_capture_bonus(victim);
+
+        if (stats.target == victim)
+            bonus += 2800;
+        else if (stats.target != NO_PIECE_TYPE && victimStage > battle_kings_stage_index(stats.target))
+            bonus += 400;
+
+        if (victimStage >= BattleKingsOrderCount - 2)
+        {
+            int needKings = std::max(0, -stats.kingBalance);
+            bonus += 1800 + 250 * needKings;
+        }
+
+        if (stats.shortage == victim)
+            bonus += 900;
+
+        if (mover == QUEEN && victimStage <= battle_kings_stage_index(ROOK))
+            bonus -= 2600;
+    }
+
+    if (stats.pressureDiff > 0)
+    {
+        int moverStage = battle_kings_stage_index(mover);
+        if (moverStage >= 3)
+        {
+            Square from = from_sq(m);
+            Square to = to_sq(m);
+            Rank relFrom = from != SQ_NONE ? relative_rank(pos.side_to_move(), from, stats.maxRank) : RANK_1;
+            Rank relTo = relative_rank(pos.side_to_move(), to, stats.maxRank);
+
+            if (relTo <= relFrom)
+                bonus += 300;
+            else
+                bonus -= 200;
         }
     }
 
@@ -185,6 +392,10 @@ void MovePicker::score() {
   static_assert(Type == CAPTURES || Type == QUIETS || Type == EVASIONS, "Wrong type");
 
   const bool battleKings = is_battle_kings(pos);
+  BattleKingsStats battleStats;
+
+  if (battleKings)
+      battleStats = battle_kings_collect(pos);
 
   for (auto& m : *this)
       if constexpr (Type == CAPTURES)
@@ -194,7 +405,7 @@ void MovePicker::score() {
                    + (*captureHistory)[pos.moved_piece(m)][to_sq(m)][type_of(pos.piece_on(to_sq(m)))];
 
           if (battleKings)
-              m.value += battle_kings_adjustment(pos, m);
+              m.value += battle_kings_adjustment(pos, m, battleStats);
       }
 
       else if constexpr (Type == QUIETS)
@@ -208,7 +419,7 @@ void MovePicker::score() {
                    + (ply < MAX_LPH ? std::min(4, depth / 3) * (*lowPlyHistory)[ply][from_to(m)] : 0);
 
           if (battleKings)
-              m.value += battle_kings_adjustment(pos, m);
+              m.value += battle_kings_adjustment(pos, m, battleStats);
       }
 
       else // Type == EVASIONS
