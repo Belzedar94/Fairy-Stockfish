@@ -4,7 +4,6 @@ on:
   push:
     branches: [ master, codex/implement-chess-heuristics-for-move-prioritization ]
   pull_request:
-    branches: [ master, codex/implement-chess-heuristics-for-move-prioritization ]
 
 env:
   EM_VERSION: 1.39.16

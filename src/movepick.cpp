@@ -16,6 +16,7 @@
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#include <algorithm>
 #include <cassert>
 
 #include "movepick.h"
@@ -83,6 +84,146 @@ namespace {
     }
   }
 
+  int battle_kings_centrality_bonus(const Position& pos, Square sq) {
+    if (sq == SQ_NONE)
+        return 0;
+
+    int files = pos.files();
+    int ranks = pos.ranks();
+
+    if (files <= 0 || ranks <= 0)
+        return 0;
+
+    int maxFile = files - 1;
+    int maxRank = ranks - 1;
+    int fileIndex = int(file_of(sq));
+    int rankIndex = int(rank_of(sq));
+
+    if (fileIndex < 0 || fileIndex > maxFile || rankIndex < 0 || rankIndex > maxRank)
+        return 0;
+
+    int fileSpan = std::min(fileIndex, maxFile - fileIndex);
+    int rankSpan = std::min(rankIndex, maxRank - rankIndex);
+
+    return fileSpan * 180 + rankSpan * 70;
+  }
+
+  int battle_kings_development_bonus(const Position& pos, Move m) {
+    Color us = pos.side_to_move();
+    Color them = ~us;
+
+    PieceType mover = type_of(pos.moved_piece(m));
+    PieceType gate = gating_type(m);
+    Square gateSq = gate != NO_PIECE_TYPE ? gating_square(m) : SQ_NONE;
+
+    int youngUs = pos.count<PAWN>(us) + pos.count<KNIGHT>(us) + pos.count<BISHOP>(us);
+    int youngThem = pos.count<PAWN>(them) + pos.count<KNIGHT>(them) + pos.count<BISHOP>(them);
+
+    int bonus = 0;
+
+    if (gate != NO_PIECE_TYPE && gateSq != SQ_NONE)
+    {
+        Bitboard attackersThem = pos.attackers_to(gateSq, them);
+        if (attackersThem)
+        {
+            int attackCount = popcount(attackersThem);
+            Bitboard defendersUs = pos.attackers_to(gateSq, us);
+            int defendCount = popcount(defendersUs);
+            int penalty = 350 * attackCount;
+
+            if (!defendCount)
+                penalty += 900;
+            else
+                penalty -= std::min(defendCount, attackCount) * 120;
+
+            bonus -= penalty;
+        }
+        else
+            bonus += 160;
+    }
+
+    switch (gate)
+    {
+    case KNIGHT:
+    {
+        bonus += 500;
+        if (!pos.count<KNIGHT>(us))
+            bonus += 450;
+        if (pos.count<KNIGHT>(us) <= pos.count<KNIGHT>(them))
+            bonus += 240;
+
+        bonus += battle_kings_centrality_bonus(pos, gateSq);
+
+        Square from = from_sq(m);
+        Square to = to_sq(m);
+        if (mover == PAWN && from != SQ_NONE && to != SQ_NONE)
+        {
+            int relFrom = int(relative_rank(us, from, pos.max_rank()));
+            int relTo = int(relative_rank(us, to, pos.max_rank()));
+
+            if (relTo > relFrom)
+            {
+                bonus += 140 * (relTo - relFrom);
+                if (relTo >= std::max(1, pos.ranks() / 2))
+                    bonus += 120;
+            }
+        }
+        break;
+    }
+
+    case BISHOP:
+        bonus += 320;
+        if (pos.count<BISHOP>(us) < 2)
+            bonus += 220;
+        if (pos.count<BISHOP>(us) < pos.count<BISHOP>(them))
+            bonus += 180;
+        bonus += battle_kings_centrality_bonus(pos, gateSq) / 2;
+        break;
+
+    case ROOK:
+    case QUEEN:
+    {
+        int diff = youngUs - youngThem;
+        int basePenalty = gate == ROOK ? 700 : 1400;
+        int mitigation = std::max(0, diff) * 90;
+        bonus -= std::max(0, basePenalty - mitigation);
+        break;
+    }
+
+    case COMMONER:
+    {
+        int diff = youngUs - youngThem;
+        int penalty = 2600 - std::max(0, diff) * 160;
+        bonus -= std::max(800, penalty);
+        break;
+    }
+
+    default:
+        break;
+    }
+
+    Square from = from_sq(m);
+    Square to = to_sq(m);
+
+    if (mover == KNIGHT && from != SQ_NONE)
+    {
+        int relFrom = int(relative_rank(us, from, pos.max_rank()));
+        if (relFrom == int(RANK_1))
+            bonus += 180;
+    }
+
+    if (mover == PAWN && from != SQ_NONE && to != SQ_NONE)
+    {
+        int relTo = int(relative_rank(us, to, pos.max_rank()));
+        if (relTo >= std::max(1, pos.ranks() / 2))
+            bonus += 90;
+        if (!pos.capture(m) && file_of(from) == file_of(to))
+            bonus += 45;
+    }
+
+    return bonus;
+  }
+
   int battle_kings_adjustment(const Position& pos, Move m) {
     int bonus = 0;
 
@@ -104,6 +245,8 @@ namespace {
                 bonus -= 2500;
         }
     }
+
+    bonus += battle_kings_development_bonus(pos, m);
 
     return bonus;
   }
