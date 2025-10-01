@@ -16,7 +16,10 @@
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#include <algorithm>
+#include <array>
 #include <cassert>
+#include <cstdlib>
 
 #include "movepick.h"
 
@@ -31,12 +34,365 @@ int history_slot(Piece pc) {
 
 namespace {
 
-  enum Stages {
-    MAIN_TT, CAPTURE_INIT, GOOD_CAPTURE, REFUTATION, QUIET_INIT, QUIET, BAD_CAPTURE,
-    EVASION_TT, EVASION_INIT, EVASION,
-    PROBCUT_TT, PROBCUT_INIT, PROBCUT,
-    QSEARCH_TT, QCAPTURE_INIT, QCAPTURE, QCHECK_INIT, QCHECK
+  bool is_battle_kings(const Position& pos) {
+    return  pos.gating()
+        && pos.gating_piece_after(WHITE, PAWN)   == KNIGHT
+        && pos.gating_piece_after(WHITE, KNIGHT) == BISHOP
+        && pos.gating_piece_after(WHITE, BISHOP) == ROOK
+        && pos.gating_piece_after(WHITE, ROOK)   == QUEEN
+        && pos.gating_piece_after(WHITE, QUEEN)  == COMMONER
+        && pos.gating_piece_after(BLACK, PAWN)   == KNIGHT
+        && pos.gating_piece_after(BLACK, KNIGHT) == BISHOP
+        && pos.gating_piece_after(BLACK, BISHOP) == ROOK
+        && pos.gating_piece_after(BLACK, ROOK)   == QUEEN
+        && pos.gating_piece_after(BLACK, QUEEN)  == COMMONER;
+  }
+
+  struct BattleKingsContext {
+
+    static constexpr std::array<PieceType, 6> CaptureOrder = {PAWN, KNIGHT, BISHOP, ROOK, QUEEN, COMMONER};
+
+    bool enabled = false;
+    Color us = WHITE;
+    Color them = BLACK;
+    Rank maxRank = RANK_8;
+    File maxFile = FILE_H;
+    std::array<int, CaptureOrder.size()> enemyRemaining{};
+    std::array<int, CaptureOrder.size()> friendlyRemaining{};
+    int friendlyYoung = 0;
+    int enemyYoung = 0;
+    int friendlyHeavy = 0;
+    int enemyHeavy = 0;
+
+    explicit BattleKingsContext(const Position& pos) {
+      enabled = is_battle_kings(pos);
+      if (!enabled)
+          return;
+
+      us = pos.side_to_move();
+      them = ~us;
+      maxRank = pos.max_rank();
+      maxFile = pos.max_file();
+
+      for (size_t i = 0; i < CaptureOrder.size(); ++i)
+      {
+          enemyRemaining[i]    = pos.count(them, CaptureOrder[i]);
+          friendlyRemaining[i] = pos.count(us,    CaptureOrder[i]);
+      }
+
+      friendlyYoung = friendlyRemaining[0] + friendlyRemaining[1] + friendlyRemaining[2];
+      enemyYoung    = enemyRemaining[0]    + enemyRemaining[1]    + enemyRemaining[2];
+      friendlyHeavy = friendlyRemaining[3] + friendlyRemaining[4];
+      enemyHeavy    = enemyRemaining[3]    + enemyRemaining[4];
+    }
+
+    int category_index(PieceType pt) const {
+      for (size_t i = 0; i < CaptureOrder.size(); ++i)
+          if (CaptureOrder[i] == pt)
+              return int(i);
+      return -1;
+    }
+
+    int next_target_index(const std::array<int, CaptureOrder.size()>& remaining) const {
+      for (size_t i = 0; i < CaptureOrder.size(); ++i)
+          if (remaining[i])
+              return int(i);
+      return -1;
+    }
+
+    int young_remaining() const {
+      return enemyRemaining[0] + enemyRemaining[1] + enemyRemaining[2];
+    }
+
+    int center_delta(Square from, Square to, PieceType mover) const {
+      if (from == SQ_NONE || to == SQ_NONE)
+          return 0;
+
+      int fileSpan = int(maxFile) + 1;
+      int centerFile = (fileSpan - 1) / 2;
+      int fromFile = int(file_of(from));
+      int toFile = int(file_of(to));
+      int fromScore = fileSpan - 2 * std::abs(fromFile - centerFile);
+      int toScore   = fileSpan - 2 * std::abs(toFile - centerFile);
+      int delta = toScore - fromScore;
+
+      switch (mover)
+      {
+      case PAWN:   return delta * 40;
+      case KNIGHT: return delta * 55;
+      case BISHOP: return delta * 45;
+      default:     return delta * 20;
+      }
+    }
+
+    int territorial_delta(Square from, Square to, PieceType mover) const {
+      if (from == SQ_NONE || to == SQ_NONE)
+          return 0;
+
+      int fromRank = int(relative_rank(us, from, maxRank));
+      int toRank   = int(relative_rank(us, to,   maxRank));
+      int delta = toRank - fromRank;
+
+      switch (mover)
+      {
+      case PAWN:   return delta * 180;
+      case KNIGHT: return delta * 120;
+      case BISHOP: return delta * 90;
+      case ROOK:   return delta * 60;
+      case QUEEN:  return delta * 40;
+      default:     return delta * 30;
+      }
+    }
+
+    int mover_bonus(PieceType mover, bool isCapture) const {
+      int bonus = 0;
+
+      switch (mover)
+      {
+      case PAWN:
+          bonus += 650;
+          if (!isCapture)
+              bonus += 180;
+          break;
+
+      case KNIGHT:
+          bonus += 520;
+          break;
+
+      case BISHOP:
+          bonus += 420;
+          break;
+
+      case ROOK:
+          bonus -= 420;
+          if (isCapture)
+              bonus += 240;
+          break;
+
+      case QUEEN:
+          bonus -= 1600;
+          if (!isCapture)
+              bonus -= 600;
+          break;
+
+      case COMMONER:
+          bonus -= 700;
+          break;
+
+      default:
+          break;
+      }
+
+      if (friendlyYoung <= enemyYoung)
+      {
+          if (mover == PAWN || mover == KNIGHT || mover == BISHOP)
+              bonus += 220;
+          else if (mover == ROOK || mover == QUEEN)
+              bonus -= 220;
+      }
+      else if (friendlyYoung > enemyYoung + 1 && (mover == ROOK || mover == QUEEN))
+          bonus += 120;
+
+      if (enemyYoung > friendlyYoung && mover == COMMONER)
+          bonus -= 240;
+
+      return bonus;
+    }
+
+    int capture_sequence_bonus(PieceType victim, PieceType mover) const {
+      if (victim == NO_PIECE_TYPE)
+          return 0;
+
+      int idx = category_index(victim);
+      if (idx == -1)
+          return 0;
+
+      if (victim == COMMONER)
+          return 9000;
+
+      int target = next_target_index(enemyRemaining);
+      if (target == -1)
+          return 0;
+
+      int bonus = 1500 - idx * 220;
+      if (idx == target)
+          bonus += 900;
+      else if (idx > target)
+          bonus -= 600 * (idx - target);
+      else if (target - idx >= 2)
+          bonus += 160 * (target - idx);
+
+      if (enemyRemaining[idx] == 1)
+          bonus += 260;
+
+      if ((mover == ROOK || mover == QUEEN) && idx < 3 && enemyHeavy > 0)
+          bonus -= 240;
+
+      return bonus;
+    }
+
+    int gating_bonus(const Position& pos, Move m) const {
+      PieceType gate = gating_type(m);
+      if (gate == NO_PIECE_TYPE)
+          return 0;
+
+      int bonus = 0;
+      switch (gate)
+      {
+      case KNIGHT:
+          bonus += 1600;
+          if (friendlyYoung <= enemyYoung)
+              bonus += 240;
+          break;
+
+      case BISHOP:
+          bonus += 1200;
+          if (friendlyYoung <= enemyYoung)
+              bonus += 160;
+          break;
+
+      case ROOK:
+          bonus -= 520;
+          if (young_remaining())
+              bonus -= 380;
+          break;
+
+      case QUEEN:
+          bonus -= 2100;
+          if (young_remaining())
+              bonus -= 600;
+          break;
+
+      case COMMONER:
+          bonus -= 5000;
+          break;
+
+      default:
+          break;
+      }
+
+      Square sq = gating_square(m);
+      if (sq != SQ_NONE)
+      {
+          int defenders = 1 + popcount(pos.attackers_to(sq, us));
+          int attackers = popcount(pos.attackers_to(sq, them));
+
+          bonus += (defenders - attackers) * 140;
+
+          if (gate == KNIGHT || gate == BISHOP)
+          {
+              int gateRank = int(relative_rank(us, sq, maxRank));
+              bonus += gateRank * 80;
+          }
+      }
+
+      return bonus;
+    }
+
+    int queen_penalty(const Position& pos, Move m, PieceType mover, bool isCapture, PieceType victim) const {
+      if (mover != QUEEN)
+          return 0;
+
+      int penalty = -900;
+
+      if (!isCapture)
+          penalty -= 800;
+
+      if (young_remaining())
+          penalty -= 800;
+
+      if (gating_type(m) == COMMONER)
+          penalty -= 2200;
+
+      if (victim == COMMONER)
+          penalty += 9500;
+      else if (victim != NO_PIECE_TYPE)
+          penalty += capture_sequence_bonus(victim, mover) / 2;
+
+      Square to = to_sq(m);
+      if (to != SQ_NONE)
+      {
+          int attackers = popcount(pos.attackers_to(to, them));
+          int defenders = 1 + popcount(pos.attackers_to(to, us));
+          penalty -= 200 * (attackers - defenders);
+      }
+
+      return penalty;
+    }
+
+    int support_bonus(const Position& pos, Move m, PieceType mover) const {
+      Square to = to_sq(m);
+      if (to == SQ_NONE)
+          return 0;
+
+      int defenders = 1 + popcount(pos.attackers_to(to, us));
+      int attackers = popcount(pos.attackers_to(to, them));
+
+      int balance = defenders - attackers;
+      int scale = (mover == PAWN) ? 120 : (mover == KNIGHT || mover == BISHOP ? 90 : 60);
+
+      return balance * scale;
+    }
+
+    int evaluate(const Position& pos, Move m) const {
+      if (!enabled)
+          return 0;
+
+      Piece moved = pos.moved_piece(m);
+      PieceType mover = type_of(moved);
+      bool isCapture = pos.capture(m);
+      Piece captured = isCapture ? pos.piece_on(to_sq(m)) : NO_PIECE;
+      PieceType victim = captured != NO_PIECE ? type_of(captured) : NO_PIECE_TYPE;
+
+      int total = mover_bonus(mover, isCapture);
+      total += gating_bonus(pos, m);
+
+      if (victim != NO_PIECE_TYPE)
+          total += capture_sequence_bonus(victim, mover);
+
+      total += queen_penalty(pos, m, mover, isCapture, victim);
+
+      Square from = from_sq(m);
+      Square to = to_sq(m);
+      total += territorial_delta(from, to, mover);
+      total += center_delta(from, to, mover);
+      total += support_bonus(pos, m, mover);
+
+      if (!isCapture)
+      {
+          int targetIdx = next_target_index(enemyRemaining);
+          if (targetIdx != -1)
+          {
+              PieceType targetType = CaptureOrder[targetIdx];
+              Bitboard victims = pos.pieces(them, targetType);
+              if (victims)
+              {
+                  Bitboard attacks = pos.attacks_from(us, mover, to);
+                  if (attacks & victims)
+                  {
+                      int pressure = 240;
+                      if (mover == PAWN)
+                          pressure += 80;
+                      else if (mover == KNIGHT || mover == BISHOP)
+                          pressure += 60;
+                      total += pressure;
+                  }
+              }
+          }
+      }
+
+      return total;
+    }
   };
+
+  int battle_kings_adjustment(const Position& pos, Move m, const BattleKingsContext& ctx) {
+    return ctx.evaluate(pos, m);
+  }
+
+  [[maybe_unused]] int battle_kings_adjustment(const Position& pos, Move m) {
+    BattleKingsContext ctx(pos);
+    return battle_kings_adjustment(pos, m, ctx);
+  }
 
   // partial_insertion_sort() sorts moves in descending order up to and including
   // a given limit. The order of moves smaller than the limit is left unspecified.
@@ -70,7 +426,7 @@ MovePicker::MovePicker(const Position& p, Move ttm, Depth d, const ButterflyHist
 
   assert(d > 0);
 
-  stage = (pos.checkers() ? EVASION_TT : MAIN_TT) +
+  stage = (pos.checkers() ? MovePicker::EVASION_TT : MovePicker::MAIN_TT) +
           !(ttm && pos.pseudo_legal(ttm));
 }
 
@@ -81,7 +437,7 @@ MovePicker::MovePicker(const Position& p, Move ttm, Depth d, const ButterflyHist
 
   assert(d <= 0);
 
-  stage = (pos.checkers() ? EVASION_TT : QSEARCH_TT) +
+  stage = (pos.checkers() ? MovePicker::EVASION_TT : MovePicker::QSEARCH_TT) +
           !(   ttm
             && (pos.checkers() || depth > DEPTH_QS_RECAPTURES || to_sq(ttm) == recaptureSquare)
             && pos.pseudo_legal(ttm));
@@ -94,7 +450,7 @@ MovePicker::MovePicker(const Position& p, Move ttm, Value th, const GateHistory*
 
   assert(!pos.checkers());
 
-  stage = PROBCUT_TT + !(ttm && pos.capture(ttm)
+  stage = MovePicker::PROBCUT_TT + !(ttm && pos.capture(ttm)
                              && pos.pseudo_legal(ttm)
                              && pos.see_ge(ttm, threshold));
 }
@@ -107,13 +463,21 @@ void MovePicker::score() {
 
   static_assert(Type == CAPTURES || Type == QUIETS || Type == EVASIONS, "Wrong type");
 
+  const BattleKingsContext battle(pos);
+
   for (auto& m : *this)
       if constexpr (Type == CAPTURES)
+      {
           m.value =  int(PieceValue[MG][pos.piece_on(to_sq(m))]) * 6
                    + (*gateHistory)[pos.side_to_move()][gating_square(m)]
                    + (*captureHistory)[pos.moved_piece(m)][to_sq(m)][type_of(pos.piece_on(to_sq(m)))];
 
+          if (battle.enabled)
+              m.value += battle_kings_adjustment(pos, m, battle);
+      }
+
       else if constexpr (Type == QUIETS)
+      {
           m.value =      (*mainHistory)[pos.side_to_move()][from_to(m)]
                    +     (*gateHistory)[pos.side_to_move()][gating_square(m)]
                    + 2 * (*continuationHistory[0])[history_slot(pos.moved_piece(m))][to_sq(m)]
@@ -121,6 +485,10 @@ void MovePicker::score() {
                    +     (*continuationHistory[3])[history_slot(pos.moved_piece(m))][to_sq(m)]
                    +     (*continuationHistory[5])[history_slot(pos.moved_piece(m))][to_sq(m)]
                    + (ply < MAX_LPH ? std::min(4, depth / 3) * (*lowPlyHistory)[ply][from_to(m)] : 0);
+
+          if (battle.enabled)
+              m.value += battle_kings_adjustment(pos, m, battle);
+      }
 
       else // Type == EVASIONS
       {
@@ -160,17 +528,17 @@ Move MovePicker::next_move(bool skipQuiets) {
 top:
   switch (stage) {
 
-  case MAIN_TT:
-  case EVASION_TT:
-  case QSEARCH_TT:
-  case PROBCUT_TT:
+  case MovePicker::MAIN_TT:
+  case MovePicker::EVASION_TT:
+  case MovePicker::QSEARCH_TT:
+  case MovePicker::PROBCUT_TT:
       ++stage;
       assert(pos.legal(ttMove) == MoveList<LEGAL>(pos).contains(ttMove) || pos.virtual_drop(ttMove));
       return ttMove;
 
-  case CAPTURE_INIT:
-  case PROBCUT_INIT:
-  case QCAPTURE_INIT:
+  case MovePicker::CAPTURE_INIT:
+  case MovePicker::PROBCUT_INIT:
+  case MovePicker::QCAPTURE_INIT:
       cur = endBadCaptures = moves;
       endMoves = generate<CAPTURES>(pos, cur);
 
@@ -178,7 +546,7 @@ top:
       ++stage;
       goto top;
 
-  case GOOD_CAPTURE:
+  case MovePicker::GOOD_CAPTURE:
       if (select<Best>([&](){
                        return pos.see_ge(*cur, Value(-69 * cur->value / 1024 - 500 * (pos.captures_to_hand() && pos.gives_check(*cur))))?
                               // Move losing capture to endBadCaptures to be tried later
@@ -197,7 +565,7 @@ top:
       ++stage;
       [[fallthrough]];
 
-  case REFUTATION:
+  case MovePicker::REFUTATION:
       if (select<Next>([&](){ return    *cur != MOVE_NONE
                                     && !pos.capture(*cur)
                                     &&  pos.pseudo_legal(*cur); }))
@@ -205,7 +573,7 @@ top:
       ++stage;
       [[fallthrough]];
 
-  case QUIET_INIT:
+  case MovePicker::QUIET_INIT:
       if (!skipQuiets && !(pos.must_capture() && pos.has_capture()))
       {
           cur = endBadCaptures;
@@ -218,7 +586,7 @@ top:
       ++stage;
       [[fallthrough]];
 
-  case QUIET:
+  case MovePicker::QUIET:
       if (   !skipQuiets
           && select<Next>([&](){return   *cur != refutations[0].move
                                       && *cur != refutations[1].move
@@ -232,10 +600,10 @@ top:
       ++stage;
       [[fallthrough]];
 
-  case BAD_CAPTURE:
+  case MovePicker::BAD_CAPTURE:
       return select<Next>([](){ return true; });
 
-  case EVASION_INIT:
+  case MovePicker::EVASION_INIT:
       cur = moves;
       endMoves = generate<EVASIONS>(pos, cur);
 
@@ -243,13 +611,13 @@ top:
       ++stage;
       [[fallthrough]];
 
-  case EVASION:
+  case MovePicker::EVASION:
       return select<Best>([](){ return true; });
 
-  case PROBCUT:
+  case MovePicker::PROBCUT:
       return select<Best>([&](){ return pos.see_ge(*cur, threshold); });
 
-  case QCAPTURE:
+  case MovePicker::QCAPTURE:
       if (select<Best>([&](){ return   depth > DEPTH_QS_RECAPTURES
                                     || to_sq(*cur) == recaptureSquare; }))
           return *(cur - 1);
@@ -261,14 +629,14 @@ top:
       ++stage;
       [[fallthrough]];
 
-  case QCHECK_INIT:
+  case MovePicker::QCHECK_INIT:
       cur = moves;
       endMoves = generate<QUIET_CHECKS>(pos, cur);
 
       ++stage;
       [[fallthrough]];
 
-  case QCHECK:
+  case MovePicker::QCHECK:
       return select<Next>([](){ return true; });
   }
 
