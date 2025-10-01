@@ -31,6 +31,9 @@ int history_slot(Piece pc) {
 
 namespace {
 
+  constexpr PieceType BattleKingsOrder[] = {PAWN, KNIGHT, BISHOP, ROOK, QUEEN, COMMONER};
+  constexpr int BattleKingsOrderCount = int(sizeof(BattleKingsOrder) / sizeof(BattleKingsOrder[0]));
+
   bool is_battle_kings(const Position& pos) {
     return  pos.gating()
         && pos.gating_piece_after(WHITE, PAWN)   == KNIGHT
@@ -43,6 +46,34 @@ namespace {
         && pos.gating_piece_after(BLACK, BISHOP) == ROOK
         && pos.gating_piece_after(BLACK, ROOK)   == QUEEN
         && pos.gating_piece_after(BLACK, QUEEN)  == COMMONER;
+  }
+
+  constexpr int battle_kings_stage_index(PieceType pt) {
+    for (int i = 0; i < BattleKingsOrderCount; ++i)
+        if (BattleKingsOrder[i] == pt)
+            return i;
+
+    return BattleKingsOrderCount;
+  }
+
+  PieceType battle_kings_target_piece(const Position& pos, Color attacker) {
+    Color defender = ~attacker;
+
+    for (int i = 0; i < BattleKingsOrderCount; ++i)
+        if (pos.count(defender, BattleKingsOrder[i]))
+            return BattleKingsOrder[i];
+
+    return NO_PIECE_TYPE;
+  }
+
+  PieceType battle_kings_shortage_piece(const Position& pos, Color us) {
+    Color them = ~us;
+
+    for (int i = 0; i < BattleKingsOrderCount; ++i)
+        if (pos.count(us, BattleKingsOrder[i]) < pos.count(them, BattleKingsOrder[i]))
+            return BattleKingsOrder[i];
+
+    return NO_PIECE_TYPE;
   }
 
   int battle_kings_mover_bonus(PieceType pt) {
@@ -70,6 +101,72 @@ namespace {
     }
   }
 
+  int battle_kings_centrality(const Position& pos, Square sq) {
+    if (sq == SQ_NONE)
+        return 0;
+
+    return   edge_distance(file_of(sq), pos.max_file())
+           + edge_distance(rank_of(sq), pos.max_rank());
+  }
+
+  int battle_kings_territory_bonus(const Position& pos, Move m) {
+    Color us = pos.side_to_move();
+    Square from = from_sq(m);
+    Square to = to_sq(m);
+    PieceType mover = type_of(pos.moved_piece(m));
+    int bonus = 0;
+
+    if (mover == PAWN && from != SQ_NONE)
+    {
+        int relFrom = int(relative_rank(us, from, pos.max_rank()));
+        int relTo   = int(relative_rank(us, to, pos.max_rank()));
+
+        if (relTo > relFrom)
+            bonus += 220 * (relTo - relFrom);
+
+        bonus += 60 * battle_kings_centrality(pos, to);
+    }
+    else if (mover == KNIGHT || mover == BISHOP)
+    {
+        bonus += battle_kings_centrality(pos, to) * (mover == KNIGHT ? 110 : 80);
+
+        if (from != SQ_NONE && int(relative_rank(us, to, pos.max_rank())) > int(relative_rank(us, from, pos.max_rank())))
+            bonus += 160;
+    }
+
+    if (PieceType gate = gating_type(m); gate != NO_PIECE_TYPE)
+    {
+        Square gateSq = gating_square(m);
+        int centrality = battle_kings_centrality(pos, gateSq);
+        int perimeter = int(pos.max_file()) + int(pos.max_rank());
+
+        switch (gate)
+        {
+        case KNIGHT:
+            bonus += 90 * centrality;
+            break;
+
+        case BISHOP:
+            bonus += 70 * centrality;
+            break;
+
+        case ROOK:
+            bonus -= (perimeter - centrality) * 40;
+            break;
+
+        case QUEEN:
+        case COMMONER:
+            bonus -= 2200 + (perimeter - centrality) * 60;
+            break;
+
+        default:
+            break;
+        }
+    }
+
+    return bonus;
+  }
+
   int battle_kings_capture_bonus(PieceType pt) {
     switch (pt)
     {
@@ -89,20 +186,48 @@ namespace {
     PieceType mover = type_of(pos.moved_piece(m));
     bonus += battle_kings_mover_bonus(mover);
 
+    Color us = pos.side_to_move();
+    PieceType target = battle_kings_target_piece(pos, us);
+    PieceType shortage = battle_kings_shortage_piece(pos, us);
+
+    bonus += battle_kings_territory_bonus(pos, m);
+
     if (PieceType gate = gating_type(m); gate != NO_PIECE_TYPE)
+    {
         bonus += battle_kings_gate_bonus(gate);
 
-    if (pos.capture(m))
-    {
-        Piece captured = pos.piece_on(to_sq(m));
-        if (captured != NO_PIECE)
+        if (shortage != NO_PIECE_TYPE)
         {
-            PieceType victim = type_of(captured);
-            bonus += battle_kings_capture_bonus(victim);
+            int gateStage = battle_kings_stage_index(gate);
+            int shortageStage = battle_kings_stage_index(shortage);
 
-            if (mover == QUEEN && victim != COMMONER)
-                bonus -= 2500;
+            if (gateStage == shortageStage)
+                bonus += 1800;
+            else if (gateStage > shortageStage && shortageStage > 0)
+                bonus -= 900;
         }
+    }
+
+    if (shortage != NO_PIECE_TYPE && mover == shortage)
+        bonus += 400;
+
+    Piece captured = pos.capture(m) ? pos.piece_on(to_sq(m)) : NO_PIECE;
+    PieceType victim = captured != NO_PIECE ? type_of(captured) : NO_PIECE_TYPE;
+
+    if (victim != NO_PIECE_TYPE)
+    {
+        bonus += battle_kings_capture_bonus(victim);
+
+        if (mover == QUEEN && victim != COMMONER)
+            bonus -= 2500;
+
+        if (victim == target)
+            bonus += 2600;
+        else if (target != NO_PIECE_TYPE && battle_kings_stage_index(victim) > battle_kings_stage_index(target))
+            bonus -= 700;
+
+        if (shortage == victim)
+            bonus += 1300;
     }
 
     return bonus;
