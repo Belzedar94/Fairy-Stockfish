@@ -538,6 +538,7 @@ Position& Position::set(const Variant* v, const string& fenStr, bool isChess960,
   tsumeMode = Options["TsumeMode"];
   thisThread = th;
   set_state(st);
+  update_fog_cache(nullptr);
 
   assert(pos_is_ok());
 
@@ -662,6 +663,48 @@ void Position::set_state(StateInfo* si) const {
   if (check_counting())
       for (Color c : {WHITE, BLACK})
           si->key ^= Zobrist::checks[c][si->checksRemaining[c]];
+}
+
+Bitboard Position::compute_visibility(Color perspective) const {
+
+  if (!fog_of_war())
+      return board_bb();
+
+  Bitboard visible = pieces(perspective);
+
+  for (PieceSet ps = piece_types(); ps;)
+  {
+      PieceType pt = pop_lsb(ps);
+      Bitboard pieceBB = pieces(perspective, pt);
+      while (pieceBB)
+          visible |= moves_from(perspective, pt, pop_lsb(pieceBB));
+  }
+
+  return visible & board_bb();
+}
+
+void Position::update_fog_cache(const StateInfo* previous) {
+
+  if (!fog_of_war())
+  {
+      Bitboard full = board_bb();
+      for (Color c : {WHITE, BLACK})
+      {
+          st->visibleArea[c] = full;
+          st->newlyVisible[c] = 0;
+          st->newlyHidden[c] = 0;
+      }
+      return;
+  }
+
+  for (Color c : {WHITE, BLACK})
+  {
+      Bitboard newVisible = compute_visibility(c);
+      Bitboard prevVisible = previous ? previous->visibleArea[c] : newVisible;
+      st->newlyVisible[c] = newVisible & ~prevVisible;
+      st->newlyHidden[c] = prevVisible & ~newVisible;
+      st->visibleArea[c] = newVisible;
+  }
 }
 
 
@@ -2127,6 +2170,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
 
   // Update king attacks used for fast check detection
   set_check_info(st);
+  update_fog_cache(st->previous);
 
   // Calculate the repetition info. It is the ply distance from the previous
   // occurrence of the same position, negative in the 3-fold case, or zero
@@ -2352,6 +2396,7 @@ void Position::do_null_move(StateInfo& newSt) {
   sideToMove = ~sideToMove;
 
   set_check_info(st);
+  update_fog_cache(st->previous);
 
   st->repetition = 0;
 

@@ -115,13 +115,6 @@ customPiece5 = f:mBpBmWpR2
 promotedPieceType = u:w a:w c:f i:f
 startFen = lnsgkgsnl/1rci1uab1/p1p1p1p1p/9/9/9/P1P1P1P1P/1BAU1ICR1/LNSGKGSNL[-] w 0 1
 
-[fogofwar:chess]
-king = -
-commoner = k
-castlingKingPiece = k
-extinctionValue = loss
-extinctionPieceTypes = k
-
 [coregaldrop:coregal]
 pieceDrops = true
 startFen = rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR[Qq] w KQkq - 0 1
@@ -1308,6 +1301,11 @@ class TestPyffish(unittest.TestCase):
         fen = "rnbqkbnr/p1p2ppp/8/Pp1pp3/4P3/8/1PPP1PPP/RNBQKBNR w KQkq b6 0 1"
         result = sf.get_fog_fen(fen, "fogofwar")
         self.assertEqual(result, "********/********/2******/Pp*p***1/4P3/4*3/1PPP1PPP/RNBQKBNR w KQkq b6 0 1")
+
+        result = sf.get_fog_fen(fen, "fogofwar", "black")
+        self.assertTrue(result.startswith("rnbqkbnr/p1p2ppp/"))
+        self.assertTrue(result.endswith(" w KQkq b6 0 1"))
+        self.assertIn("*", result)
         
 
 if __name__ == '__main__':

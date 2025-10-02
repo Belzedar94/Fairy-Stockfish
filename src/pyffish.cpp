@@ -5,6 +5,8 @@
 
 #include <Python.h>
 #include <sstream>
+#include <algorithm>
+#include <cctype>
 
 #include "misc.h"
 #include "types.h"
@@ -388,16 +390,49 @@ extern "C" PyObject* pyffish_getFogFEN(PyObject* self, PyObject *args) {
     PyObject* moveList = PyList_New(0);
     Position pos;
     const char *fen, *variant;
+    PyObject* optional1 = nullptr;
+    PyObject* optional2 = nullptr;
 
     int chess960 = false, sfen = false, showPromoted = false, countStarted = 0;
-    if (!PyArg_ParseTuple(args, "ss|p", &fen, &variant, &chess960)) {
+    if (!PyArg_ParseTuple(args, "ss|OO", &fen, &variant, &optional1, &optional2)) {
         return NULL;
     }
+
+    std::string perspectiveToken;
+    bool perspectiveExplicit = false;
+
+    if (optional1) {
+        if (PyBool_Check(optional1))
+            chess960 = PyObject_IsTrue(optional1);
+        else if (PyUnicode_Check(optional1)) {
+            const char* token = PyUnicode_AsUTF8(optional1);
+            if (token) {
+                perspectiveToken = token;
+                perspectiveExplicit = true;
+            }
+        }
+    }
+
+    if (optional2)
+        chess960 = PyObject_IsTrue(optional2);
+
     StateListPtr states(new std::deque<StateInfo>(1));
     buildPosition(pos, states, variant, fen, moveList, chess960);
 
+    Color perspective = pos.side_to_move();
+    if (perspectiveExplicit) {
+        std::string lowered = perspectiveToken;
+        std::transform(lowered.begin(), lowered.end(), lowered.begin(), [](unsigned char c) { return std::tolower(c); });
+        if (lowered == "white" || lowered == "w")
+            perspective = WHITE;
+        else if (lowered == "black" || lowered == "b")
+            perspective = BLACK;
+        else if (lowered == "opponent" || lowered == "opp" || lowered == "enemy")
+            perspective = ~pos.side_to_move();
+    }
+
     Py_XDECREF(moveList);
-    return Py_BuildValue("s", pos.fen(sfen, showPromoted, countStarted, "-", pos.fog_area()).c_str());
+    return Py_BuildValue("s", pos.fen(sfen, showPromoted, countStarted, "-", pos.fog_area(perspective)).c_str());
 }
 
 static PyMethodDef PyFFishMethods[] = {

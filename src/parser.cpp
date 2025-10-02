@@ -495,6 +495,7 @@ Variant* VariantParser<DoCheck>::parse(Variant* v) {
     parse_attribute("flyingGeneral", v->flyingGeneral);
     parse_attribute("soldierPromotionRank", v->soldierPromotionRank);
     parse_attribute("flipEnclosedPieces", v->flipEnclosedPieces);
+    parse_attribute("fogOfWar", v->fogOfWar);
     // game end
     parse_attribute("nMoveRuleTypes", v->nMoveRuleTypes[WHITE], v->pieceToChar);
     parse_attribute("nMoveRuleTypes", v->nMoveRuleTypes[BLACK], v->pieceToChar);

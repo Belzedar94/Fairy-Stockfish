@@ -56,6 +56,9 @@ struct StateInfo {
   Square castlingKingSquare[COLOR_NB];
   Bitboard wallSquares;
   Bitboard gatesBB[COLOR_NB];
+  Bitboard visibleArea[COLOR_NB];
+  Bitboard newlyVisible[COLOR_NB];
+  Bitboard newlyHidden[COLOR_NB];
 
   // Not copied when making a move (will be recomputed anyhow)
   Key        key;
@@ -163,6 +166,7 @@ public:
   int nnue_piece_hand_index(Color perspective, Piece pc) const;
   int nnue_king_square_index(Square ksq) const;
   bool free_drops() const;
+  bool fog_of_war() const;
   bool fast_attacks() const;
   bool fast_attacks2() const;
   bool checking_permitted() const;
@@ -341,6 +345,10 @@ public:
   Value non_pawn_material(Color c) const;
   Value non_pawn_material() const;
   Bitboard fog_area() const;
+  Bitboard fog_area(Color perspective) const;
+  Bitboard visible_area(Color perspective) const;
+  Bitboard newly_visible(Color perspective) const;
+  Bitboard newly_hidden(Color perspective) const;
 
   // Position consistency check, for debugging
   bool pos_is_ok() const;
@@ -354,6 +362,8 @@ public:
 
 private:
   // Initialization helpers (used while setting up a position)
+  void update_fog_cache(const StateInfo* previous);
+  Bitboard compute_visibility(Color perspective) const;
   void set_castling_right(Color c, Square rfrom);
   void set_state(StateInfo* si) const;
   void set_check_info(StateInfo* si) const;
@@ -627,6 +637,11 @@ inline bool Position::checking_permitted() const {
 inline bool Position::free_drops() const {
   assert(var != nullptr);
   return var->freeDrops;
+}
+
+inline bool Position::fog_of_war() const {
+  assert(var != nullptr);
+  return var->fogOfWar;
 }
 
 inline bool Position::fast_attacks() const {
@@ -1490,18 +1505,26 @@ inline Piece Position::captured_piece() const {
   return st->capturedPiece;
 }
 
+inline Bitboard Position::visible_area(Color perspective) const {
+  if (!fog_of_war())
+      return board_bb();
+  return st->visibleArea[perspective];
+}
+
 inline Bitboard Position::fog_area() const {
-  Bitboard b = board_bb();
-  // Our own pieces are visible
-  Bitboard visible = pieces(sideToMove);
-  // Squares where we can move to are visible as well
-  for (const auto& m : MoveList<LEGAL>(*this))
-  {
-    Square to = to_sq(m);
-    visible |= to;
-  }
-  // Everything else is invisible
-  return ~visible & b;
+  return fog_area(side_to_move());
+}
+
+inline Bitboard Position::fog_area(Color perspective) const {
+  return fog_of_war() ? board_bb() & ~visible_area(perspective) : Bitboard(0);
+}
+
+inline Bitboard Position::newly_visible(Color perspective) const {
+  return fog_of_war() ? st->newlyVisible[perspective] : Bitboard(0);
+}
+
+inline Bitboard Position::newly_hidden(Color perspective) const {
+  return fog_of_war() ? st->newlyHidden[perspective] : Bitboard(0);
 }
 
 inline const std::string Position::piece_to_partner() const {

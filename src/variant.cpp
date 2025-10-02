@@ -80,6 +80,17 @@ namespace {
         v->doubleStepRegion[BLACK] = AllSquares;
         return v;
     }
+    // Fog of War Chess
+    // https://lichess.org/variant/fogofwar
+    Variant* fogofwar_variant() {
+        Variant* v = chess_variant()->init();
+        v->fogOfWar = true;
+        v->checking = false;
+        v->dropChecks = false;
+        v->extinctionPieceTypes = piece_set(KING);
+        v->extinctionValue = VALUE_MATE;
+        return v;
+    }
     // Berolina Chess
     // https://www.chessvariants.com/dpieces.dir/berlin.html
     Variant* berolina_variant() {
@@ -1852,6 +1863,7 @@ void VariantMap::init() {
     add("nocastle", nocastle_variant());
     add("armageddon", armageddon_variant());
     add("torpedo", torpedo_variant());
+    add("fogofwar", fogofwar_variant());
     add("berolina", berolina_variant());
     add("pawnsideways", pawnsideways_variant());
     add("pawnback", pawnback_variant());
