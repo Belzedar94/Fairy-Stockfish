@@ -35,6 +35,56 @@ namespace Stockfish {
 
 /// Variant struct stores information needed to determine the rules of a variant.
 
+enum class ColorChangeTrigger {
+  NEVER,
+  ON_CAPTURE,
+  ON_NON_CAPTURE,
+  ALWAYS
+};
+
+enum class ColorChangeTarget {
+  NONE,
+  MOVER,
+  OPPONENT,
+  CAPTURED,
+  WHITE,
+  BLACK
+};
+
+struct ColorMask {
+  bool mask[COLOR_NB] = {true, true};
+
+  bool operator[](Color c) const {
+      return mask[c];
+  }
+
+  void set(Color c, bool value) {
+      mask[c] = value;
+  }
+};
+
+struct ColorChangeRule {
+  ColorChangeTrigger trigger = ColorChangeTrigger::NEVER;
+  ColorChangeTarget target = ColorChangeTarget::NONE;
+  PieceSet pieceTypes = ~NO_PIECE_SET;
+  ColorMask colors;
+  bool changeTypeToCaptured = false;
+  bool requireDifferentCaptureType = false;
+  bool resetPromotionState = false;
+};
+
+struct AttackedColorChangeRule {
+  bool enabled = false;
+  ColorChangeTrigger trigger = ColorChangeTrigger::ALWAYS;
+  PieceSet moverPieceTypes = ~NO_PIECE_SET;
+  ColorMask moverColors;
+  PieceSet targetPieceTypes = ~NO_PIECE_SET;
+  ColorMask targetColors;
+  ColorChangeTarget target = ColorChangeTarget::MOVER;
+  bool resetPromotionState = false;
+  bool convertedPiecesDormant = false;
+};
+
 struct Variant {
   std::string variantTemplate = "fairy";
   std::string pieceToCharTable = "-";
@@ -68,6 +118,9 @@ struct Variant {
   PieceSet mutuallyImmuneTypes = NO_PIECE_SET;
   // Allow capturing pieces of the same color (friendly capture)
   bool selfCapture = false;
+  bool captureDisabled = false;
+  ColorChangeRule changingColors;
+  AttackedColorChangeRule attackedChangingColors;
   // Iron pieces: attempts to capture these piece types are illegal
   PieceSet ironPieceTypes = NO_PIECE_SET;
   PieceSet petrifyOnCaptureTypes = NO_PIECE_SET;
@@ -87,6 +140,7 @@ struct Variant {
   File castlingRookKingsideFile = FILE_MAX; // only has to match if rook is not in corner in non-960 variants
   File castlingRookQueensideFile = FILE_A; // only has to match if rook is not in corner in non-960 variants
   PieceSet castlingRookPieces[COLOR_NB] = {piece_set(ROOK), piece_set(ROOK)};
+  bool castlingKingIsRoyal = false;
   bool oppositeCastling = false;
   PieceType kingType = KING;
   bool checking = true;
@@ -226,6 +280,7 @@ struct Variant {
   Variant* init() {
       nnueAlias = "";
       endgameEval = EG_EVAL_CHESS;
+      castlingKingIsRoyal = false;
       return this;
   }
 

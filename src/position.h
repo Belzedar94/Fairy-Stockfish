@@ -73,6 +73,11 @@ struct StateInfo {
   Piece      promotionPawn;
   Bitboard   nonSlidingRiders;
   Bitboard   flippedPieces;
+  Bitboard   colorChangeSquares;
+  Bitboard   colorChangeWasPromoted;
+  Piece      colorChangeOriginal[SQUARE_NB];
+  Piece      colorChangeUnpromoted[SQUARE_NB];
+  Bitboard   dormantBefore;
   Bitboard   pseudoRoyalCandidates;
   Bitboard   pseudoRoyals;
   OptBool    legalCapture;
@@ -168,6 +173,7 @@ public:
   bool checking_permitted() const;
   bool drop_checks() const;
   bool self_capture() const;
+  bool capture_disabled() const;
   bool must_capture() const;
   bool has_capture() const;
   bool must_drop() const;
@@ -247,7 +253,9 @@ public:
   Bitboard non_sliding_riders() const;
   Piece piece_on(Square s) const;
   Piece unpromoted_piece_on(Square s) const;
+  Piece king_piece(Color c) const;
   Bitboard ep_squares() const;
+  bool is_royal(Piece pc) const;
   Square castling_king_square(Color c) const;
   Bitboard gates(Color c) const;
   bool empty(Square s) const;
@@ -385,6 +393,7 @@ private:
   int pieceCountInHand[COLOR_NB][PIECE_TYPE_NB];
   int virtualPieces;
   Bitboard promotedPieces;
+  Bitboard dormantPieces;
   void add_to_hand(Piece pc);
   void remove_from_hand(Piece pc);
   void drop_piece(Piece pc_hand, Piece pc_drop, Square s);
@@ -647,6 +656,11 @@ inline bool Position::drop_checks() const {
 inline bool Position::self_capture() const {
   assert(var != nullptr);
   return var->selfCapture;
+}
+
+inline bool Position::capture_disabled() const {
+  assert(var != nullptr);
+  return var->captureDisabled;
 }
 
 inline bool Position::must_capture() const {
@@ -1194,6 +1208,19 @@ inline Piece Position::unpromoted_piece_on(Square s) const {
   return unpromotedBoard[s];
 }
 
+inline Piece Position::king_piece(Color c) const {
+  assert(var != nullptr);
+  return make_piece(c, castling_king_piece(c));
+}
+
+inline bool Position::is_royal(Piece pc) const {
+  if (pc == NO_PIECE)
+      return false;
+  Color c = color_of(pc);
+  PieceType royal = castling_king_piece(c);
+  return type_of(pc) == KING || (royal != KING && type_of(pc) == royal);
+}
+
 inline Piece Position::moved_piece(Move m) const {
   if (type_of(m) == DROP)
       return make_piece(sideToMove, dropped_piece_type(m));
@@ -1201,6 +1228,17 @@ inline Piece Position::moved_piece(Move m) const {
 }
 
 inline Bitboard Position::pieces(PieceType pt) const {
+  if (pt == KING && var && var->castlingKingIsRoyal)
+  {
+      Bitboard result = byTypeBB[KING];
+      PieceType whiteRoyal = castling_king_piece(WHITE);
+      PieceType blackRoyal = castling_king_piece(BLACK);
+      if (whiteRoyal != KING)
+          result |= byColorBB[WHITE] & byTypeBB[whiteRoyal];
+      if (blackRoyal != KING)
+          result |= byColorBB[BLACK] & byTypeBB[blackRoyal];
+      return result;
+  }
   return byTypeBB[pt];
 }
 
@@ -1213,6 +1251,12 @@ inline Bitboard Position::pieces(Color c) const {
 }
 
 inline Bitboard Position::pieces(Color c, PieceType pt) const {
+  if (pt == KING && var && var->castlingKingIsRoyal)
+  {
+      PieceType royal = castling_king_piece(c);
+      if (royal != KING)
+          return pieces(c) & byTypeBB[royal];
+  }
   return pieces(c) & pieces(pt);
 }
 
@@ -1233,11 +1277,17 @@ inline Bitboard Position::non_sliding_riders() const {
 }
 
 inline int Position::count(Color c, PieceType pt) const {
+  if (pt == KING && var && var->castlingKingIsRoyal)
+  {
+      PieceType royal = castling_king_piece(c);
+      if (royal != KING)
+          return pieceCount[make_piece(c, royal)];
+  }
   return pieceCount[make_piece(c, pt)];
 }
 
 template<PieceType Pt> inline int Position::count(Color c) const {
-  return pieceCount[make_piece(c, Pt)];
+  return count(c, Pt);
 }
 
 template<PieceType Pt> inline int Position::count() const {
@@ -1245,12 +1295,17 @@ template<PieceType Pt> inline int Position::count() const {
 }
 
 template<PieceType Pt> inline Square Position::square(Color c) const {
-  assert(count<Pt>(c) == 1);
-  return lsb(pieces(c, Pt));
+  return square(c, Pt);
 }
 
 inline Square Position::square(Color c, PieceType pt) const {
   assert(count(c, pt) == 1);
+  if (pt == KING && var && var->castlingKingIsRoyal)
+  {
+      PieceType royal = castling_king_piece(c);
+      if (royal != KING)
+          return lsb(pieces(c) & byTypeBB[royal]);
+  }
   return lsb(pieces(c, pt));
 }
 
@@ -1292,6 +1347,8 @@ inline Square Position::castling_rook_square(CastlingRights cr) const {
 }
 
 inline Bitboard Position::attacks_from(Color c, PieceType pt, Square s) const {
+  if (dormantPieces & square_bb(s))
+      return Bitboard(0);
   if (var->fastAttacks || var->fastAttacks2)
       return attacks_bb(c, pt, s, byTypeBB[ALL_PIECES]) & board_bb();
 
@@ -1522,6 +1579,7 @@ inline void Position::put_piece(Piece pc, Square s, bool isPromoted, Piece unpro
   board[s] = pc;
   byTypeBB[ALL_PIECES] |= byTypeBB[type_of(pc)] |= s;
   byColorBB[color_of(pc)] |= s;
+  dormantPieces &= ~square_bb(s);
   pieceCount[pc]++;
   pieceCount[make_piece(color_of(pc), ALL_PIECES)]++;
   psq += PSQT::psq[pc][s];
@@ -1536,6 +1594,7 @@ inline void Position::remove_piece(Square s) {
   byTypeBB[ALL_PIECES] ^= s;
   byTypeBB[type_of(pc)] ^= s;
   byColorBB[color_of(pc)] ^= s;
+  dormantPieces &= ~square_bb(s);
   board[s] = NO_PIECE;
   pieceCount[pc]--;
   pieceCount[make_piece(color_of(pc), ALL_PIECES)]--;
