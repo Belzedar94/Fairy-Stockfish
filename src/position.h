@@ -73,6 +73,11 @@ struct StateInfo {
   Piece      promotionPawn;
   Bitboard   nonSlidingRiders;
   Bitboard   flippedPieces;
+  Bitboard   colorChangeSquares;
+  Bitboard   colorChangeWasPromoted;
+  Piece      colorChangeOriginal[SQUARE_NB];
+  Piece      colorChangeUnpromoted[SQUARE_NB];
+  Bitboard   dormantBefore;
   Bitboard   pseudoRoyalCandidates;
   Bitboard   pseudoRoyals;
   OptBool    legalCapture;
@@ -168,6 +173,7 @@ public:
   bool checking_permitted() const;
   bool drop_checks() const;
   bool self_capture() const;
+  bool capture_disabled() const;
   bool must_capture() const;
   bool has_capture() const;
   bool must_drop() const;
@@ -240,6 +246,7 @@ public:
   Bitboard pieces(PieceType pt = ALL_PIECES) const;
   Bitboard pieces(PieceType pt1, PieceType pt2) const;
   Bitboard pieces(Color c) const;
+  Bitboard dormant_pieces() const;
   Bitboard pieces(Color c, PieceType pt) const;
   Bitboard pieces(Color c, PieceType pt1, PieceType pt2) const;
   Bitboard pieces(Color c, PieceType pt1, PieceType pt2, PieceType pt3) const;
@@ -385,6 +392,7 @@ private:
   int pieceCountInHand[COLOR_NB][PIECE_TYPE_NB];
   int virtualPieces;
   Bitboard promotedPieces;
+  Bitboard dormantPieces;
   void add_to_hand(Piece pc);
   void remove_from_hand(Piece pc);
   void drop_piece(Piece pc_hand, Piece pc_drop, Square s);
@@ -647,6 +655,11 @@ inline bool Position::drop_checks() const {
 inline bool Position::self_capture() const {
   assert(var != nullptr);
   return var->selfCapture;
+}
+
+inline bool Position::capture_disabled() const {
+  assert(var != nullptr);
+  return var->captureDisabled;
 }
 
 inline bool Position::must_capture() const {
@@ -1212,6 +1225,10 @@ inline Bitboard Position::pieces(Color c) const {
   return byColorBB[c];
 }
 
+inline Bitboard Position::dormant_pieces() const {
+  return dormantPieces;
+}
+
 inline Bitboard Position::pieces(Color c, PieceType pt) const {
   return pieces(c) & pieces(pt);
 }
@@ -1292,6 +1309,8 @@ inline Square Position::castling_rook_square(CastlingRights cr) const {
 }
 
 inline Bitboard Position::attacks_from(Color c, PieceType pt, Square s) const {
+  if (dormantPieces & square_bb(s))
+      return Bitboard(0);
   if (var->fastAttacks || var->fastAttacks2)
       return attacks_bb(c, pt, s, byTypeBB[ALL_PIECES]) & board_bb();
 
@@ -1522,6 +1541,7 @@ inline void Position::put_piece(Piece pc, Square s, bool isPromoted, Piece unpro
   board[s] = pc;
   byTypeBB[ALL_PIECES] |= byTypeBB[type_of(pc)] |= s;
   byColorBB[color_of(pc)] |= s;
+  dormantPieces &= ~square_bb(s);
   pieceCount[pc]++;
   pieceCount[make_piece(color_of(pc), ALL_PIECES)]++;
   psq += PSQT::psq[pc][s];
@@ -1536,6 +1556,7 @@ inline void Position::remove_piece(Square s) {
   byTypeBB[ALL_PIECES] ^= s;
   byTypeBB[type_of(pc)] ^= s;
   byColorBB[color_of(pc)] ^= s;
+  dormantPieces &= ~square_bb(s);
   board[s] = NO_PIECE;
   pieceCount[pc]--;
   pieceCount[make_piece(color_of(pc), ALL_PIECES)]--;
