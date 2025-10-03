@@ -880,30 +880,31 @@ inline int piece_count(const std::string& fenBoard, Color c, PieceType pt, const
 }
 
 inline Validation check_number_of_kings(const std::string& fenBoard, const std::string& startFenBoard, const Variant* v) {
-    int nbWhiteKings = piece_count(fenBoard, WHITE, KING, v);
-    int nbBlackKings = piece_count(fenBoard, BLACK, KING, v);
-    int nbWhiteKingsStart = piece_count(startFenBoard, WHITE, KING, v);
-    int nbBlackKingsStart = piece_count(startFenBoard, BLACK, KING, v);
+    for (Color c : {WHITE, BLACK})
+    {
+        PieceType royal = v->castlingKingPiece[c];
+        if (royal == NO_PIECE_TYPE || !(v->pieceTypes & piece_set(royal)))
+        {
+            if (!(v->pieceTypes & KING))
+                continue;
+            royal = KING;
+        }
 
-    if (nbWhiteKings > 1)
-    {
-        std::cerr << "Invalid number of white kings. Maximum: 1. Given: " << nbWhiteKings << std::endl;
-        return NOK;
-    }
-    if (nbBlackKings > 1)
-    {
-        std::cerr << "Invalid number of black kings. Maximum: 1. Given: " << nbBlackKings << std::endl;
-        return NOK;
-    }
-    if (nbWhiteKings != nbWhiteKingsStart)
-    {
-        std::cerr << "Invalid number of white kings. Expected: " << nbWhiteKingsStart << ". Given: " << nbWhiteKings << std::endl;
-        return NOK;
-    }
-    if (nbBlackKings != nbBlackKingsStart)
-    {
-        std::cerr << "Invalid number of black kings. Expected: " << nbBlackKingsStart << ". Given: " << nbBlackKings << std::endl;
-        return NOK;
+        int nbKings = piece_count(fenBoard, c, royal, v);
+        int nbKingsStart = piece_count(startFenBoard, c, royal, v);
+
+        if (nbKings > 1)
+        {
+            std::cerr << "Invalid number of " << (c == WHITE ? "white" : "black")
+                      << " kings. Maximum: 1. Given: " << nbKings << std::endl;
+            return NOK;
+        }
+        if (nbKings != nbKingsStart)
+        {
+            std::cerr << "Invalid number of " << (c == WHITE ? "white" : "black")
+                      << " kings. Expected: " << nbKingsStart << ". Given: " << nbKings << std::endl;
+            return NOK;
+        }
     }
     return OK;
 }
@@ -1039,7 +1040,20 @@ inline FenValidation validate_fen(const std::string& fen, const Variant* v, bool
     }
 
     // check for number of kings
-    if (v->pieceTypes & KING)
+    PieceType whiteRoyal = v->castlingKingPiece[WHITE];
+    PieceType blackRoyal = v->castlingKingPiece[BLACK];
+    bool enforceRoyalCount = false;
+    for (Color c : {WHITE, BLACK})
+    {
+        PieceType royal = c == WHITE ? whiteRoyal : blackRoyal;
+        if (royal != NO_PIECE_TYPE && (v->pieceTypes & piece_set(royal)) && piece_count(startFenParts[0], c, royal, v) > 0)
+        {
+            enforceRoyalCount = true;
+            break;
+        }
+    }
+
+    if (enforceRoyalCount)
     {
         // we have a royal king in this variant,
         // ensure that each side has exactly as many kings as in the starting position
@@ -1048,13 +1062,15 @@ inline FenValidation validate_fen(const std::string& fen, const Variant* v, bool
             return FEN_INVALID_NUMBER_OF_KINGS;
 
         // check for touching kings if there are exactly two royal kings on the board (excluding pocket)
+        PieceType touchWhite = (whiteRoyal != NO_PIECE_TYPE && (v->pieceTypes & piece_set(whiteRoyal))) ? whiteRoyal : KING;
+        PieceType touchBlack = (blackRoyal != NO_PIECE_TYPE && (v->pieceTypes & piece_set(blackRoyal))) ? blackRoyal : KING;
         if (   v->kingType == KING
-            && piece_count(fenParts[0], WHITE, KING, v) - piece_count(pocket, WHITE, KING, v) == 1
-            && piece_count(fenParts[0], BLACK, KING, v) - piece_count(pocket, BLACK, KING, v) == 1)
+            && piece_count(fenParts[0], WHITE, touchWhite, v) - piece_count(pocket, WHITE, touchWhite, v) == 1
+            && piece_count(fenParts[0], BLACK, touchBlack, v) - piece_count(pocket, BLACK, touchBlack, v) == 1)
         {
             std::array<CharSquare, 2> kingPositions;
-            kingPositions[WHITE] = board.get_square_for_piece(v->pieceToChar[make_piece(WHITE, KING)]);
-            kingPositions[BLACK] = board.get_square_for_piece(v->pieceToChar[make_piece(BLACK, KING)]);
+            kingPositions[WHITE] = board.get_square_for_piece(v->pieceToChar[make_piece(WHITE, touchWhite)]);
+            kingPositions[BLACK] = board.get_square_for_piece(v->pieceToChar[make_piece(BLACK, touchBlack)]);
             if (check_touching_kings(board, kingPositions) == NOK)
                 return FEN_TOUCHING_KINGS;
         }
