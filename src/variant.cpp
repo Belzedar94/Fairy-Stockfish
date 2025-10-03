@@ -648,10 +648,89 @@ namespace {
     //RecycleChess
     //	# https://brainking.com/en/GameRules?tp=9
     Variant* recycle_variant() {
-	 Variant* v = crazyhouse_variant()->init();
-       v->selfCapture = true; 
+         Variant* v = crazyhouse_variant()->init();
+       v->selfCapture = true;
   return v;
-    }	   
+    }
+
+    // Andernach chess
+    // https://en.wikipedia.org/wiki/Andernach_chess
+    Variant* andernach_variant() {
+        Variant* v = chess_variant()->init();
+        v->remove_piece(KING);
+        v->add_piece(COMMONER, 'k');
+        v->castlingKingPiece[WHITE] = v->castlingKingPiece[BLACK] = COMMONER;
+        v->extinctionPieceTypes = piece_set(COMMONER);
+        v->nnueAlias = "nn-";
+        v->changingColors.trigger = ColorChangeTrigger::ON_CAPTURE;
+        v->changingColors.target = ColorChangeTarget::OPPONENT;
+        v->changingColors.pieceTypes = ~piece_set(COMMONER);
+        return v;
+    }
+
+    // Anti-Andernach chess
+    Variant* antiandernach_variant() {
+        Variant* v = chess_variant()->init();
+        v->remove_piece(KING);
+        v->add_piece(COMMONER, 'k');
+        v->castlingKingPiece[WHITE] = v->castlingKingPiece[BLACK] = COMMONER;
+        v->extinctionPieceTypes = piece_set(COMMONER);
+        v->nnueAlias = "nn-";
+        v->changingColors.trigger = ColorChangeTrigger::ON_NON_CAPTURE;
+        v->changingColors.target = ColorChangeTarget::OPPONENT;
+        v->changingColors.pieceTypes = ~piece_set(COMMONER);
+        return v;
+    }
+
+    // Super-Andernach chess
+    Variant* superandernach_variant() {
+        Variant* v = chess_variant()->init();
+        v->remove_piece(KING);
+        v->add_piece(COMMONER, 'k');
+        v->castlingKingPiece[WHITE] = v->castlingKingPiece[BLACK] = COMMONER;
+        v->extinctionPieceTypes = piece_set(COMMONER);
+        v->nnueAlias = "nn-";
+        v->changingColors.trigger = ColorChangeTrigger::ALWAYS;
+        v->changingColors.target = ColorChangeTarget::OPPONENT;
+        v->changingColors.pieceTypes = ~piece_set(COMMONER);
+        return v;
+    }
+
+    // Tibetan chess
+    Variant* tibetan_variant() {
+        Variant* v = chess_variant()->init();
+        v->remove_piece(KING);
+        v->add_piece(COMMONER, 'k');
+        v->castlingKingPiece[WHITE] = v->castlingKingPiece[BLACK] = COMMONER;
+        v->extinctionPieceTypes = piece_set(COMMONER);
+        v->nnueAlias = "nn-";
+        v->changingColors.trigger = ColorChangeTrigger::ON_CAPTURE;
+        v->changingColors.target = ColorChangeTarget::CAPTURED;
+        v->changingColors.pieceTypes = ~piece_set(COMMONER);
+        v->changingColors.colors.set(WHITE, false);
+        v->changingColors.colors.set(BLACK, true);
+        v->changingColors.changeTypeToCaptured = true;
+        v->changingColors.requireDifferentCaptureType = true;
+        v->changingColors.resetPromotionState = true;
+        return v;
+    }
+
+    // Benedict chess
+    // https://www.chessvariants.com/difftaking.dir/benedict.html
+    Variant* benedict_variant() {
+        Variant* v = chess_variant()->init();
+        v->nnueAlias = "nn-";
+        v->captureDisabled = true;
+        v->attackedChangingColors.enabled = true;
+        v->attackedChangingColors.trigger = ColorChangeTrigger::ALWAYS;
+        v->attackedChangingColors.moverPieceTypes = ~NO_PIECE_SET;
+        v->attackedChangingColors.targetPieceTypes = ~NO_PIECE_SET;
+        v->attackedChangingColors.target = ColorChangeTarget::MOVER;
+        v->attackedChangingColors.convertedPiecesDormant = true;
+        v->extinctionValue = -VALUE_MATE;
+        v->extinctionPieceTypes = piece_set(KING);
+        return v;
+    }
 
     // Chessgi
     // Variant of loop chess where pawns can be dropped to the first rank
@@ -1891,8 +1970,13 @@ void VariantMap::init() {
     add("isolation7x7", isolation7x7_variant());
     add("snailtrail", snailtrail_variant());
     add("fox-and-hounds", fox_and_hounds_variant());
-	add("captureanything", captureanything_variant());
-	add("recycle", recycle_variant());
+    add("captureanything", captureanything_variant());
+    add("recycle", recycle_variant());
+    add("andernach", andernach_variant());
+    add("antiandernach", antiandernach_variant());
+    add("superandernach", superandernach_variant());
+    add("tibetan", tibetan_variant());
+    add("benedict", benedict_variant());
 #ifdef ALLVARS
     add("duck", duck_variant());
 #endif
@@ -1984,6 +2068,10 @@ Variant* Variant::conclude() {
         doubleStepRegion[WHITE] = doubleStepRegion[BLACK] = 0;
     if (!doubleStepRegion[WHITE] && !doubleStepRegion[BLACK])
         doubleStep = false;
+
+    changingColors.pieceTypes &= pieceTypes;
+    attackedChangingColors.moverPieceTypes &= pieceTypes;
+    attackedChangingColors.targetPieceTypes &= pieceTypes;
 
     // Determine optimizations
     bool restrictedMobility = false;

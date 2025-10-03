@@ -153,9 +153,10 @@ namespace {
     const Bitboard pawns      = pos.pieces(Us, PAWN);
     const Bitboard movable    = pos.board_bb(Us, PAWN) & ~pos.pieces();
     const Bitboard friendlyCapturable = pos.pieces(Us) & ~pos.pieces(Us, KING);
+    Bitboard enemyCapturable = pos.capture_disabled() ? Bitboard(0) : pos.pieces(Them);
     const Bitboard capturable = pos.board_bb(Us, PAWN)
-                              & (allowFriendlyCaptures ? (pos.pieces(Them) | friendlyCapturable)
-                                                       :  pos.pieces(Them));
+                              & (allowFriendlyCaptures ? (enemyCapturable | friendlyCapturable)
+                                                       :  enemyCapturable);
 
     target = Type == EVASIONS ? target : AllSquares;
 
@@ -413,6 +414,13 @@ namespace {
             Square checksq = lsb(pos.checkers());
             if (LeaperAttacks[~Us][type_of(pos.piece_on(checksq))][checksq] & pos.square<KING>(Us))
                 target = pos.checkers();
+        }
+
+        if (pos.capture_disabled())
+        {
+            if (Type == CAPTURES)
+                target = Bitboard(0);
+            target &= ~pos.pieces(~Us);
         }
 
         // Remove inaccessible squares (outside board + wall squares)

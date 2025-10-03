@@ -16,6 +16,8 @@
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#include <algorithm>
+#include <cctype>
 #include <string>
 #include <sstream>
 
@@ -76,6 +78,107 @@ namespace {
                 : value == "draw" ? VALUE_DRAW
                 : VALUE_NONE;
         return value == "win" || value == "loss" || value == "draw" || value == "none";
+    }
+
+    template <> bool set(const std::string& value, ColorMask& target) {
+        ColorMask mask;
+        mask.set(WHITE, false);
+        mask.set(BLACK, false);
+
+        std::string normalized = value;
+        std::replace(normalized.begin(), normalized.end(), ',', ' ');
+
+        std::stringstream ss(normalized);
+        std::string token;
+        bool any = false;
+        bool valid = true;
+        while (ss >> token)
+        {
+            token.erase(std::remove_if(token.begin(), token.end(), [](unsigned char ch) {
+                return std::isspace(ch) || ch == '+';
+            }), token.end());
+            std::transform(token.begin(), token.end(), token.begin(), [](unsigned char ch) { return char(std::tolower(ch)); });
+
+            if (token == "white")
+            {
+                mask.set(WHITE, true);
+                any = true;
+            }
+            else if (token == "black")
+            {
+                mask.set(BLACK, true);
+                any = true;
+            }
+            else if (token == "both" || token == "any" || token == "all")
+            {
+                mask.set(WHITE, true);
+                mask.set(BLACK, true);
+                any = true;
+            }
+            else if (token == "none")
+            {
+                mask.set(WHITE, false);
+                mask.set(BLACK, false);
+                any = true;
+            }
+            else if (!token.empty())
+            {
+                valid = false;
+                break;
+            }
+        }
+
+        if (!any)
+        {
+            // Allow empty value to mean both colors
+            mask.set(WHITE, true);
+            mask.set(BLACK, true);
+        }
+
+        if (valid)
+            target = mask;
+
+        return valid;
+    }
+
+    template <> bool set(const std::string& value, ColorChangeTrigger& target) {
+        std::string token = value;
+        std::transform(token.begin(), token.end(), token.begin(), [](unsigned char ch) { return char(std::tolower(ch)); });
+
+        if (token == "capture")
+            target = ColorChangeTrigger::ON_CAPTURE;
+        else if (token == "noncapture" || token == "non-capture")
+            target = ColorChangeTrigger::ON_NON_CAPTURE;
+        else if (token == "always" || token == "move" || token == "any")
+            target = ColorChangeTrigger::ALWAYS;
+        else if (token == "never" || token == "none" || token.empty())
+            target = ColorChangeTrigger::NEVER;
+        else
+            return false;
+
+        return true;
+    }
+
+    template <> bool set(const std::string& value, ColorChangeTarget& target) {
+        std::string token = value;
+        std::transform(token.begin(), token.end(), token.begin(), [](unsigned char ch) { return char(std::tolower(ch)); });
+
+        if (token == "mover" || token == "self")
+            target = ColorChangeTarget::MOVER;
+        else if (token == "opponent" || token == "enemy")
+            target = ColorChangeTarget::OPPONENT;
+        else if (token == "captured")
+            target = ColorChangeTarget::CAPTURED;
+        else if (token == "white")
+            target = ColorChangeTarget::WHITE;
+        else if (token == "black")
+            target = ColorChangeTarget::BLACK;
+        else if (token == "none" || token.empty())
+            target = ColorChangeTarget::NONE;
+        else
+            return false;
+
+        return true;
     }
 
     template <> bool set(const std::string& value, MaterialCounting& target) {
@@ -456,6 +559,23 @@ Variant* VariantParser<DoCheck>::parse(Variant* v) {
     parse_attribute("dropChecks", v->dropChecks);
     parse_attribute("mustCapture", v->mustCapture);
     parse_attribute("selfCapture", v->selfCapture);
+    parse_attribute("capturesDisabled", v->captureDisabled);
+    parse_attribute("changingColorsTrigger", v->changingColors.trigger);
+    parse_attribute("changingColorsTarget", v->changingColors.target);
+    parse_attribute("changingColorsPieceTypes", v->changingColors.pieceTypes, v->pieceToChar);
+    parse_attribute("changingColorsColors", v->changingColors.colors);
+    parse_attribute("changingColorsChangeTypeToCaptured", v->changingColors.changeTypeToCaptured);
+    parse_attribute("changingColorsDifferentTypeOnly", v->changingColors.requireDifferentCaptureType);
+    parse_attribute("changingColorsResetPromotion", v->changingColors.resetPromotionState);
+    parse_attribute("attackChangingColors", v->attackedChangingColors.enabled);
+    parse_attribute("attackChangingColorsTrigger", v->attackedChangingColors.trigger);
+    parse_attribute("attackChangingColorsMoverTypes", v->attackedChangingColors.moverPieceTypes, v->pieceToChar);
+    parse_attribute("attackChangingColorsMoverColors", v->attackedChangingColors.moverColors);
+    parse_attribute("attackChangingColorsTargetTypes", v->attackedChangingColors.targetPieceTypes, v->pieceToChar);
+    parse_attribute("attackChangingColorsTargetColors", v->attackedChangingColors.targetColors);
+    parse_attribute("attackChangingColorsTarget", v->attackedChangingColors.target);
+    parse_attribute("attackChangingColorsResetPromotion", v->attackedChangingColors.resetPromotionState);
+    parse_attribute("attackChangingColorsDormant", v->attackedChangingColors.convertedPiecesDormant);
     parse_attribute("mustDrop", v->mustDrop);
     parse_attribute("mustDropType", v->mustDropType, v->pieceToChar);
     parse_attribute("pieceDrops", v->pieceDrops);

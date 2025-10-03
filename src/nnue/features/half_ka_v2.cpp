@@ -84,7 +84,10 @@ namespace Stockfish::Eval::NNUE::Features {
   }
 
   bool HalfKAv2::requires_refresh(StateInfo* st, Color perspective) {
-    return st->dirtyPiece.piece[0] == make_piece(perspective, KING);
+    return st->dirtyPiece.requiresRefresh
+        || (st->dirtyPiece.piece[0] != NO_PIECE
+            && (type_of(st->dirtyPiece.piece[0]) == KING || type_of(st->dirtyPiece.piece[0]) == COMMONER)
+            && color_of(st->dirtyPiece.piece[0]) == perspective);
   }
 
 }  // namespace Stockfish::Eval::NNUE::Features
