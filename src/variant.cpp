@@ -661,6 +661,8 @@ namespace {
         v->changingColors.trigger = ColorChangeTrigger::ON_CAPTURE;
         v->changingColors.target = ColorChangeTarget::OPPONENT;
         v->changingColors.pieceTypes = ~piece_set(KING);
+        v->extinctionValue = -VALUE_MATE;
+        v->extinctionPieceTypes = piece_set(KING);
         return v;
     }
 
@@ -671,6 +673,8 @@ namespace {
         v->changingColors.trigger = ColorChangeTrigger::ON_NON_CAPTURE;
         v->changingColors.target = ColorChangeTarget::OPPONENT;
         v->changingColors.pieceTypes = ~piece_set(KING);
+        v->extinctionValue = -VALUE_MATE;
+        v->extinctionPieceTypes = piece_set(KING);
         return v;
     }
 
@@ -681,6 +685,8 @@ namespace {
         v->changingColors.trigger = ColorChangeTrigger::ALWAYS;
         v->changingColors.target = ColorChangeTarget::OPPONENT;
         v->changingColors.pieceTypes = ~piece_set(KING);
+        v->extinctionValue = -VALUE_MATE;
+        v->extinctionPieceTypes = piece_set(KING);
         return v;
     }
 
@@ -696,6 +702,8 @@ namespace {
         v->changingColors.changeTypeToCaptured = true;
         v->changingColors.requireDifferentCaptureType = true;
         v->changingColors.resetPromotionState = true;
+        v->extinctionValue = -VALUE_MATE;
+        v->extinctionPieceTypes = piece_set(KING);
         return v;
     }
 

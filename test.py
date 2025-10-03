@@ -737,6 +737,27 @@ class TestPyffish(unittest.TestCase):
         result = sf.get_fen("andernach", fen, ["e5e6"])
         self.assertEqual(result, "4k3/8/4P3/8/8/8/8/4K3 b - - 0 1")
 
+    def test_andernach_king_capture_is_immediate_mate(self):
+        fen = sf.start_fen("andernach")
+        moves = [
+            "d2d4",
+            "d7d5",
+            "c2c4",
+            "e7e5",
+            "c1g5",
+            "f7f6",
+            "d1a4",
+            "c8d7",
+            "g5e3",
+            "d7a4",
+            "a4e8",
+        ]
+
+        game_end, value = sf.is_immediate_game_end("andernach", fen, moves)
+        self.assertTrue(game_end)
+        self.assertEqual(value, -sf.VALUE_MATE)
+        self.assertEqual(sf.game_result("andernach", fen, moves), -sf.VALUE_MATE)
+
     def test_antiandernach_non_capture_changes_color(self):
         fen = "4k3/8/8/4P3/8/8/8/4K3 w - - 0 1"
         result = sf.get_fen("antiandernach", fen, ["e5e6"])
@@ -755,6 +776,27 @@ class TestPyffish(unittest.TestCase):
         fen = "4k3/8/8/3p4/2Q5/8/8/4K3 b - - 0 1"
         result = sf.get_fen("tibetan", fen, ["d5c4"])
         self.assertEqual(result, "4k3/8/8/8/2Q5/8/8/4K3 w - - 0 2")
+
+    def test_tibetan_king_capture_is_immediate_mate(self):
+        fen = sf.start_fen("tibetan")
+        moves = [
+            "d2d4",
+            "d7d5",
+            "c2c4",
+            "e7e5",
+            "c1g5",
+            "f7f6",
+            "d1a4",
+            "c8d7",
+            "g5e3",
+            "d7a4",
+            "a4e8",
+        ]
+
+        game_end, value = sf.is_immediate_game_end("tibetan", fen, moves)
+        self.assertTrue(game_end)
+        self.assertEqual(value, -sf.VALUE_MATE)
+        self.assertEqual(sf.game_result("tibetan", fen, moves), -sf.VALUE_MATE)
 
     def test_benedict_flips_attacked_pieces(self):
         fen = "4k3/3n4/8/8/8/8/3R4/4K3 w - - 0 1"
