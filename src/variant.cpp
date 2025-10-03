@@ -660,6 +660,7 @@ namespace {
         v->remove_piece(KING);
         v->add_piece(COMMONER, 'k');
         v->castlingKingPiece[WHITE] = v->castlingKingPiece[BLACK] = COMMONER;
+        v->castlingKingIsRoyal = true;
         v->extinctionPieceTypes = piece_set(COMMONER);
         v->nnueAlias = "nn-";
         v->changingColors.trigger = ColorChangeTrigger::ON_CAPTURE;
@@ -674,6 +675,7 @@ namespace {
         v->remove_piece(KING);
         v->add_piece(COMMONER, 'k');
         v->castlingKingPiece[WHITE] = v->castlingKingPiece[BLACK] = COMMONER;
+        v->castlingKingIsRoyal = true;
         v->extinctionPieceTypes = piece_set(COMMONER);
         v->nnueAlias = "nn-";
         v->changingColors.trigger = ColorChangeTrigger::ON_NON_CAPTURE;
@@ -688,6 +690,7 @@ namespace {
         v->remove_piece(KING);
         v->add_piece(COMMONER, 'k');
         v->castlingKingPiece[WHITE] = v->castlingKingPiece[BLACK] = COMMONER;
+        v->castlingKingIsRoyal = true;
         v->extinctionPieceTypes = piece_set(COMMONER);
         v->nnueAlias = "nn-";
         v->changingColors.trigger = ColorChangeTrigger::ALWAYS;
@@ -702,6 +705,7 @@ namespace {
         v->remove_piece(KING);
         v->add_piece(COMMONER, 'k');
         v->castlingKingPiece[WHITE] = v->castlingKingPiece[BLACK] = COMMONER;
+        v->castlingKingIsRoyal = true;
         v->extinctionPieceTypes = piece_set(COMMONER);
         v->nnueAlias = "nn-";
         v->changingColors.trigger = ColorChangeTrigger::ON_CAPTURE;

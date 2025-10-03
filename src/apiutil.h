@@ -882,7 +882,7 @@ inline int piece_count(const std::string& fenBoard, Color c, PieceType pt, const
 inline Validation check_number_of_kings(const std::string& fenBoard, const std::string& startFenBoard, const Variant* v) {
     for (Color c : {WHITE, BLACK})
     {
-        PieceType royal = v->castlingKingPiece[c];
+        PieceType royal = v->castlingKingIsRoyal ? v->castlingKingPiece[c] : KING;
         if (royal == NO_PIECE_TYPE || !(v->pieceTypes & piece_set(royal)))
         {
             if (!(v->pieceTypes & KING))
@@ -1040,13 +1040,25 @@ inline FenValidation validate_fen(const std::string& fen, const Variant* v, bool
     }
 
     // check for number of kings
-    PieceType whiteRoyal = v->castlingKingPiece[WHITE];
-    PieceType blackRoyal = v->castlingKingPiece[BLACK];
+    auto royal_piece = [&](Color c) {
+        PieceType royal = KING;
+        if (v->castlingKingIsRoyal)
+        {
+            PieceType castlingRoyal = v->castlingKingPiece[c];
+            if (castlingRoyal != NO_PIECE_TYPE && (v->pieceTypes & piece_set(castlingRoyal)))
+                royal = castlingRoyal;
+        }
+        return royal;
+    };
+
+    PieceType whiteRoyal = royal_piece(WHITE);
+    PieceType blackRoyal = royal_piece(BLACK);
+
     bool enforceRoyalCount = false;
     for (Color c : {WHITE, BLACK})
     {
         PieceType royal = c == WHITE ? whiteRoyal : blackRoyal;
-        if (royal != NO_PIECE_TYPE && (v->pieceTypes & piece_set(royal)) && piece_count(startFenParts[0], c, royal, v) > 0)
+        if ((v->pieceTypes & piece_set(royal)) && piece_count(startFenParts[0], c, royal, v) > 0)
         {
             enforceRoyalCount = true;
             break;
@@ -1062,8 +1074,8 @@ inline FenValidation validate_fen(const std::string& fen, const Variant* v, bool
             return FEN_INVALID_NUMBER_OF_KINGS;
 
         // check for touching kings if there are exactly two royal kings on the board (excluding pocket)
-        PieceType touchWhite = (whiteRoyal != NO_PIECE_TYPE && (v->pieceTypes & piece_set(whiteRoyal))) ? whiteRoyal : KING;
-        PieceType touchBlack = (blackRoyal != NO_PIECE_TYPE && (v->pieceTypes & piece_set(blackRoyal))) ? blackRoyal : KING;
+        PieceType touchWhite = (v->pieceTypes & piece_set(whiteRoyal)) ? whiteRoyal : KING;
+        PieceType touchBlack = (v->pieceTypes & piece_set(blackRoyal)) ? blackRoyal : KING;
         if (   v->kingType == KING
             && piece_count(fenParts[0], WHITE, touchWhite, v) - piece_count(pocket, WHITE, touchWhite, v) == 1
             && piece_count(fenParts[0], BLACK, touchBlack, v) - piece_count(pocket, BLACK, touchBlack, v) == 1)

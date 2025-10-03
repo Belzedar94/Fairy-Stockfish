@@ -1228,10 +1228,9 @@ inline Piece Position::moved_piece(Move m) const {
 }
 
 inline Bitboard Position::pieces(PieceType pt) const {
-  if (pt == KING)
+  if (pt == KING && var && var->castlingKingIsRoyal)
   {
       Bitboard result = byTypeBB[KING];
-      assert(var != nullptr);
       PieceType whiteRoyal = castling_king_piece(WHITE);
       PieceType blackRoyal = castling_king_piece(BLACK);
       if (whiteRoyal != KING)
@@ -1252,7 +1251,7 @@ inline Bitboard Position::pieces(Color c) const {
 }
 
 inline Bitboard Position::pieces(Color c, PieceType pt) const {
-  if (pt == KING)
+  if (pt == KING && var && var->castlingKingIsRoyal)
   {
       PieceType royal = castling_king_piece(c);
       if (royal != KING)
@@ -1278,7 +1277,7 @@ inline Bitboard Position::non_sliding_riders() const {
 }
 
 inline int Position::count(Color c, PieceType pt) const {
-  if (pt == KING)
+  if (pt == KING && var && var->castlingKingIsRoyal)
   {
       PieceType royal = castling_king_piece(c);
       if (royal != KING)
@@ -1301,7 +1300,7 @@ template<PieceType Pt> inline Square Position::square(Color c) const {
 
 inline Square Position::square(Color c, PieceType pt) const {
   assert(count(c, pt) == 1);
-  if (pt == KING)
+  if (pt == KING && var && var->castlingKingIsRoyal)
   {
       PieceType royal = castling_king_piece(c);
       if (royal != KING)
