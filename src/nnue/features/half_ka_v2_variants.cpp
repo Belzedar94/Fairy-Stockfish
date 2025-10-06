@@ -105,10 +105,8 @@ namespace Stockfish::Eval::NNUE::Features {
     return pos.count<ALL_PIECES>();
   }
 
-  bool HalfKAv2Variants::requires_refresh([[maybe_unused]] StateInfo* st,
-                                          [[maybe_unused]] Color perspective,
-                                          [[maybe_unused]] const Position& pos) {
-    return true;
+  bool HalfKAv2Variants::requires_refresh(StateInfo* st, Color perspective, const Position& pos) {
+    return st->dirtyPiece.piece[0] == make_piece(perspective, pos.nnue_king()) || pos.flip_enclosed_pieces();
   }
 
 }  // namespace Stockfish::Eval::NNUE::Features
