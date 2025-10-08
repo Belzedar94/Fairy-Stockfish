@@ -4,7 +4,7 @@ on:
   push:
     branches: [ master, work ]
   pull_request:
-    branches: [ master, work ]
+    branches: [ master, ** ]
 
 env:
   EM_VERSION: 1.39.16
