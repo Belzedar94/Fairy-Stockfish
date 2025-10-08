@@ -6,6 +6,7 @@ on:
         - master
         - work
     pull_request:
+        branches:
         - master
         - implement-battle-of-the-kings-variant-7bhqbn
         - codex/refactor-movepicker.cpp-heuristics-for-battlekings
