@@ -6,7 +6,8 @@ on:
         - master
         - work
     pull_request:
-
+        - master
+        - implement-battle-of-the-kings-variant-7bhqbn
 
 jobs:
   build_wheels:
