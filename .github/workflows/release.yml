@@ -4,7 +4,7 @@ on:
   push:
     branches: [ master ]
   pull_request:
-    branches: [ ** ]
+    branches: [ master, implement-battle-of-the-kings-variant-7bhqbn ]
 
 jobs:
   windows:
