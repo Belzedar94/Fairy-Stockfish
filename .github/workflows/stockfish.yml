@@ -6,9 +6,7 @@ on:
       - tools
       - github_ci
   pull_request:
-    branches:
-      - master
-      - tools
+
 jobs:
   Stockfish:
     name: ${{ matrix.config.name }}
