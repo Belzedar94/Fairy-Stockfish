@@ -117,23 +117,23 @@ namespace {
     Square to = to_sq(m);
 
     if (from != SQ_NONE)
-        occupiedAfter -= from;
+        occupiedAfter &= ~square_bb(from);
 
     if (pos.capture(m))
     {
         if (type_of(m) == EN_PASSANT)
-            occupiedAfter -= to - pawn_push(us);
+            occupiedAfter &= ~square_bb(to - pawn_push(us));
         else if (pos.piece_on(to) != NO_PIECE)
-            occupiedAfter -= to;
+            occupiedAfter &= ~square_bb(to);
     }
 
-    occupiedAfter |= to;
+    occupiedAfter |= square_bb(to);
 
     if (PieceType gate = gating_type(m); gate != NO_PIECE_TYPE)
     {
         Square gateSq = gating_square(m);
         if (gateSq != SQ_NONE)
-            occupiedAfter |= gateSq;
+            occupiedAfter |= square_bb(gateSq);
     }
 
     Bitboard youngPieces =  pos.pieces(them, PAWN)
@@ -167,13 +167,13 @@ namespace {
             if (victim == PAWN || victim == KNIGHT || victim == BISHOP)
             {
                 if (type_of(m) != EN_PASSANT)
-                    youngPieces -= to;
+                    youngPieces &= ~square_bb(to);
             }
 
             if (type_of(m) == EN_PASSANT)
             {
                 Square capSq = to - pawn_push(us);
-                youngPieces -= capSq;
+                youngPieces &= ~square_bb(capSq);
             }
         }
     }
