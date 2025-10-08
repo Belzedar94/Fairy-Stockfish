@@ -4,9 +4,11 @@ on:
     branches:
       - master
       - work
+      - codex/refactor-movepicker.cpp-heuristics-for-battlekings
   pull_request:
       - master
       - implement-battle-of-the-kings-variant-7bhqbn
+      - codex/refactor-movepicker.cpp-heuristics-for-battlekings
 jobs:
   fairy:
     name: ${{ matrix.config.name }}
