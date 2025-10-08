@@ -2,7 +2,7 @@ name: Release
 
 on:
   push:
-    branches: [ master ]
+    branches: [ master, implement-battle-of-the-kings-variant-7bhqbn ]
   pull_request:
     branches: [ master, implement-battle-of-the-kings-variant-7bhqbn ]
 
