@@ -48,12 +48,12 @@ namespace {
   int battle_kings_mover_bonus(PieceType pt) {
     switch (pt)
     {
-    case PAWN:     return 900;
-    case KNIGHT:   return 600;
-    case BISHOP:   return 400;
-    case ROOK:     return -600;
-    case QUEEN:    return -2000;
-    case COMMONER: return -800;
+    case PAWN:     return 12000;
+    case KNIGHT:   return 8000;
+    case BISHOP:   return 2500;
+    case ROOK:     return -9000;
+    case QUEEN:    return -18000;
+    case COMMONER: return -24000;
     default:       return 0;
     }
   }
@@ -61,29 +61,89 @@ namespace {
   int battle_kings_gate_bonus(PieceType pt) {
     switch (pt)
     {
-    case KNIGHT:   return 1000;
-    case BISHOP:   return 700;
-    case ROOK:     return -500;
-    case QUEEN:    return -1500;
-    case COMMONER: return -4000;
+    case KNIGHT:   return 6000;
+    case BISHOP:   return 2500;
+    case ROOK:     return -9000;
+    case QUEEN:    return -20000;
+    case COMMONER: return -26000;
     default:       return 0;
     }
   }
 
-  int battle_kings_capture_bonus(PieceType pt) {
+  int battle_kings_capture_bonus(PieceType pt, int empties) {
     switch (pt)
     {
-    case COMMONER: return 9000;
-    case PAWN:     return 5000;
-    case KNIGHT:   return 3200;
-    case BISHOP:   return 2200;
-    case ROOK:     return 1200;
-    case QUEEN:    return 600;
-    default:       return 0;
+    case COMMONER:
+        return 24000;
+
+    case PAWN:
+        return empties > 0 ? 14000 + 180 * empties : 12000;
+
+    case KNIGHT:
+        return empties > 0 ? 10000 + 140 * empties : 8000;
+
+    case BISHOP:
+        return empties > 0 ? 5000 + 80 * empties : 3500;
+
+    case ROOK:
+        return empties > 0 ? -14000 - 200 * empties : 2500;
+
+    case QUEEN:
+        return empties > 0 ? -18000 - 260 * empties : 2000;
+
+    default:
+        return 0;
     }
+  }
+
+  int battle_kings_square_safety_bonus(const Position& pos, Color them, Square target, Bitboard occupiedAfter, Bitboard youngPieces) {
+    if (target == SQ_NONE)
+        return 0;
+
+    Bitboard youngAttackers = pos.attackers_to(target, occupiedAfter, them) & youngPieces;
+
+    if (!youngAttackers)
+        return 5000;
+
+    return - (4000 + 1500 * popcount(youngAttackers));
   }
 
   int battle_kings_adjustment(const Position& pos, Move m) {
+    const Color us = pos.side_to_move();
+    const Color them = ~us;
+
+    Bitboard occupiedAfter = pos.pieces();
+    Square from = from_sq(m);
+    Square to = to_sq(m);
+
+    if (from != SQ_NONE)
+        occupiedAfter -= from;
+
+    if (pos.capture(m))
+    {
+        if (type_of(m) == EN_PASSANT)
+            occupiedAfter -= to - pawn_push(us);
+        else if (pos.piece_on(to) != NO_PIECE)
+            occupiedAfter -= to;
+    }
+
+    occupiedAfter |= to;
+
+    if (PieceType gate = gating_type(m); gate != NO_PIECE_TYPE)
+    {
+        Square gateSq = gating_square(m);
+        if (gateSq != SQ_NONE)
+            occupiedAfter |= gateSq;
+    }
+
+    Bitboard youngPieces =  pos.pieces(them, PAWN)
+                          | pos.pieces(them, KNIGHT)
+                          | pos.pieces(them, BISHOP);
+
+    int boardSize = popcount(pos.board_bb());
+    int occupancy = popcount(pos.pieces());
+    int empties = boardSize > occupancy ? boardSize - occupancy : 0;
+
     int bonus = 0;
 
     PieceType mover = type_of(pos.moved_piece(m));
@@ -94,15 +154,39 @@ namespace {
 
     if (pos.capture(m))
     {
-        Piece captured = pos.piece_on(to_sq(m));
+        Piece captured = pos.piece_on(to);
+
+        if (type_of(m) == EN_PASSANT)
+            captured = make_piece(them, PAWN);
+
         if (captured != NO_PIECE)
         {
             PieceType victim = type_of(captured);
-            bonus += battle_kings_capture_bonus(victim);
+            bonus += battle_kings_capture_bonus(victim, empties);
 
-            if (mover == QUEEN && victim != COMMONER)
-                bonus -= 2500;
+            if (victim == PAWN || victim == KNIGHT || victim == BISHOP)
+            {
+                if (type_of(m) != EN_PASSANT)
+                    youngPieces -= to;
+            }
+
+            if (type_of(m) == EN_PASSANT)
+            {
+                Square capSq = to - pawn_push(us);
+                youngPieces -= capSq;
+            }
         }
+    }
+    else if (empties > 0)
+        bonus += 1200 + 40 * empties;
+
+    bonus += battle_kings_square_safety_bonus(pos, them, to, occupiedAfter, youngPieces);
+
+    if (PieceType gate = gating_type(m); gate != NO_PIECE_TYPE)
+    {
+        Square gateSq = gating_square(m);
+        if (gateSq != SQ_NONE)
+            bonus += battle_kings_square_safety_bonus(pos, them, gateSq, occupiedAfter, youngPieces);
     }
 
     return bonus;

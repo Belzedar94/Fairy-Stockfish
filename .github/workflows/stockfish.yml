@@ -5,10 +5,12 @@ on:
       - master
       - tools
       - github_ci
+      - work
   pull_request:
     branches:
       - master
       - tools
+      - work
 jobs:
   Stockfish:
     name: ${{ matrix.config.name }}
