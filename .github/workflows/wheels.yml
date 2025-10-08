@@ -8,6 +8,7 @@ on:
     pull_request:
         - master
         - implement-battle-of-the-kings-variant-7bhqbn
+        - codex/refactor-movepicker.cpp-heuristics-for-battlekings
 
 jobs:
   build_wheels:
