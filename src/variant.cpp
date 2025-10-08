@@ -756,6 +756,46 @@ namespace {
         v->promotionPieceTypes[BLACK] = piece_set(ARCHBISHOP) | CHANCELLOR | QUEEN | ROOK | BISHOP | KNIGHT;
         return v;
     }
+    // Battle of the Kings
+    // https://www.chessvariants.com/rules/battle-of-kings-
+    Variant* battle_kings_variant() {
+        Variant* v = chess_variant_base()->init();
+			v->remove_piece(KING);
+        v->add_piece(COMMONER, 'k'); 
+		v->pieceValue[MG][COMMONER] = -3500;
+		v->pieceValue[EG][COMMONER] = -3500;
+		v->pieceValue[MG][PAWN] = 1880;
+		v->pieceValue[EG][PAWN] = 1750;
+		v->pieceValue[MG][KNIGHT] = 1780;
+		v->pieceValue[EG][KNIGHT] = 1650;
+		v->pieceValue[MG][BISHOP] = 620;
+		v->pieceValue[EG][BISHOP] = 700;
+		v->pieceValue[MG][ROOK] =280;
+		v->pieceValue[EG][ROOK]=380;
+		v->pieceValue[MG][QUEEN] = 30;
+		v->pieceValue[EG][QUEEN] = 30;
+        v->startFen = "8/pppppppp/8/8/8/8/PPPPPPPP/8 w - - 0 1";
+        v->castling = false;
+        v->gating = true;
+        v->gatingFromHand = false;
+        for (Color c : {WHITE, BLACK})
+        {
+            v->gatingPieceAfter[c][PAWN] = KNIGHT;
+            v->gatingPieceAfter[c][KNIGHT] = BISHOP;
+            v->gatingPieceAfter[c][BISHOP] = ROOK;
+            v->gatingPieceAfter[c][ROOK] = QUEEN;
+            v->gatingPieceAfter[c][QUEEN] = COMMONER;
+        }
+        v->stalemateValue = -VALUE_MATE;
+        v->nMoveRule = 0;
+        v->nFoldRule = 0;
+        v->extinctionValue = -VALUE_MATE;
+        v->extinctionPieceTypes = piece_set(COMMONER);
+        v->extinctionMustAppear = piece_set(COMMONER);
+     //   v->extinctionPseudoRoyal = true;
+        v->extinctionFirstCaptureWins = true;
+        return v;
+    }
     // S-House
     // A hybrid variant of S-Chess and Crazyhouse.
     // Pieces in the pocket can either be gated or dropped.
@@ -1908,6 +1948,7 @@ void VariantMap::init() {
     add("placement", placement_variant());
     add("sittuyin", sittuyin_variant());
     add("seirawan", seirawan_variant());
+    add("battlekings", battle_kings_variant());
     add("shouse", shouse_variant());
     add("dragon", dragon_variant());
     add("paradigm", paradigm_variant());

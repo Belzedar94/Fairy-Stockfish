@@ -22,6 +22,7 @@ GRANDHOUSE = "r8r/1nbqkcabn1/pppppppppp/10/10/10/10/PPPPPPPPPP/1NBQKCABN1/R8R[] 
 XIANGQI = "rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w - - 0 1"
 SHOGUN = "rnb+fkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNB+FKBNR[] w KQkq - 0 1"
 JANGGI = "rnba1abnr/4k4/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/4K4/RNBA1ABNR w - - 0 1"
+BATTLEKINGS = "8/pppppppp/8/8/8/8/PPPPPPPP/8 w - - 0 1"
 
 
 ini_text = """
@@ -315,6 +316,7 @@ class TestPyffish(unittest.TestCase):
     def test_variants_loaded(self):
         variants = sf.variants()
         self.assertTrue("shogun" in variants)
+        self.assertIn("battlekings", variants)
 
     def test_set_option(self):
         result = sf.set_option("UCI_Variant", "capablanca")
@@ -343,6 +345,126 @@ class TestPyffish(unittest.TestCase):
 
         result = sf.start_fen("shogun")
         self.assertEqual(result, SHOGUN)
+
+        result = sf.start_fen("battlekings")
+        self.assertEqual(result, BATTLEKINGS)
+
+    def test_battlekings_gating_sequence(self):
+        start = sf.start_fen("battlekings")
+
+        initial_moves = sf.legal_moves("battlekings", start, [])
+        self.assertIn("e2e4", initial_moves)
+        self.assertNotIn("e2e4n", initial_moves)
+
+        knight_sequence = ["e2e4", "h7h6"]
+        knight_moves = sf.legal_moves("battlekings", start, knight_sequence)
+        self.assertIn("e2c3", knight_moves)
+        self.assertNotIn("e2c3b", knight_moves)
+
+        bishop_sequence = knight_sequence + ["e2c3", "a7a5"]
+        bishop_moves = sf.legal_moves("battlekings", start, bishop_sequence)
+        self.assertIn("e2g4", bishop_moves)
+        self.assertNotIn("e2g4r", bishop_moves)
+
+        rook_sequence = bishop_sequence + ["e2g4", "e7e5"]
+        rook_moves = sf.legal_moves("battlekings", start, rook_sequence)
+        self.assertIn("e2e3", rook_moves)
+        self.assertNotIn("e2e3q", rook_moves)
+
+        queen_sequence = rook_sequence + ["e2e3", "d7d5"]
+        queen_moves = sf.legal_moves("battlekings", start, queen_sequence)
+        self.assertIn("e2e1", queen_moves)
+        self.assertNotIn("e2e1k", queen_moves)
+
+        fen_after_queen = sf.get_fen("battlekings", start, queen_sequence)
+        board_after_queen = fen_after_queen.split()[0]
+        self.assertIn("Q", board_after_queen)
+
+        king_sequence = queen_sequence + ["e2e1"]
+        fen_after_king = sf.get_fen("battlekings", start, king_sequence)
+        board_after_king = fen_after_king.split()[0]
+        self.assertIn("K", board_after_king)
+
+        post_king_moves = sf.legal_moves("battlekings", start, king_sequence + ["a5a4"])
+        self.assertIn("e1d1", post_king_moves)
+        self.assertNotIn("e1d1k", post_king_moves)
+
+    def test_battlekings_gating_after_en_passant(self):
+        start = sf.start_fen("battlekings")
+
+        sequence = ["e2e4", "a7a5", "e4e5", "d7d5", "e5d6", "a5a4"]
+        post_ep_moves = sf.legal_moves("battlekings", start, sequence)
+        self.assertIn("d2d4", post_ep_moves)
+
+        fen_after_gate = sf.get_fen("battlekings", start, sequence + ["d2d4"])
+        board_after_gate = fen_after_gate.split()[0].split("/")
+        rank_two = board_after_gate[6]
+        file_index = 0
+        d_file_piece = None
+        for ch in rank_two:
+            if ch.isdigit():
+                file_index += int(ch)
+            else:
+                if file_index == 3:
+                    d_file_piece = ch
+                    break
+                file_index += 1
+        self.assertEqual(d_file_piece, "N")
+
+    def test_battlekings_en_passant_keeps_gate_available(self):
+        start = sf.start_fen("battlekings")
+        setup = ["e2e3", "c7c5", "f2f3", "c5c4", "d2d4"]
+        expected = "8/ppnppppp/8/2n5/2n5/3pPP2/PPPNNNPP/8 w - - 0 4"
+
+        fen = sf.get_fen("battlekings", start, setup + ["c4d3"])
+        self.assertEqual(fen, expected)
+
+    def test_battlekings_forced_promotion_and_gate(self):
+        start = "8/ppnppppp/8/2n5/2N1P3/2P1BP2/PNPpNNPP/8 b - - 0 5"
+        expected = "8/ppnppppp/8/2n5/2N1P3/2P1BP2/PNPnNNPP/3n4 w - - 0 6"
+
+        legal = sf.legal_moves("battlekings", start, [])
+        self.assertIn("d2d1", legal)
+
+        fen = sf.get_fen("battlekings", start, ["d2d1"])
+        self.assertEqual(fen, expected)
+
+    def test_chess_promotion_does_not_gate(self):
+        start = "8/P7/8/8/8/8/7p/7K w - - 0 1"
+        fen = sf.get_fen("chess", start, ["a7a8q"])
+        self.assertEqual(fen, "Q7/8/8/8/8/8/7p/7K b - - 0 1")
+
+    def test_battlekings_king_spawn_blocked(self):
+        fen = "8/8/8/8/8/3p4/4Q3/8 w - - 0 1"
+        moves = sf.legal_moves("battlekings", fen, [])
+        self.assertFalse(moves)
+
+    def test_battlekings_capture_first_commoner_wins(self):
+        fen = "8/4k1k1/8/8/8/8/4Q3/8 w - - 0 1"
+        self._check_immediate_game_end("battlekings", fen, ["e2e7"], True, -sf.VALUE_MATE)
+
+    def test_battlekings_multiple_commoners(self):
+        start = sf.start_fen("battlekings")
+        sequence = [
+            "e2e4",
+            "h7h6",
+            "e2c3",
+            "a7a5",
+            "e2g4",
+            "e7e5",
+            "e2e3",
+            "d7d5",
+            "e2e1",
+            "a5a4",
+            "e1d1",
+        ]
+        fen = sf.get_fen("battlekings", start, sequence)
+        board = fen.split()[0]
+        self.assertEqual(board.count("K"), 2)
+
+    def test_battlekings_first_commoner_capture_with_multiple(self):
+        fen = "3qk3/pppp1ppp/2nkr3/4p1b1/P1N5/NPPP3P/NBNNPPPN/8 w - - 3 8"
+        self._check_immediate_game_end("battlekings", fen, ["c4d6"], True, -sf.VALUE_MATE)
 
     def test_legal_moves(self):
         fen = "10/10/10/10/10/k9/10/K9 w - - 0 1"

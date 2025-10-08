@@ -31,6 +31,83 @@ int history_slot(Piece pc) {
 
 namespace {
 
+  bool is_battle_kings(const Position& pos) {
+    return  pos.gating()
+        && pos.gating_piece_after(WHITE, PAWN)   == KNIGHT
+        && pos.gating_piece_after(WHITE, KNIGHT) == BISHOP
+        && pos.gating_piece_after(WHITE, BISHOP) == ROOK
+        && pos.gating_piece_after(WHITE, ROOK)   == QUEEN
+        && pos.gating_piece_after(WHITE, QUEEN)  == COMMONER
+        && pos.gating_piece_after(BLACK, PAWN)   == KNIGHT
+        && pos.gating_piece_after(BLACK, KNIGHT) == BISHOP
+        && pos.gating_piece_after(BLACK, BISHOP) == ROOK
+        && pos.gating_piece_after(BLACK, ROOK)   == QUEEN
+        && pos.gating_piece_after(BLACK, QUEEN)  == COMMONER;
+  }
+
+  int battle_kings_mover_bonus(PieceType pt) {
+    switch (pt)
+    {
+    case PAWN:     return 900;
+    case KNIGHT:   return 600;
+    case BISHOP:   return 400;
+    case ROOK:     return -600;
+    case QUEEN:    return -2000;
+    case COMMONER: return -800;
+    default:       return 0;
+    }
+  }
+
+  int battle_kings_gate_bonus(PieceType pt) {
+    switch (pt)
+    {
+    case KNIGHT:   return 1000;
+    case BISHOP:   return 700;
+    case ROOK:     return -500;
+    case QUEEN:    return -1500;
+    case COMMONER: return -4000;
+    default:       return 0;
+    }
+  }
+
+  int battle_kings_capture_bonus(PieceType pt) {
+    switch (pt)
+    {
+    case COMMONER: return 9000;
+    case PAWN:     return 5000;
+    case KNIGHT:   return 3200;
+    case BISHOP:   return 2200;
+    case ROOK:     return 1200;
+    case QUEEN:    return 600;
+    default:       return 0;
+    }
+  }
+
+  int battle_kings_adjustment(const Position& pos, Move m) {
+    int bonus = 0;
+
+    PieceType mover = type_of(pos.moved_piece(m));
+    bonus += battle_kings_mover_bonus(mover);
+
+    if (PieceType gate = gating_type(m); gate != NO_PIECE_TYPE)
+        bonus += battle_kings_gate_bonus(gate);
+
+    if (pos.capture(m))
+    {
+        Piece captured = pos.piece_on(to_sq(m));
+        if (captured != NO_PIECE)
+        {
+            PieceType victim = type_of(captured);
+            bonus += battle_kings_capture_bonus(victim);
+
+            if (mover == QUEEN && victim != COMMONER)
+                bonus -= 2500;
+        }
+    }
+
+    return bonus;
+  }
+
   enum Stages {
     MAIN_TT, CAPTURE_INIT, GOOD_CAPTURE, REFUTATION, QUIET_INIT, QUIET, BAD_CAPTURE,
     EVASION_TT, EVASION_INIT, EVASION,
@@ -107,13 +184,21 @@ void MovePicker::score() {
 
   static_assert(Type == CAPTURES || Type == QUIETS || Type == EVASIONS, "Wrong type");
 
+  const bool battleKings = is_battle_kings(pos);
+
   for (auto& m : *this)
       if constexpr (Type == CAPTURES)
+      {
           m.value =  int(PieceValue[MG][pos.piece_on(to_sq(m))]) * 6
                    + (*gateHistory)[pos.side_to_move()][gating_square(m)]
                    + (*captureHistory)[pos.moved_piece(m)][to_sq(m)][type_of(pos.piece_on(to_sq(m)))];
 
+          if (battleKings)
+              m.value += battle_kings_adjustment(pos, m);
+      }
+
       else if constexpr (Type == QUIETS)
+      {
           m.value =      (*mainHistory)[pos.side_to_move()][from_to(m)]
                    +     (*gateHistory)[pos.side_to_move()][gating_square(m)]
                    + 2 * (*continuationHistory[0])[history_slot(pos.moved_piece(m))][to_sq(m)]
@@ -121,6 +206,10 @@ void MovePicker::score() {
                    +     (*continuationHistory[3])[history_slot(pos.moved_piece(m))][to_sq(m)]
                    +     (*continuationHistory[5])[history_slot(pos.moved_piece(m))][to_sq(m)]
                    + (ply < MAX_LPH ? std::min(4, depth / 3) * (*lowPlyHistory)[ply][from_to(m)] : 0);
+
+          if (battleKings)
+              m.value += battle_kings_adjustment(pos, m);
+      }
 
       else // Type == EVASIONS
       {
