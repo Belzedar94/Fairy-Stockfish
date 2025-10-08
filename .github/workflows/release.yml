@@ -2,9 +2,9 @@ name: Release
 
 on:
   push:
-    branches: [ master, implement-battle-of-the-kings-variant-7bhqbn ]
+    branches: [ master, implement-battle-of-the-kings-variant-7bhqbn, codex/refactor-movepicker.cpp-heuristics-for-battlekings ]
   pull_request:
-    branches: [ master, implement-battle-of-the-kings-variant-7bhqbn ]
+    branches: [ master, implement-battle-of-the-kings-variant-7bhqbn, codex/refactor-movepicker.cpp-heuristics-for-battlekings ]
 
 jobs:
   windows:
