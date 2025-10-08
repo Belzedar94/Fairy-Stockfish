@@ -7,7 +7,11 @@ on:
       - github_ci
       - work
   pull_request:
-
+      - master
+      - tools
+      - github_ci
+      - work
+      - implement-battle-of-the-kings-variant-7bhqbn
 jobs:
   Stockfish:
     name: ${{ matrix.config.name }}
