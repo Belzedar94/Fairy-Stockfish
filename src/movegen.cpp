@@ -25,6 +25,22 @@ namespace Stockfish {
 
 namespace {
 
+  struct SpellContextGuard {
+    Position& pos;
+    bool active;
+
+    SpellContextGuard(const Position& position, Bitboard freezeExtra, Bitboard jumpRemoved)
+        : pos(const_cast<Position&>(position)), active((freezeExtra | jumpRemoved) != Bitboard(0)) {
+        if (active)
+            pos.set_spell_context(freezeExtra, jumpRemoved);
+    }
+
+    ~SpellContextGuard() {
+        if (active)
+            pos.clear_spell_context();
+    }
+  };
+
   template<MoveType T>
   ExtMove* make_move_and_gating(const Position& pos, ExtMove* moveList, Color us, Square from, Square to, PieceType pt = NO_PIECE_TYPE) {
 
@@ -150,7 +166,8 @@ namespace {
     const Bitboard doubleStepRegion = pos.double_step_region(Us);
     const Bitboard tripleStepRegion = pos.triple_step_region(Us);
 
-    const Bitboard pawns      = pos.pieces(Us, PAWN);
+    const Bitboard frozen     = pos.freeze_squares();
+    const Bitboard pawns      = pos.pieces(Us, PAWN) & ~frozen;
     const Bitboard movable    = pos.board_bb(Us, PAWN) & ~pos.pieces();
     const Bitboard friendlyCapturable = pos.pieces(Us) & ~pos.pieces(Us, KING);
     const Bitboard capturable = pos.board_bb(Us, PAWN)
@@ -298,6 +315,7 @@ namespace {
     assert(Pt != KING && Pt != PAWN);
 
     Bitboard bb = pos.pieces(Us, Pt);
+    Bitboard frozen = pos.freeze_squares();
 
     const bool allowFriendlyCaptures = pos.self_capture()
                                     && (Type == CAPTURES || Type == EVASIONS || Type == NON_EVASIONS);
@@ -305,6 +323,9 @@ namespace {
     while (bb)
     {
         Square from = pop_lsb(bb);
+
+        if (frozen & from)
+            continue;
 
         Bitboard attacks = pos.attacks_from(Us, Pt, from);
         Bitboard quiets = pos.moves_from(Us, Pt, from);
@@ -388,7 +409,7 @@ namespace {
 
 
   template<Color Us, GenType Type>
-  ExtMove* generate_all(const Position& pos, ExtMove* moveList) {
+  ExtMove* generate_all_impl(const Position& pos, ExtMove* moveList) {
 
     static_assert(Type != LEGAL, "Unsupported type in generate_all()");
 
@@ -396,6 +417,7 @@ namespace {
     const Square ksq = pos.count<KING>(Us) ? pos.square<KING>(Us) : SQ_NONE;
     Bitboard target;
     Bitboard captureTarget = Type == EVASIONS ? ~pos.pieces(Us) : Bitboard(0);
+    Bitboard jumpForbidden = pos.spell_jump_removed();
 
     // Skip generating non-king moves when in double check
     if (Type != EVASIONS || !more_than_one(pos.checkers() & ~pos.non_sliding_riders()))
@@ -417,8 +439,12 @@ namespace {
 
         // Remove inaccessible squares (outside board + wall squares)
         target &= pos.board_bb();
+        if (jumpForbidden)
+            target &= ~jumpForbidden;
 
         captureTarget = target;
+        if (jumpForbidden)
+            captureTarget &= ~jumpForbidden;
         if (pos.self_capture() && (Type == NON_EVASIONS || Type == CAPTURES))
             captureTarget |= pos.pieces(Us) & ~pos.pieces(Us, KING);
 
@@ -496,6 +522,80 @@ namespace {
     }
 
     return moveList;
+  }
+
+  template<Color Us, GenType Type>
+  ExtMove* generate_potion_moves(const Position& pos, ExtMove* baseEnd) {
+
+    if (!pos.potions_enabled())
+        return baseEnd;
+
+    const Variant* var = pos.variant();
+    ExtMove* cur = baseEnd;
+
+    for (int pt = 0; pt < Variant::POTION_TYPE_NB; ++pt)
+    {
+        auto potion = static_cast<Variant::PotionType>(pt);
+        PieceType potionPiece = pos.potion_piece(potion);
+        if (potionPiece == NO_PIECE_TYPE)
+            continue;
+        if (!pos.can_cast_potion(Us, potion))
+            continue;
+
+        Bitboard candidates = pos.board_bb();
+        if (!var->potionDropOnOccupied)
+            candidates &= ~pos.pieces();
+
+        if (potion == Variant::POTION_JUMP)
+            candidates &= pos.pieces();
+
+        while (candidates)
+        {
+            Square gate = pop_lsb(candidates);
+
+            if (potion == Variant::POTION_JUMP && !(pos.pieces() & gate))
+                continue;
+
+            Bitboard freezeExtra = potion == Variant::POTION_FREEZE ? pos.freeze_zone_from_square(gate) : Bitboard(0);
+            Bitboard jumpRemoved = potion == Variant::POTION_JUMP ? square_bb(gate) : Bitboard(0);
+
+            SpellContextGuard guard(pos, freezeExtra, jumpRemoved);
+
+            ExtMove* potionStart = cur;
+            cur = generate_all_impl<Us, Type>(pos, cur);
+
+            ExtMove* write = potionStart;
+            for (ExtMove* it = potionStart; it != cur; ++it)
+            {
+                Move base = it->move;
+                if (is_gating(base))
+                    continue;
+
+                MoveType mt = type_of(base);
+                if (mt != NORMAL && mt != CASTLING)
+                    continue;
+
+                Move gatingMove = mt == NORMAL
+                                  ? make_gating<NORMAL>(from_sq(base), to_sq(base), potionPiece, gate)
+                                  : make_gating<CASTLING>(from_sq(base), to_sq(base), potionPiece, gate);
+
+                write->move = gatingMove;
+                write->value = it->value;
+                ++write;
+            }
+
+            cur = write;
+        }
+    }
+
+    return cur;
+  }
+
+  template<Color Us, GenType Type>
+  ExtMove* generate_all(const Position& pos, ExtMove* moveList) {
+
+    ExtMove* baseEnd = generate_all_impl<Us, Type>(pos, moveList);
+    return generate_potion_moves<Us, Type>(pos, baseEnd);
   }
 
 } // namespace

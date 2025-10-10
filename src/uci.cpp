@@ -521,7 +521,23 @@ string UCI::move(const Position& pos, Move m) {
   if (is_pass(m) && CurrentProtocol == XBOARD)
       return "@@@@";
 
-  if (is_gating(m) && gating_square(m) == to)
+  bool potionMove = false;
+  std::string potionPrefix;
+
+  if (pos.potions_enabled() && is_gating(m))
+      for (int idx = 0; idx < Variant::POTION_TYPE_NB; ++idx)
+      {
+          PieceType potionPiece = pos.potion_piece(static_cast<Variant::PotionType>(idx));
+          if (!potionMove && potionPiece != NO_PIECE_TYPE
+              && gating_type(m) == potionPiece)
+          {
+              potionMove = true;
+              potionPrefix = std::string(1, pos.piece_to_char()[make_piece(BLACK, gating_type(m))])
+                             + "@" + UCI::square(pos, gating_square(m));
+          }
+      }
+
+  if (is_gating(m) && gating_square(m) == to && !potionMove)
       from = to_sq(m), to = from_sq(m);
   else if (type_of(m) == CASTLING && !pos.is_chess960())
   {
@@ -544,7 +560,7 @@ string UCI::move(const Position& pos, Move m) {
       move += '+';
   else if (type_of(m) == PIECE_DEMOTION)
       move += '-';
-  else if (is_gating(m))
+  else if (is_gating(m) && !potionMove)
   {
       move += pos.piece_to_char()[make_piece(BLACK, gating_type(m))];
       if (gating_square(m) != from)
@@ -554,6 +570,9 @@ string UCI::move(const Position& pos, Move m) {
   // Wall square
   if (pos.walling() && CurrentProtocol != XBOARD)
       move += "," + UCI::square(pos, to) + UCI::square(pos, gating_square(m));
+
+  if (potionMove)
+      move = potionPrefix + "," + move;
 
   return move;
 }

@@ -36,6 +36,36 @@ using std::string;
 
 namespace Stockfish {
 
+namespace {
+
+  inline Variant::PotionType potion_type_from_piece(const Variant* var, PieceType pt) {
+    if (!var || !var->potions)
+        return static_cast<Variant::PotionType>(Variant::POTION_TYPE_NB);
+    if (pt == var->potionPiece[Variant::POTION_FREEZE])
+        return Variant::POTION_FREEZE;
+    if (pt == var->potionPiece[Variant::POTION_JUMP])
+        return Variant::POTION_JUMP;
+    return static_cast<Variant::PotionType>(Variant::POTION_TYPE_NB);
+  }
+
+  struct SpellContextScope {
+    Position& pos;
+    bool active;
+
+    SpellContextScope(const Position& position, Bitboard freezeExtra, Bitboard jumpRemoved)
+        : pos(const_cast<Position&>(position)), active((freezeExtra | jumpRemoved) != Bitboard(0)) {
+        if (active)
+            pos.set_spell_context(freezeExtra, jumpRemoved);
+    }
+
+    ~SpellContextScope() {
+        if (active)
+            pos.clear_spell_context();
+    }
+  };
+
+} // namespace
+
 namespace Zobrist {
 
   Key psq[PIECE_NB][SQUARE_NB];
@@ -44,9 +74,32 @@ namespace Zobrist {
   Key side, noPawns;
   Key inHand[PIECE_NB][SQUARE_NB];
   Key checks[COLOR_NB][CHECKS_NB];
+  Key potionZone[COLOR_NB][Variant::POTION_TYPE_NB][SQUARE_NB];
+  Key potionCooldown[COLOR_NB][Variant::POTION_TYPE_NB][POTION_COOLDOWN_BITS];
   Key wall[SQUARE_NB];
   Key endgame[EG_EVAL_NB];
 }
+
+
+namespace {
+
+  inline void xor_potion_zone(Key& key, Color c, Variant::PotionType potion, Bitboard zone) {
+      while (zone)
+          key ^= Zobrist::potionZone[c][potion][pop_lsb(zone)];
+  }
+
+  inline void xor_potion_cooldown(Key& key, Color c, Variant::PotionType potion, int cooldown) {
+      assert(cooldown >= 0);
+      unsigned value = static_cast<unsigned>(cooldown);
+      assert(value < (1u << POTION_COOLDOWN_BITS));
+      if (!value)
+          return;
+      for (int bit = 0; bit < POTION_COOLDOWN_BITS; ++bit)
+          if (value & (1u << bit))
+              key ^= Zobrist::potionCooldown[c][potion][bit];
+  }
+
+} // namespace
 
 
 /// operator<<(Position) returns an ASCII representation of the position
@@ -175,6 +228,16 @@ void Position::init() {
       for (PieceType pt = PAWN; pt <= KING; ++pt)
           for (int n = 0; n < SQUARE_NB; ++n)
               Zobrist::inHand[make_piece(c, pt)][n] = rng.rand<Key>();
+
+  for (Color c : {WHITE, BLACK})
+      for (int pt = 0; pt < Variant::POTION_TYPE_NB; ++pt)
+      {
+          for (Square s = SQ_A1; s <= SQ_MAX; ++s)
+              Zobrist::potionZone[c][pt][s] = rng.rand<Key>();
+
+          for (int bit = 0; bit < POTION_COOLDOWN_BITS; ++bit)
+              Zobrist::potionCooldown[c][pt][bit] = rng.rand<Key>();
+      }
 
   for (Square s = SQ_A1; s <= SQ_MAX; ++s)
       Zobrist::wall[s] = rng.rand<Key>();
@@ -659,6 +722,18 @@ void Position::set_state(StateInfo* si) const {
               si->key ^= Zobrist::inHand[pc][pieceCountInHand[c][pt]];
       }
 
+  if (potions_enabled())
+      for (Color c : {WHITE, BLACK})
+          for (int pt = 0; pt < Variant::POTION_TYPE_NB; ++pt)
+          {
+              Variant::PotionType potion = static_cast<Variant::PotionType>(pt);
+              if (potion_piece(potion) == NO_PIECE_TYPE)
+                  continue;
+
+              xor_potion_zone(si->key, c, potion, si->potionZones[c][pt]);
+              xor_potion_cooldown(si->key, c, potion, si->potionCooldown[c][pt]);
+          }
+
   if (check_counting())
       for (Color c : {WHITE, BLACK})
           si->key ^= Zobrist::checks[c][si->checksRemaining[c]];
@@ -746,7 +821,7 @@ string Position::fen(bool sfen, bool showPromoted, int countStarted, std::string
   }
 
   // pieces in hand
-  if (!free_drops() && (piece_drops() || seirawan_gating()))
+  if (!free_drops() && (piece_drops() || seirawan_gating() || potions_enabled()))
   {
       ss << '[';
       if (holdings != "-")
@@ -1049,6 +1124,34 @@ bool Position::legal(Move m) const {
   Square from = from_sq(m);
   Square to = to_sq(m);
 
+  Bitboard freezeExtra = 0;
+  Bitboard jumpRemoved = 0;
+  Variant::PotionType gatingPotion = Variant::POTION_TYPE_NB;
+  if (is_gating(m))
+  {
+      gatingPotion = potion_type_from_piece(var, gating_type(m));
+      if (gatingPotion != Variant::POTION_TYPE_NB)
+      {
+          if (!can_cast_potion(us, gatingPotion))
+              return false;
+          if (gatingPotion == Variant::POTION_FREEZE)
+              freezeExtra = freeze_zone_from_square(gating_square(m));
+          else if (gatingPotion == Variant::POTION_JUMP)
+          {
+              jumpRemoved = square_bb(gating_square(m));
+              if (!piece_on(gating_square(m)))
+                  return false;
+          }
+      }
+  }
+
+  SpellContextScope spellScope(*this, freezeExtra, jumpRemoved);
+
+  if (type_of(m) != DROP && (freeze_squares() & from))
+      return false;
+  if (jumpRemoved && (square_bb(to) & jumpRemoved))
+      return false;
+
   assert(color_of(moved_piece(m)) == us);
   assert(!count<KING>(us) || piece_on(square<KING>(us)) == make_piece(us, KING));
   assert(board_bb() & to);
@@ -1325,6 +1428,33 @@ bool Position::pseudo_legal(const Move m) const {
 
   // Use a slower but simpler function for uncommon cases
   // yet we skip the legality check of MoveList<LEGAL>().
+  Bitboard freezeExtra = 0;
+  Bitboard jumpRemoved = 0;
+  if (is_gating(m))
+  {
+      Variant::PotionType potion = potion_type_from_piece(var, gating_type(m));
+      if (potion != Variant::POTION_TYPE_NB)
+      {
+          if (!can_cast_potion(us, potion))
+              return false;
+          if (potion == Variant::POTION_FREEZE)
+              freezeExtra = freeze_zone_from_square(gating_square(m));
+          else if (potion == Variant::POTION_JUMP)
+          {
+              jumpRemoved = square_bb(gating_square(m));
+              if (!piece_on(gating_square(m)))
+                  return false;
+          }
+      }
+  }
+
+  SpellContextScope spellScope(*this, freezeExtra, jumpRemoved);
+
+  if (type_of(m) != DROP && (freeze_squares() & from))
+      return false;
+  if (jumpRemoved && (square_bb(to) & jumpRemoved))
+      return false;
+
   if (type_of(m) != NORMAL || is_gating(m))
       return checkers() ? MoveList<    EVASIONS>(*this).contains(m)
                         : MoveList<NON_EVASIONS>(*this).contains(m);
@@ -1443,6 +1573,33 @@ bool Position::gives_check(Move m) const {
 
   Square from = from_sq(m);
   Square to = to_sq(m);
+
+  Bitboard freezeExtra = 0;
+  Bitboard jumpRemoved = 0;
+  if (is_gating(m))
+  {
+      Variant::PotionType potion = potion_type_from_piece(var, gating_type(m));
+      if (potion != Variant::POTION_TYPE_NB)
+      {
+          if (!can_cast_potion(sideToMove, potion))
+              return false;
+          if (potion == Variant::POTION_FREEZE)
+              freezeExtra = freeze_zone_from_square(gating_square(m));
+          else if (potion == Variant::POTION_JUMP)
+          {
+              jumpRemoved = square_bb(gating_square(m));
+              if (!piece_on(gating_square(m)))
+                  return false;
+          }
+      }
+  }
+
+  SpellContextScope spellScope(*this, freezeExtra, jumpRemoved);
+
+  if (type_of(m) != DROP && (freeze_squares() & from))
+      return false;
+  if (jumpRemoved && (square_bb(to) & jumpRemoved))
+      return false;
 
   // No check possible without king
   if (!count<KING>(~sideToMove))
@@ -1598,6 +1755,20 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
   st->capturedpromoted = is_promoted(to);
   st->unpromotedCapturedPiece = captured ? unpromoted_piece_on(to) : NO_PIECE;
   st->pass = is_pass(m);
+
+  Variant::PotionType gatingPotion = Variant::POTION_TYPE_NB;
+  Bitboard freezeExtra = 0;
+  Bitboard jumpRemoved = 0;
+  if (is_gating(m))
+  {
+      gatingPotion = potion_type_from_piece(var, gating_type(m));
+      if (gatingPotion == Variant::POTION_FREEZE)
+          freezeExtra = freeze_zone_from_square(gating_square(m));
+      else if (gatingPotion == Variant::POTION_JUMP)
+          jumpRemoved = square_bb(gating_square(m));
+  }
+
+  SpellContextScope spellScope(*this, freezeExtra, jumpRemoved);
 
   assert(color_of(pc) == us);
   assert(captured == NO_PIECE
@@ -1964,24 +2135,45 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
       Square gate = gating_square(m);
       Piece gating_piece = make_piece(us, gating_type(m));
 
-      if (Eval::useNNUE)
+      if (gatingPotion != Variant::POTION_TYPE_NB)
       {
-          // Add gating piece
-          dp.piece[dp.dirty_num] = gating_piece;
-          dp.handPiece[dp.dirty_num] = gating_piece;
-          dp.handCount[dp.dirty_num] = pieceCountInHand[us][gating_type(m)];
-          dp.from[dp.dirty_num] = SQ_NONE;
-          dp.to[dp.dirty_num] = gate;
-          dp.dirty_num++;
+          int oldCount = pieceCountInHand[us][gating_type(m)];
+          remove_from_hand(gating_piece);
+          k ^= Zobrist::inHand[gating_piece][oldCount];
+          k ^= Zobrist::inHand[gating_piece][oldCount - 1];
+
+          if (Eval::useNNUE)
+          {
+              dp.handPiece[dp.dirty_num] = gating_piece;
+              dp.handCount[dp.dirty_num] = pieceCountInHand[us][gating_type(m)];
+              dp.piece[dp.dirty_num] = gating_piece;
+              dp.from[dp.dirty_num] = SQ_NONE;
+              dp.to[dp.dirty_num] = SQ_NONE;
+              dp.dirty_num++;
+          }
+
       }
+      else
+      {
+          if (Eval::useNNUE)
+          {
+              // Add gating piece
+              dp.piece[dp.dirty_num] = gating_piece;
+              dp.handPiece[dp.dirty_num] = gating_piece;
+              dp.handCount[dp.dirty_num] = pieceCountInHand[us][gating_type(m)];
+              dp.from[dp.dirty_num] = SQ_NONE;
+              dp.to[dp.dirty_num] = gate;
+              dp.dirty_num++;
+          }
 
-      put_piece(gating_piece, gate);
-      remove_from_hand(gating_piece);
+          put_piece(gating_piece, gate);
+          remove_from_hand(gating_piece);
 
-      st->gatesBB[us] ^= gate;
-      k ^= Zobrist::psq[gating_piece][gate];
-      st->materialKey ^= Zobrist::psq[gating_piece][pieceCount[gating_piece]];
-      st->nonPawnMaterial[us] += PieceValue[MG][gating_piece];
+          st->gatesBB[us] ^= gate;
+          k ^= Zobrist::psq[gating_piece][gate];
+          st->materialKey ^= Zobrist::psq[gating_piece][pieceCount[gating_piece]];
+          st->nonPawnMaterial[us] += PieceValue[MG][gating_piece];
+      }
   }
 
   // Remove gates
@@ -2102,6 +2294,47 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
       k ^= Zobrist::wall[gating_square(m)];
   }
 
+  if (potions_enabled())
+  {
+      auto togglePotionHashes = [&](Key& key) {
+          for (Color c : {WHITE, BLACK})
+              for (int pt = 0; pt < Variant::POTION_TYPE_NB; ++pt)
+              {
+                  Variant::PotionType potion = static_cast<Variant::PotionType>(pt);
+                  if (potion_piece(potion) == NO_PIECE_TYPE)
+                      continue;
+
+                  xor_potion_zone(key, c, potion, st->potionZones[c][pt]);
+                  xor_potion_cooldown(key, c, potion, st->potionCooldown[c][pt]);
+              }
+      };
+
+      togglePotionHashes(k);
+
+      for (int pt = 0; pt < Variant::POTION_TYPE_NB; ++pt)
+      {
+          Variant::PotionType potion = static_cast<Variant::PotionType>(pt);
+          if (potion_piece(potion) == NO_PIECE_TYPE)
+              continue;
+
+          if (gatingPotion == potion)
+          {
+              int cooldown = var->potionCooldown[pt];
+              st->potionCooldown[us][pt] = std::max(cooldown - 1, 0);
+          }
+          else if (st->potionCooldown[us][pt] > 0)
+              --st->potionCooldown[us][pt];
+      }
+
+      st->potionZones[us][Variant::POTION_FREEZE] = gatingPotion == Variant::POTION_FREEZE ? freezeExtra : Bitboard(0);
+      st->potionZones[us][Variant::POTION_JUMP] = Bitboard(0);
+
+      st->potionZones[them][Variant::POTION_FREEZE] = Bitboard(0);
+      st->potionZones[them][Variant::POTION_JUMP] = Bitboard(0);
+
+      togglePotionHashes(k);
+  }
+
   // Update the key with the final value
   st->key = k;
   // Calculate checkers bitboard (if move gives check)
@@ -2198,14 +2431,23 @@ void Position::undo_move(Move m) {
       pc = piece_on(to);
   }
 
-  // Remove gated piece
+  // Remove gated piece or restore potion
   if (is_gating(m))
   {
       Piece gating_piece = make_piece(us, gating_type(m));
-      remove_piece(gating_square(m));
-      board[gating_square(m)] = NO_PIECE;
-      add_to_hand(gating_piece);
-      st->gatesBB[us] |= gating_square(m);
+      Variant::PotionType potion = potion_type_from_piece(var, gating_type(m));
+
+      if (potion != Variant::POTION_TYPE_NB)
+      {
+          add_to_hand(gating_piece);
+      }
+      else
+      {
+          remove_piece(gating_square(m));
+          board[gating_square(m)] = NO_PIECE;
+          add_to_hand(gating_piece);
+          st->gatesBB[us] |= gating_square(m);
+      }
   }
 
   if (type_of(m) == PROMOTION)
