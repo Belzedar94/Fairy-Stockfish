@@ -137,6 +137,7 @@ struct Variant {
   Value extinctionValue = VALUE_NONE;
   bool extinctionClaim = false;
   bool extinctionPseudoRoyal = false;
+  bool extinctionFirstCapture = false;
   bool dupleCheck = false;
   PieceSet extinctionPieceTypes = NO_PIECE_SET;
   int extinctionPieceCount = 0;

@@ -458,6 +458,23 @@ class TestPyffish(unittest.TestCase):
         result = sf.legal_moves("shako", "c8c/ernbqkbnre/pppppppppp/10/10/10/10/PPPPPPPPPP/RR3K4/10 w Qkq - 0 1", [])
         self.assertIn("f2d2", result)
 
+    def test_kingsorlemmings(self):
+        start_fen = sf.start_fen("kingsorlemmings")
+        self.assertTrue(start_fen.startswith("rnbqkbnr/pppppppp"))
+
+        moves = ["e2e4"]
+        legal = sf.legal_moves("kingsorlemmings", start_fen, moves)
+        self.assertIn("K@e6", legal)
+
+        moves = ["e2e4", "e7e5"]
+        legal = sf.legal_moves("kingsorlemmings", start_fen, moves)
+        self.assertIn("K@e2", legal)
+        self.assertNotIn("K@h1", legal)
+
+        moves = ["e2e4", "e7e5", "K@e2"]
+        legal = sf.legal_moves("kingsorlemmings", start_fen, moves)
+        self.assertIn("a7a6", legal)
+
     def test_get_fen(self):
         result = sf.get_fen("chess", CHESS, [])
         self.assertEqual(result, CHESS)

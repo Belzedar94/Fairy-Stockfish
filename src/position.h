@@ -209,6 +209,7 @@ public:
   int extinction_piece_count() const;
   int extinction_opponent_piece_count() const;
   bool extinction_pseudo_royal() const;
+  bool extinction_first_capture() const;
   PieceType flag_piece(Color c) const;
   Bitboard flag_region(Color c) const;
   bool flag_move() const;
@@ -1036,6 +1037,11 @@ inline bool Position::extinction_pseudo_royal() const {
   return var->extinctionPseudoRoyal;
 }
 
+inline bool Position::extinction_first_capture() const {
+  assert(var != nullptr);
+  return var->extinctionFirstCapture;
+}
+
 inline PieceType Position::flag_piece(Color c) const {
   assert(var != nullptr);
   return var->flagPiece[c];
@@ -1237,9 +1243,16 @@ template<PieceType Pt> inline Square Position::square(Color c) const {
   return lsb(pieces(c, Pt));
 }
 
+template<> inline Square Position::square<KING>(Color c) const {
+  assert(count<KING>(c) <= 1);
+  return count<KING>(c) ? lsb(pieces(c, KING)) : SQ_NONE;
+}
+
 inline Square Position::square(Color c, PieceType pt) const {
-  assert(count(c, pt) == 1);
-  return lsb(pieces(c, pt));
+  int n = count(c, pt);
+  assert(pt != KING || n <= 1);
+  assert(pt == KING || n == 1);
+  return n ? lsb(pieces(c, pt)) : SQ_NONE;
 }
 
 inline Bitboard Position::ep_squares() const {
@@ -1343,15 +1356,15 @@ inline Bitboard Position::moves_from(Color c, PieceType pt, Square s) const {
 }
 
 inline Bitboard Position::attackers_to(Square s) const {
-  return attackers_to(s, pieces());
+  return s == SQ_NONE ? Bitboard(0) : attackers_to(s, pieces());
 }
 
 inline Bitboard Position::attackers_to(Square s, Color c) const {
-  return attackers_to(s, byTypeBB[ALL_PIECES], c);
+  return s == SQ_NONE ? Bitboard(0) : attackers_to(s, byTypeBB[ALL_PIECES], c);
 }
 
 inline Bitboard Position::attackers_to(Square s, Bitboard occupied, Color c) const {
-  return attackers_to(s, occupied, c, byTypeBB[JANGGI_CANNON]);
+  return s == SQ_NONE ? Bitboard(0) : attackers_to(s, occupied, c, byTypeBB[JANGGI_CANNON]);
 }
 
 inline Bitboard Position::checkers() const {
