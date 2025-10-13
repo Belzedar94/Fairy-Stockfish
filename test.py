@@ -458,6 +458,31 @@ class TestPyffish(unittest.TestCase):
         result = sf.legal_moves("shako", "c8c/ernbqkbnre/pppppppppp/10/10/10/10/PPPPPPPPPP/RR3K4/10 w Qkq - 0 1", [])
         self.assertIn("f2d2", result)
 
+    def test_kingsorlemmings(self):
+        start_fen = sf.start_fen("kingsorlemmings")
+        self.assertTrue(start_fen.startswith("rnbqkbnr/pppppppp"))
+        self.assertIn("[", start_fen)
+        pocket = start_fen.split("[", 1)[1].split("]", 1)[0]
+        self.assertEqual(len(pocket), 32)
+        self.assertEqual(pocket.count("K"), 16)
+        self.assertEqual(pocket.count("k"), 16)
+        self.assertTrue(set(pocket) <= {"K", "k"})
+
+        moves = ["e2e4"]
+        legal = sf.legal_moves("kingsorlemmings", start_fen, moves)
+        self.assertTrue(all('@' not in m for m in legal))
+
+        moves = ["e2e4", "e7e5"]
+        legal = sf.legal_moves("kingsorlemmings", start_fen, moves)
+        self.assertIn("K@e2", legal)
+        self.assertNotIn("K@h1", legal)
+        self.assertTrue(all(len(m) < 2 or m[1] != '@' or m[0] == 'K' for m in legal))
+
+        moves = ["e2e4", "e7e5", "K@e2"]
+        legal = sf.legal_moves("kingsorlemmings", start_fen, moves)
+        self.assertIn("K@e7", legal)
+        self.assertTrue(any(len(m) > 2 and m[1] == '@' for m in legal))
+
     def test_get_fen(self):
         result = sf.get_fen("chess", CHESS, [])
         self.assertEqual(result, CHESS)

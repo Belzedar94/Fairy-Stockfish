@@ -169,8 +169,8 @@ constexpr Bitboard make_bitboard(Square s, Squares... squares) {
 }
 
 inline Bitboard square_bb(Square s) {
-  assert(is_ok(s));
-  return SquareBB[s];
+  assert(s == SQ_NONE || is_ok(s));
+  return s == SQ_NONE ? Bitboard(0) : SquareBB[s];
 }
 
 
