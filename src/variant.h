@@ -96,6 +96,7 @@ struct Variant {
   bool firstRankPawnDrops = false;
   bool promotionZonePawnDrops = false;
   EnclosingRule enclosingDrop = NO_ENCLOSING;
+  PieceType enclosingDropAdjacencyType = ALL_PIECES;
   Bitboard enclosingDropStart = 0;
   Bitboard dropRegion[COLOR_NB] = {AllSquares, AllSquares};
   bool sittuyinRookDrop = false;

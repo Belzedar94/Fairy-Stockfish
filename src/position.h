@@ -790,7 +790,7 @@ inline Bitboard Position::drop_region(Color c, PieceType pt) const {
           else
           {
               assert(enclosing_drop() == ATAXX);
-              Bitboard ours = pieces(c);
+              Bitboard ours = pieces(c, variant()->enclosingDropAdjacencyType);
               b &=  shift<NORTH     >(ours) | shift<SOUTH     >(ours)
                   | shift<NORTH_EAST>(ours) | shift<SOUTH_WEST>(ours)
                   | shift<EAST      >(ours) | shift<WEST      >(ours)
