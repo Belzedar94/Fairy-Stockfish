@@ -96,6 +96,7 @@ struct Variant {
   bool firstRankPawnDrops = false;
   bool promotionZonePawnDrops = false;
   EnclosingRule enclosingDrop = NO_ENCLOSING;
+  PieceType enclosingDropAdjacencyType = ALL_PIECES;
   Bitboard enclosingDropStart = 0;
   Bitboard dropRegion[COLOR_NB] = {AllSquares, AllSquares};
   bool sittuyinRookDrop = false;
@@ -105,6 +106,9 @@ struct Variant {
   int dropNoDoubledCount = 1;
   bool immobilityIllegal = false;
   bool gating = false;
+  bool captureGating = false;
+  PieceSet captureGatingPieces = NO_PIECE_SET;
+  bool captureGatingAdjacentToDestination = false;
   WallingRule wallingRule = NO_WALLING;
   Bitboard wallingRegion[COLOR_NB] = {AllSquares, AllSquares};
   bool wallOrMove = false;
@@ -137,6 +141,7 @@ struct Variant {
   Value extinctionValue = VALUE_NONE;
   bool extinctionClaim = false;
   bool extinctionPseudoRoyal = false;
+  bool extinctionFirstCapture = false;
   bool dupleCheck = false;
   PieceSet extinctionPieceTypes = NO_PIECE_SET;
   int extinctionPieceCount = 0;
