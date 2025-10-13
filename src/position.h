@@ -190,6 +190,9 @@ public:
   bool wall_or_move() const;
   Bitboard walling_region(Color c) const;
   bool seirawan_gating() const;
+  bool capture_gating() const;
+  PieceSet capture_gating_pieces() const;
+  bool capture_gating_adjacent_to_destination() const;
   bool cambodian_moves() const;
   Bitboard diagonal_lines() const;
   bool pass(Color c) const;
@@ -865,6 +868,21 @@ inline Bitboard Position::walling_region(Color c) const {
 inline bool Position::seirawan_gating() const {
   assert(var != nullptr);
   return var->seirawanGating;
+}
+
+inline bool Position::capture_gating() const {
+  assert(var != nullptr);
+  return var->captureGating;
+}
+
+inline PieceSet Position::capture_gating_pieces() const {
+  assert(var != nullptr);
+  return var->captureGatingPieces;
+}
+
+inline bool Position::capture_gating_adjacent_to_destination() const {
+  assert(var != nullptr);
+  return var->captureGatingAdjacentToDestination;
 }
 
 inline bool Position::cambodian_moves() const {

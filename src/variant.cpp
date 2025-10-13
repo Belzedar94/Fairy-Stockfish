@@ -743,18 +743,22 @@ namespace {
         Variant* v = chess_variant_base()->init();
         v->remove_piece(KING);
         v->add_piece(COMMONER, 'k');
-        v->castling = false;
+        v->castlingKingPiece[WHITE] = v->castlingKingPiece[BLACK] = COMMONER;
+        v->kingType = COMMONER;
         v->checking = false;
         v->pocketSize = 16;
         v->pieceDrops = true;
         v->enclosingDrop = ATAXX;
         v->enclosingDropAdjacencyType = COMMONER;
+        v->captureGating = true;
+        v->captureGatingPieces = piece_set(COMMONER);
+        v->captureGatingAdjacentToDestination = true;
         v->extinctionValue = -VALUE_MATE;
         v->extinctionPieceTypes = piece_set(COMMONER);
         v->extinctionFirstCapture = true;
         v->pieceValue[MG][COMMONER] = -100;
         v->pieceValue[EG][COMMONER] = -100;
-        v->startFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR[KKKKKKKKKKKKKKKKkkkkkkkkkkkkkkkk] w - - 0 1";
+        v->startFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR[KKKKKKKKKKKKKKKKkkkkkkkkkkkkkkkk] w KQkq - 0 1";
         return v;
     }
     // S-House

@@ -467,6 +467,12 @@ class TestPyffish(unittest.TestCase):
         self.assertEqual(pocket.count("K"), 16)
         self.assertEqual(pocket.count("k"), 16)
         self.assertTrue(set(pocket) <= {"K", "k"})
+        self.assertIn(" KQkq ", start_fen)
+
+        castle_fen = "r3k2r/8/8/8/8/8/8/R3K2R[KKKKKKKKKKKKKKKKkkkkkkkkkkkkkkkk] w KQkq - 0 1"
+        legal = sf.legal_moves("kingsorlemmings", castle_fen, [])
+        self.assertIn("e1g1", legal)
+        self.assertIn("e1c1", legal)
 
         moves = ["e2e4"]
         legal = sf.legal_moves("kingsorlemmings", start_fen, moves)
@@ -482,6 +488,13 @@ class TestPyffish(unittest.TestCase):
         legal = sf.legal_moves("kingsorlemmings", start_fen, moves)
         self.assertIn("K@e7", legal)
         self.assertTrue(any(len(m) > 2 and m[1] == '@' for m in legal))
+
+        capture_fen = "8/8/8/3p4/4K3/8/8/8[Kk] w - - 0 1"
+        legal = sf.legal_moves("kingsorlemmings", capture_fen, [])
+        self.assertIn("e4d5", legal)
+        gated = [m for m in legal if m.startswith("e4d5k")]
+        self.assertTrue(gated)
+        self.assertIn("e4d5k", legal)
 
     def test_get_fen(self):
         result = sf.get_fen("chess", CHESS, [])

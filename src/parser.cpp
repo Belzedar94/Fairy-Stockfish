@@ -472,6 +472,9 @@ Variant* VariantParser<DoCheck>::parse(Variant* v) {
     parse_attribute("dropNoDoubledCount", v->dropNoDoubledCount);
     parse_attribute("immobilityIllegal", v->immobilityIllegal);
     parse_attribute("gating", v->gating);
+    parse_attribute("captureGating", v->captureGating);
+    parse_attribute("captureGatingPieces", v->captureGatingPieces, v->pieceToChar);
+    parse_attribute("captureGatingAdjacentToDestination", v->captureGatingAdjacentToDestination);
     parse_attribute("wallingRule", v->wallingRule);
     parse_attribute("wallingRegionWhite", v->wallingRegion[WHITE]);
     parse_attribute("wallingRegionBlack", v->wallingRegion[BLACK]);

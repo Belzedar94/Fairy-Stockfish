@@ -106,6 +106,9 @@ struct Variant {
   int dropNoDoubledCount = 1;
   bool immobilityIllegal = false;
   bool gating = false;
+  bool captureGating = false;
+  PieceSet captureGatingPieces = NO_PIECE_SET;
+  bool captureGatingAdjacentToDestination = false;
   WallingRule wallingRule = NO_WALLING;
   Bitboard wallingRegion[COLOR_NB] = {AllSquares, AllSquares};
   bool wallOrMove = false;
