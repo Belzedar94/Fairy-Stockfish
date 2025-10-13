@@ -1278,6 +1278,52 @@ class TestPyffish(unittest.TestCase):
         self.assertEqual(traitor_fen, "rBbqk1nr/P!1P!P!2P!1/2nbP!3/4q!P!1P!/8/4PN2/PPPP1PPP/RNB1KB1R b KQkq - 0 6")
         self.assertIn("e5c3", legal)
 
+    def test_chicken_flips_on_quiet_move(self):
+        fen = "7k/8/8/3p4/8/8/4P3/7K w - - 0 1"
+        result = sf.get_fen("chicken", fen, ["e2e4"])
+        self.assertEqual(result, "7k/8/8/3P!4/4P3/8/8/7K b - - 0 1")
+
+    def test_chicken_flips_after_capture(self):
+        fen = "7k/8/4p3/3p4/4P3/8/8/7K w - - 0 1"
+        result = sf.get_fen("chicken", fen, ["e4d5"])
+        self.assertEqual(result, "7k/8/4P!3/3P4/8/8/8/7K b - - 0 1")
+
+    def test_chicken_requires_captures(self):
+        fen = "7k/8/8/8/8/4p3/3P4/7K w - - 0 1"
+        legal = sf.legal_moves("chicken", fen, [])
+        self.assertEqual(legal, ["d2e3"])
+
+    def test_chicken_extinction_win(self):
+        result = sf.game_result("chicken", "7k/8/8/8/8/8/8/8 w - - 0 1", [])
+        self.assertEqual(result, sf.VALUE_MATE)
+
+    def test_chicken_stalemate_material_rule(self):
+        result = sf.game_result("chicken", "8/8/8/7p/7P/8/8/8 w - - 0 1", [])
+        self.assertEqual(result, sf.VALUE_DRAW)
+        result = sf.game_result("chicken", "8/8/8/7p/7P/7P/8/8 w - - 0 1", [])
+        self.assertEqual(result, -sf.VALUE_MATE)
+        result = sf.game_result("chicken", "8/8/8/7p/7P/8/8/n7 w - - 0 1", [])
+        self.assertEqual(result, sf.VALUE_MATE)
+
+    def test_chicken_castling_and_no_rook_flip(self):
+        fen = "k3r1r1/8/8/8/8/5p2/8/4K2R w K - 0 1"
+        legal = sf.legal_moves("chicken", fen, [])
+        self.assertIn("e1g1", legal)
+        castled = sf.get_fen("chicken", fen, ["e1g1"])
+        self.assertEqual(castled, "k3r1r1/8/8/8/8/5p2/8/5RK1 b - - 1 1")
+
+    def test_chicken_en_passant_available(self):
+        fen = "7k/8/8/3pP3/8/8/8/7K w - d6 0 1"
+        legal = sf.legal_moves("chicken", fen, [])
+        self.assertIn("e5d6", legal)
+
+    def test_chicken_promotion_flips_targets(self):
+        fen = "7k/Pp6/8/8/8/8/8/7K w - - 0 1"
+        legal = sf.legal_moves("chicken", fen, [])
+        self.assertIn("a7a8k", legal)
+        promoted = sf.get_fen("chicken", fen, ["a7a8k"])
+        self.assertEqual(promoted, "K6k/1P!6/8/8/8/8/8/7K b - - 0 1")
+
         # shogi pawn drop mate
         result = sf.game_result("shogi", "lnsg3nk/1r2b1gs1/ppppppp1p/7N1/7p1/9/PPPPPPPP1/1B5R1/LNSGKGS1L[P] w 0 1", ["P@i8"])
         self.assertEqual(result, sf.VALUE_MATE)

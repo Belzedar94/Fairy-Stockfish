@@ -724,6 +724,22 @@ namespace {
         return v;
     }
 
+    // Chicken chess
+    // Combination of antichess capture rules with Benedict-style color flipping
+    Variant* chicken_variant() {
+        Variant* v = giveaway_variant()->init();
+        v->attackedChangingColors.enabled = true;
+        v->attackedChangingColors.trigger = ColorChangeTrigger::ALWAYS;
+        v->attackedChangingColors.moverPieceTypes = ~NO_PIECE_SET;
+        v->attackedChangingColors.targetPieceTypes = ~NO_PIECE_SET;
+        v->attackedChangingColors.target = ColorChangeTarget::MOVER;
+        v->attackedChangingColors.convertedPiecesDormant = true;
+        v->stalematePieceCount = true;
+        v->nnueAlias = "antichess";
+        v->endgameEval = EG_EVAL_ANTI;
+        return v;
+    }
+
     // Chessgi
     // Variant of loop chess where pawns can be dropped to the first rank
     // https://en.wikipedia.org/wiki/Crazyhouse#Variations
@@ -1969,6 +1985,7 @@ void VariantMap::init() {
     add("superandernach", superandernach_variant());
     add("tibetan", tibetan_variant());
     add("benedict", benedict_variant());
+    add("chicken", chicken_variant());
 #ifdef ALLVARS
     add("duck", duck_variant());
 #endif
