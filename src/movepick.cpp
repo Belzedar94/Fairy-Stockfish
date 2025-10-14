@@ -45,65 +45,75 @@ namespace {
         && pos.gating_piece_after(BLACK, QUEEN)  == COMMONER;
   }
 
-  int battle_kings_mover_bonus(PieceType pt) {
+  int battle_kings_piece_youngness(PieceType pt) {
     switch (pt)
     {
-    case PAWN:     return 900;
-    case KNIGHT:   return 600;
-    case BISHOP:   return 400;
-    case ROOK:     return -600;
-    case QUEEN:    return -2000;
-    case COMMONER: return -800;
+    case PAWN:     return 600;
+    case KNIGHT:   return 420;
+    case BISHOP:   return 260;
+    case ROOK:     return 120;
+    case QUEEN:    return -180;
+    case COMMONER: return -4200;
     default:       return 0;
     }
   }
 
-  int battle_kings_gate_bonus(PieceType pt) {
-    switch (pt)
-    {
-    case KNIGHT:   return 1000;
-    case BISHOP:   return 700;
-    case ROOK:     return -500;
-    case QUEEN:    return -1500;
-    case COMMONER: return -4000;
-    default:       return 0;
-    }
+  int battle_kings_board_youngness(const Position& pos, Color c) {
+    int score = 0;
+    score += popcount(pos.pieces(c, PAWN))     * battle_kings_piece_youngness(PAWN);
+    score += popcount(pos.pieces(c, KNIGHT))   * battle_kings_piece_youngness(KNIGHT);
+    score += popcount(pos.pieces(c, BISHOP))   * battle_kings_piece_youngness(BISHOP);
+    score += popcount(pos.pieces(c, ROOK))     * battle_kings_piece_youngness(ROOK);
+    score += popcount(pos.pieces(c, QUEEN))    * battle_kings_piece_youngness(QUEEN);
+    score += popcount(pos.pieces(c, COMMONER)) * battle_kings_piece_youngness(COMMONER);
+    return score;
   }
 
-  int battle_kings_capture_bonus(PieceType pt) {
-    switch (pt)
-    {
-    case COMMONER: return 9000;
-    case PAWN:     return 5000;
-    case KNIGHT:   return 3200;
-    case BISHOP:   return 2200;
-    case ROOK:     return 1200;
-    case QUEEN:    return 600;
-    default:       return 0;
-    }
+  Square battle_kings_capture_square(const Position& pos, Move m) {
+    return type_of(m) == EN_PASSANT ? pos.capture_square(to_sq(m)) : to_sq(m);
   }
 
   int battle_kings_adjustment(const Position& pos, Move m) {
+    Color us = pos.side_to_move();
+    Color them = ~us;
+
+    int myYoungness = battle_kings_board_youngness(pos, us);
+    int theirYoungness = battle_kings_board_youngness(pos, them);
+    int youngnessBalance = myYoungness - theirYoungness;
+
     int bonus = 0;
 
-    PieceType mover = type_of(pos.moved_piece(m));
-    bonus += battle_kings_mover_bonus(mover);
+    Piece moved = pos.moved_piece(m);
+    if (moved != NO_PIECE)
+        bonus += battle_kings_piece_youngness(type_of(moved)) / 4;
 
     if (PieceType gate = gating_type(m); gate != NO_PIECE_TYPE)
-        bonus += battle_kings_gate_bonus(gate);
+    {
+        int gateValue = battle_kings_piece_youngness(gate);
+        bonus += gateValue;
+
+        if (gateValue <= 0)
+            bonus += gateValue; // Double the penalty when spawning old pieces
+    }
 
     if (pos.capture(m))
     {
-        Piece captured = pos.piece_on(to_sq(m));
+        Square captureSq = battle_kings_capture_square(pos, m);
+        Piece captured = pos.piece_on(captureSq);
         if (captured != NO_PIECE)
         {
-            PieceType victim = type_of(captured);
-            bonus += battle_kings_capture_bonus(victim);
-
-            if (mover == QUEEN && victim != COMMONER)
-                bonus -= 2500;
+            int victimValue = battle_kings_piece_youngness(type_of(captured));
+            if (victimValue > 0)
+                bonus += victimValue + victimValue / 2;
+            else
+                bonus += victimValue / 3;
         }
     }
+
+    if (bonus > 0 && youngnessBalance < 0)
+        bonus += (-youngnessBalance) / 4;
+    else if (bonus < 0 && youngnessBalance > 0)
+        bonus -= youngnessBalance / 4;
 
     return bonus;
   }

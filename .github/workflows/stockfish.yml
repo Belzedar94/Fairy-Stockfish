@@ -5,7 +5,13 @@ on:
       - master
       - tools
       - github_ci
+      - work
   pull_request:
+    branches:
+      - master
+      - tools
+      - github_ci
+      - work
 
 jobs:
   Stockfish:
