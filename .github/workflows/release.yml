@@ -2,9 +2,9 @@ name: Release
 
 on:
   push:
-    branches: [ master, battlekings-youngness-rework ]
+    branches: [ master, codex/rewrite-battlekings-heuristics-from-scratch-o3bqg4 ]
   pull_request:
-    branches: [ master, battlekings-youngness-rework ]
+    branches: [ master, codex/rewrite-battlekings-heuristics-from-scratch-o3bqg4 ]
 
 jobs:
   windows:
