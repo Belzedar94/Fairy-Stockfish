@@ -2,9 +2,9 @@ name: Release
 
 on:
   push:
-    branches: [ master, implement-battle-of-the-kings-variant-7bhqbn, work ]
+    branches: [ master, implement-battle-of-the-kings-variant-7bhqbn, codex/rewrite-battlekings-heuristics-from-scratch ]
   pull_request:
-    branches: [ master, implement-battle-of-the-kings-variant-7bhqbn, work ]
+    branches: [ master, implement-battle-of-the-kings-variant-7bhqbn, codex/rewrite-battlekings-heuristics-from-scratch ]
 
 jobs:
   windows:
