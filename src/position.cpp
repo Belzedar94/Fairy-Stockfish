@@ -925,6 +925,9 @@ Bitboard Position::slider_blockers(Bitboard sliders, Square s, Bitboard& pinners
 
 Bitboard Position::attackers_to(Square s, Bitboard occupied, Color c, Bitboard janggiCannons) const {
 
+  if (s == SQ_NONE)
+      return Bitboard(0);
+
   // Use a faster version for variants with moderate rule variations
   if (var->fastAttacks)
   {
@@ -999,6 +1002,8 @@ Bitboard Position::attackers_to(Square s, Bitboard occupied, Color c, Bitboard j
 
 
 Bitboard Position::attackers_to(Square s, Bitboard occupied) const {
+  if (s == SQ_NONE)
+      return Bitboard(0);
   return attackers_to(s, occupied, WHITE) | attackers_to(s, occupied, BLACK);
 }
 
@@ -2751,6 +2756,16 @@ bool Position::is_optional_game_end(Value& result, int ply, int countStarted) co
 /// It does not detect stalemates.
 
 bool Position::is_immediate_game_end(Value& result, int ply) const {
+
+  if (   extinction_first_capture()
+      && extinction_value() != VALUE_NONE
+      && st->capturedPiece != NO_PIECE
+      && (extinction_piece_types() & type_of(st->capturedPiece)))
+  {
+      Color victim = color_of(st->capturedPiece);
+      result = victim == sideToMove ? extinction_value(ply) : -extinction_value(ply);
+      return true;
+  }
 
   // Extinction
   // Extinction does not apply for pseudo-royal pieces, because they can not be captured

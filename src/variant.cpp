@@ -737,6 +737,28 @@ namespace {
         v->promotionPieceTypes[BLACK] = piece_set(ARCHBISHOP) | CHANCELLOR | QUEEN | ROOK | BISHOP | KNIGHT;
         return v;
     }
+    // Kings or Lemmings
+    // Players duplicate commoners adjacent to an existing one and the first capture wins.
+    Variant* kingsorlemmings_variant() {
+        Variant* v = chess_variant_base()->init();
+        v->remove_piece(KING);
+        v->add_piece(COMMONER, 'k');
+        v->castlingKingPiece[WHITE] = v->castlingKingPiece[BLACK] = COMMONER;
+        v->kingType = COMMONER;
+        v->checking = false;
+        v->freeDrops = true;
+        v->pieceDrops = false;
+        v->captureGating = true;
+        v->captureGatingPieces = piece_set(COMMONER);
+        v->captureGatingAdjacentToDestination = true;
+        v->extinctionValue = -VALUE_MATE;
+        v->extinctionPieceTypes = piece_set(COMMONER);
+        v->extinctionFirstCapture = true;
+        v->pieceValue[MG][COMMONER] = -100;
+        v->pieceValue[EG][COMMONER] = -100;
+        v->startFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+        return v;
+    }
     // S-House
     // A hybrid variant of S-Chess and Crazyhouse.
     // Pieces in the pocket can either be gated or dropped.
@@ -1887,6 +1909,8 @@ void VariantMap::init() {
     add("placement", placement_variant());
     add("sittuyin", sittuyin_variant());
     add("seirawan", seirawan_variant());
+    add("kingsorlemmings", kingsorlemmings_variant());
+    add("lemmings", kingsorlemmings_variant());
     add("shouse", shouse_variant());
     add("dragon", dragon_variant());
     add("paradigm", paradigm_variant());

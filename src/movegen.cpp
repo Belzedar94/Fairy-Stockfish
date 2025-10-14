@@ -66,6 +66,24 @@ namespace {
 
     *moveList++ = make<T>(from, to, pt);
 
+    // Capture-triggered duplication moves
+    if (   pos.capture_gating()
+        && (pos.capture_gating_pieces() & piece_set(type_of(pos.piece_on(from))))
+        && (pos.pieces(~us) & square_bb(to))
+        && pos.can_drop(us, type_of(pos.piece_on(from))))
+    {
+        PieceType gatingType = type_of(pos.piece_on(from));
+        Bitboard occupied = (pos.pieces() ^ square_bb(from)) | square_bb(to);
+        Bitboard gates = pos.capture_gating_adjacent_to_destination()
+                        ? PseudoAttacks[WHITE][KING][to]
+                        : Bitboard(0);
+        gates &= ~occupied;
+        gates &= pos.variant()->dropRegion[us];
+
+        while (gates)
+            *moveList++ = make_gating<T>(from, to, gatingType, pop_lsb(gates));
+    }
+
     // Gating moves
     if (pos.seirawan_gating() && (pos.gates(us) & from))
         for (PieceSet ps = pos.piece_types(); ps;)
