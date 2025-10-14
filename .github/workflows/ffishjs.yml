@@ -2,9 +2,9 @@ name: ffishjs
 
 on:
   push:
-    branches: [ master, implement-battle-of-the-kings-variant-7bhqbn ]
+    branches: [ master, battlekings-youngness-rework ]
   pull_request:
-    branches: [ master, implement-battle-of-the-kings-variant-7bhqbn ]
+    branches: [ master, battlekings-youngness-rework ]
 
 env:
   EM_VERSION: 1.39.16

@@ -18,6 +18,7 @@
 
 #include <cassert>
 
+#include "bitboard.h"
 #include "movepick.h"
 
 namespace Stockfish {
@@ -45,67 +46,116 @@ namespace {
         && pos.gating_piece_after(BLACK, QUEEN)  == COMMONER;
   }
 
-  int battle_kings_mover_bonus(PieceType pt) {
+  constexpr int BattleKingsCommonerPenalty = 4000;
+
+  int battle_kings_piece_youth(PieceType pt) {
     switch (pt)
     {
-    case PAWN:     return 900;
-    case KNIGHT:   return 600;
-    case BISHOP:   return 400;
-    case ROOK:     return -600;
-    case QUEEN:    return -2000;
-    case COMMONER: return -800;
-    default:       return 0;
+    case PAWN:   return 90;
+    case KNIGHT: return 70;
+    case BISHOP: return 55;
+    case ROOK:   return 35;
+    case QUEEN:  return 20;
+    default:     return 0;
     }
   }
 
-  int battle_kings_gate_bonus(PieceType pt) {
-    switch (pt)
-    {
-    case KNIGHT:   return 1000;
-    case BISHOP:   return 700;
-    case ROOK:     return -500;
-    case QUEEN:    return -1500;
-    case COMMONER: return -4000;
-    default:       return 0;
-    }
+  int battle_kings_centrality(const Position& pos, Square sq) {
+    if (sq == SQ_NONE)
+        return 0;
+
+    return   edge_distance(file_of(sq), pos.max_file())
+           + edge_distance(rank_of(sq), pos.max_rank());
   }
 
-  int battle_kings_capture_bonus(PieceType pt) {
-    switch (pt)
-    {
-    case COMMONER: return 9000;
-    case PAWN:     return 5000;
-    case KNIGHT:   return 3200;
-    case BISHOP:   return 2200;
-    case ROOK:     return 1200;
-    case QUEEN:    return 600;
-    default:       return 0;
-    }
+  int battle_kings_youth_balance(const Position& pos) {
+    Color us = pos.side_to_move();
+    Color them = ~us;
+
+    int balance = 0;
+    constexpr PieceType youthTypes[] = {PAWN, KNIGHT, BISHOP, ROOK, QUEEN};
+
+    for (PieceType pt : youthTypes)
+        balance += battle_kings_piece_youth(pt)
+                 * (popcount(pos.pieces(us, pt)) - popcount(pos.pieces(them, pt)));
+
+    return balance;
   }
 
   int battle_kings_adjustment(const Position& pos, Move m) {
-    int bonus = 0;
+    const int currentBalance = battle_kings_youth_balance(pos);
+    const PieceType mover = type_of(pos.moved_piece(m));
 
-    PieceType mover = type_of(pos.moved_piece(m));
-    bonus += battle_kings_mover_bonus(mover);
+    int deltaYouth = 0;
+    int positional = 0;
 
     if (PieceType gate = gating_type(m); gate != NO_PIECE_TYPE)
-        bonus += battle_kings_gate_bonus(gate);
+    {
+        const int gateCentrality = battle_kings_centrality(pos, gating_square(m));
+        int gateDelta = 0;
+
+        switch (gate)
+        {
+        case PAWN:
+        case KNIGHT:
+        case BISHOP:
+            gateDelta = battle_kings_piece_youth(gate);
+            positional += gateDelta * (3 + gateCentrality);
+            break;
+
+        case ROOK:
+            gateDelta = -battle_kings_piece_youth(PAWN) / 2;
+            positional += gateDelta * 5 - gateCentrality * battle_kings_piece_youth(BISHOP);
+            break;
+
+        case QUEEN:
+            gateDelta = -battle_kings_piece_youth(PAWN);
+            positional += gateDelta * 6 - gateCentrality * battle_kings_piece_youth(KNIGHT);
+            break;
+
+        case COMMONER:
+            gateDelta = -BattleKingsCommonerPenalty / 8;
+            positional -= BattleKingsCommonerPenalty;
+            positional -= gateCentrality * battle_kings_piece_youth(PAWN);
+            break;
+
+        default:
+            gateDelta = 0;
+            break;
+        }
+
+        deltaYouth += gateDelta;
+    }
 
     if (pos.capture(m))
     {
-        Piece captured = pos.piece_on(to_sq(m));
+        Square capsq = type_of(m) == EN_PASSANT ? pos.capture_square(to_sq(m)) : to_sq(m);
+        Piece captured = pos.piece_on(capsq);
+
         if (captured != NO_PIECE)
         {
             PieceType victim = type_of(captured);
-            bonus += battle_kings_capture_bonus(victim);
+            const int victimYouth = battle_kings_piece_youth(victim);
+            deltaYouth += victimYouth;
+            positional += victimYouth * 6;
 
-            if (mover == QUEEN && victim != COMMONER)
-                bonus -= 2500;
+            if (victim == COMMONER)
+                positional += BattleKingsCommonerPenalty;
         }
     }
 
-    return bonus;
+    const int centralDelta = battle_kings_centrality(pos, to_sq(m))
+                           - battle_kings_centrality(pos, from_sq(m));
+    positional += centralDelta * (battle_kings_piece_youth(mover) + 10);
+
+    if (mover == QUEEN)
+        positional -= battle_kings_piece_youth(PAWN) * 6;
+    else if (mover == COMMONER)
+        positional -= BattleKingsCommonerPenalty;
+
+    const int futureBalance = currentBalance + deltaYouth;
+
+    return 6 * deltaYouth + futureBalance / 4 + positional;
   }
 
   enum Stages {
