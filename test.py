@@ -435,7 +435,7 @@ class TestPyffish(unittest.TestCase):
         self.assertEqual(fen, "Q7/8/8/8/8/8/7p/7K b - - 0 1")
 
     def test_battlekings_king_spawn_blocked(self):
-        fen = "8/8/8/8/8/3p4/4Q3/8 w - - 0 1"
+        fen = "8/8/8/8/8/4r3/4Q3/4r3 w - - 0 1"
         moves = sf.legal_moves("battlekings", fen, [])
         self.assertFalse(moves)
 
