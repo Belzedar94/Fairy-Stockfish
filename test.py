@@ -435,7 +435,7 @@ class TestPyffish(unittest.TestCase):
         self.assertEqual(fen, "Q7/8/8/8/8/8/7p/7K b - - 0 1")
 
     def test_battlekings_king_spawn_blocked(self):
-        fen = "8/8/8/8/8/3p4/4Q3/8 w - - 0 1"
+        fen = "8/8/8/8/8/4r3/4Q3/4r3 w - - 0 1"
         moves = sf.legal_moves("battlekings", fen, [])
         self.assertFalse(moves)
 
@@ -465,6 +465,11 @@ class TestPyffish(unittest.TestCase):
     def test_battlekings_first_commoner_capture_with_multiple(self):
         fen = "3qk3/pppp1ppp/2nkr3/4p1b1/P1N5/NPPP3P/NBNNPPPN/8 w - - 3 8"
         self._check_immediate_game_end("battlekings", fen, ["c4d6"], True, -sf.VALUE_MATE)
+
+    def test_battlekings_gating_capture_allows_commoner_spawn(self):
+        fen = "1Q1QRQ2/BqqqQQQQ/R2Rqq1Q/QQQQ2qQ/qB1QRRq1/rq1q1BNQ/qQQQNRNP/1R6 b - - 0 57"
+        moves = sf.legal_moves("battlekings", fen, [])
+        self.assertIn("a2b2", moves)
 
     def test_legal_moves(self):
         fen = "10/10/10/10/10/k9/10/K9 w - - 0 1"

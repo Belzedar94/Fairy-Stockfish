@@ -1274,7 +1274,16 @@ bool Position::legal(Move m) const {
       Bitboard occ = occupied | gating_square(m);
       if (type_of(m) == EN_PASSANT)
           occ ^= capture_square(to);
-      if (attackers_to(gating_square(m), occ, ~us))
+
+      Bitboard attackers = attackers_to(gating_square(m), occ, ~us);
+
+      // Ignore attacks from enemy pieces that will be removed as part of the move
+      if (capture(m) && piece_on(to) != NO_PIECE)
+          attackers &= ~SquareBB[to];
+      if (type_of(m) == EN_PASSANT)
+          attackers &= ~SquareBB[capture_square(to)];
+
+      if (attackers)
           return false;
   }
 
