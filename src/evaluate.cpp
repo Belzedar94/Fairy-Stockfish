@@ -445,8 +445,11 @@ namespace {
 
     constexpr Color     Them = ~Us;
     constexpr Direction Down = -pawn_push(Us);
-    constexpr Bitboard OutpostRanks = (Us == WHITE ? Rank4BB | Rank5BB | Rank6BB
-                                                   : Rank5BB | Rank4BB | Rank3BB);
+    const Rank maxRank = pos.max_rank();
+    Bitboard outpostRanks = Bitboard(0);
+    for (int r = int(RANK_4); r <= int(RANK_6) && r <= int(maxRank); ++r)
+        outpostRanks |= rank_bb(relative_rank(Us, Rank(r), maxRank));
+    outpostRanks &= pos.board_bb();
     Bitboard b1 = pos.pieces(Us, Pt);
     Bitboard b, bb;
     Score score = SCORE_ZERO;
@@ -526,7 +529,7 @@ namespace {
         {
             // Bonus if the piece is on an outpost square or can reach one
             // Bonus for knights (UncontestedOutpost) if few relevant targets
-            bb = OutpostRanks & (attackedBy[Us][PAWN] | shift<Down>(pos.pieces(PAWN)))
+            bb = outpostRanks & (attackedBy[Us][PAWN] | shift<Down>(pos.pieces(PAWN)))
                               & ~pe->pawn_attacks_span(Them);
             Bitboard targets = pos.pieces(Them) & ~pos.pieces(PAWN);
 
@@ -841,7 +844,10 @@ namespace {
 
     constexpr Color     Them     = ~Us;
     constexpr Direction Up       = pawn_push(Us);
-    constexpr Bitboard  TRank3BB = (Us == WHITE ? Rank3BB : Rank6BB);
+    const Rank maxRank = pos.max_rank();
+    Bitboard thirdRank = Bitboard(0);
+    if (int(maxRank) >= int(RANK_3))
+        thirdRank = rank_bb(relative_rank(Us, RANK_3, maxRank)) & pos.board_bb();
 
     Bitboard b, weak, defended, nonPawnEnemies, stronglyProtected, safe;
     Score score = SCORE_ZERO;
@@ -951,7 +957,7 @@ namespace {
 
     // Find squares where our pawns can push on the next move
     b  = shift<Up>(pos.pieces(Us, PAWN)) & ~pos.pieces();
-    b |= shift<Up>(b & TRank3BB) & ~pos.pieces();
+    b |= shift<Up>(b & thirdRank) & ~pos.pieces();
 
     // Keep only the squares which are relatively safe
     b &= ~attackedBy[Them][PAWN] & safe;
@@ -1140,12 +1146,15 @@ namespace {
 
     constexpr Color Them     = ~Us;
     constexpr Direction Down = -pawn_push(Us);
-    constexpr Bitboard SpaceMask =
-      Us == WHITE ? CenterFiles & (Rank2BB | Rank3BB | Rank4BB)
-                  : CenterFiles & (Rank7BB | Rank6BB | Rank5BB);
+    const Rank maxRank = pos.max_rank();
+    Bitboard spaceMask = CenterFiles & pos.board_bb();
+    Bitboard rankMask = Bitboard(0);
+    for (int r = int(RANK_2); r <= int(RANK_4) && r <= int(maxRank); ++r)
+        rankMask |= rank_bb(relative_rank(Us, Rank(r), maxRank));
+    spaceMask &= rankMask;
 
     // Find the available squares for our pieces inside the area defined by SpaceMask
-    Bitboard safe =   SpaceMask
+    Bitboard safe =   spaceMask
                    & ~pos.pieces(Us, PAWN)
                    & ~attackedBy[Them][PAWN];
 
