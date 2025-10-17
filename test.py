@@ -1293,6 +1293,11 @@ class TestPyffish(unittest.TestCase):
         legal = sf.legal_moves("chicken", fen, [])
         self.assertEqual(legal, ["d2e3"])
 
+    def test_chicken_mandatory_capture_after_color_flip(self):
+        fen = "2B2b1r/p1p1k1pp/5p2/1P6/8/1P4P1/p1pNNP1P/q3k2R b - - 0 9"
+        legal = sf.legal_moves("chicken", fen, ["e1e2", "h1a1"])
+        self.assertEqual(legal, ["d2b3"])
+
     def test_chicken_extinction_win(self):
         result = sf.game_result("chicken", "7k/8/8/8/8/8/8/8 w - - 0 1", [])
         self.assertEqual(result, sf.VALUE_MATE)

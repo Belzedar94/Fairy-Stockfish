@@ -733,7 +733,7 @@ namespace {
         v->attackedChangingColors.moverPieceTypes = ~NO_PIECE_SET;
         v->attackedChangingColors.targetPieceTypes = ~NO_PIECE_SET;
         v->attackedChangingColors.target = ColorChangeTarget::MOVER;
-        v->attackedChangingColors.convertedPiecesDormant = true;
+        v->attackedChangingColors.convertedPiecesDormant = false;
         v->stalematePieceCount = true;
         v->nnueAlias = "antichess";
         v->endgameEval = EG_EVAL_ANTI;
