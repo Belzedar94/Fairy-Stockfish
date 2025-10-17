@@ -85,13 +85,14 @@ namespace Stockfish::Eval::NNUE::Features {
     const auto& dp = st->dirtyPiece;
     Square oriented_ksq = orient(perspective, ksq, pos);
     for (int i = 0; i < dp.dirty_num; ++i) {
-      Piece pc = dp.piece[i];
-      if (dp.from[i] != SQ_NONE)
-        removed.push_back(make_index(perspective, dp.from[i], pc, oriented_ksq, pos));
+      Piece removedPc = dp.piece[i];
+      Piece addedPc = dp.newPiece[i];
+      if (dp.from[i] != SQ_NONE && removedPc != NO_PIECE)
+        removed.push_back(make_index(perspective, dp.from[i], removedPc, oriented_ksq, pos));
       else if (dp.handPiece[i] != NO_PIECE)
         removed.push_back(make_index(perspective, dp.handCount[i] - 1, dp.handPiece[i], oriented_ksq, pos));
-      if (dp.to[i] != SQ_NONE)
-        added.push_back(make_index(perspective, dp.to[i], pc, oriented_ksq, pos));
+      if (dp.to[i] != SQ_NONE && addedPc != NO_PIECE)
+        added.push_back(make_index(perspective, dp.to[i], addedPc, oriented_ksq, pos));
       else if (dp.handPiece[i] != NO_PIECE)
         added.push_back(make_index(perspective, dp.handCount[i] - 1, dp.handPiece[i], oriented_ksq, pos));
     }

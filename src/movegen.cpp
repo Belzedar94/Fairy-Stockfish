@@ -134,7 +134,8 @@ namespace {
   template<Color Us, GenType Type>
   ExtMove* generate_pawn_moves(const Position& pos, ExtMove* moveList, Bitboard target) {
 
-    if (!pos.pieces(Us, PAWN))
+    Bitboard pawns = pos.pieces(Us, PAWN);
+    if (!pawns)
         return moveList;
 
     constexpr Color     Them     = ~Us;
@@ -150,12 +151,12 @@ namespace {
     const Bitboard doubleStepRegion = pos.double_step_region(Us);
     const Bitboard tripleStepRegion = pos.triple_step_region(Us);
 
-    const Bitboard pawns      = pos.pieces(Us, PAWN);
     const Bitboard movable    = pos.board_bb(Us, PAWN) & ~pos.pieces();
     const Bitboard friendlyCapturable = pos.pieces(Us) & ~pos.pieces(Us, KING);
+    Bitboard enemyCapturable = pos.capture_disabled() ? Bitboard(0) : pos.pieces(Them);
     const Bitboard capturable = pos.board_bb(Us, PAWN)
-                              & (allowFriendlyCaptures ? (pos.pieces(Them) | friendlyCapturable)
-                                                       :  pos.pieces(Them));
+                              & (allowFriendlyCaptures ? (enemyCapturable | friendlyCapturable)
+                                                       :  enemyCapturable);
 
     target = Type == EVASIONS ? target : AllSquares;
 
@@ -415,6 +416,13 @@ namespace {
                 target = pos.checkers();
         }
 
+        if (pos.capture_disabled())
+        {
+            if (Type == CAPTURES)
+                target = Bitboard(0);
+            target &= ~pos.pieces(~Us);
+        }
+
         // Remove inaccessible squares (outside board + wall squares)
         target &= pos.board_bb();
 
@@ -442,7 +450,8 @@ namespace {
         // Special moves
         if (pos.cambodian_moves() && pos.gates(Us) && Type != CAPTURES)
         {
-            if (Type != EVASIONS && (pos.pieces(Us, KING) & pos.gates(Us)))
+            Bitboard kingGates = (pos.pieces(Us, KING) & ~pos.dormant_pieces()) & pos.gates(Us);
+            if (Type != EVASIONS && kingGates)
             {
                 Square from = pos.square<KING>(Us);
                 Bitboard b = PseudoAttacks[WHITE][KNIGHT][from] & rank_bb(rank_of(from + (Us == WHITE ? NORTH : SOUTH)))
@@ -451,7 +460,7 @@ namespace {
                     moveList = make_move_and_gating<SPECIAL>(pos, moveList, Us, from, pop_lsb(b));
             }
 
-            Bitboard b = pos.pieces(Us, FERS) & pos.gates(Us);
+            Bitboard b = (pos.pieces(Us, FERS) & ~pos.dormant_pieces()) & pos.gates(Us);
             while (b)
             {
                 Square from = pop_lsb(b);
@@ -463,12 +472,20 @@ namespace {
 
         // Workaround for passing: Execute a non-move with any piece
         if (pos.pass(Us) && !pos.count<KING>(Us) && pos.pieces(Us))
-            *moveList++ = make<SPECIAL>(lsb(pos.pieces(Us)), lsb(pos.pieces(Us)));
+        {
+            Bitboard available = pos.pieces(Us) & ~pos.dormant_pieces();
+            Bitboard marker = available ? available : pos.pieces(Us);
+            Square s = lsb(marker);
+            *moveList++ = make<SPECIAL>(s, s);
+        }
 
         //if "wall or move", generate walling action with null move
         if (pos.wall_or_move())
         {
-            moveList = make_move_and_gating<SPECIAL>(pos, moveList, Us, lsb(pos.pieces(Us)), lsb(pos.pieces(Us)));
+            Bitboard available = pos.pieces(Us) & ~pos.dormant_pieces();
+            Bitboard marker = available ? available : pos.pieces(Us);
+            Square s = lsb(marker);
+            moveList = make_move_and_gating<SPECIAL>(pos, moveList, Us, s, s);
         }
     }
 

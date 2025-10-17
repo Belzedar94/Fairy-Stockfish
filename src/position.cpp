@@ -315,9 +315,22 @@ Position& Position::set(const Variant* v, const string& fenStr, bool isChess960,
 
       else if ((idx = piece_to_char().find(token)) != string::npos || (idx = piece_to_char_synonyms().find(token)) != string::npos)
       {
-          if (ss.peek() == '~')
-              ss >> token;
-          put_piece(Piece(idx), sq, token == '~');
+          bool promoted = false;
+          bool dormant = false;
+
+          while (ss.peek() == '~' || ss.peek() == '!')
+          {
+              char marker;
+              ss >> marker;
+              if (marker == '~')
+                  promoted = true;
+              else if (marker == '!')
+                  dormant = true;
+          }
+
+          put_piece(Piece(idx), sq, promoted);
+          if (dormant)
+              dormantPieces |= square_bb(sq);
           ++sq;
       }
 
@@ -326,6 +339,15 @@ Position& Position::set(const Variant* v, const string& fenStr, bool isChess960,
       {
           ss >> token;
           put_piece(make_piece(color_of(Piece(idx)), promoted_piece_type(type_of(Piece(idx)))), sq, true, Piece(idx));
+
+          bool dormant = false;
+          while (ss.peek() == '!')
+          {
+              ss >> token;
+              dormant = true;
+          }
+          if (dormant)
+              dormantPieces |= square_bb(sq);
           ++sq;
       }
   }
@@ -662,6 +684,8 @@ void Position::set_state(StateInfo* si) const {
   if (check_counting())
       for (Color c : {WHITE, BLACK})
           si->key ^= Zobrist::checks[c][si->checksRemaining[c]];
+
+  si->dormantBefore = dormantPieces;
 }
 
 
@@ -710,15 +734,24 @@ string Position::fen(bool sfen, bool showPromoted, int countStarted, std::string
                   // Wall square
                   ss << "*";
               else if (unpromoted_piece_on(make_square(f, r)))
-                  // Promoted shogi pieces, e.g., +r for dragon
-                  ss << "+" << piece_to_char()[unpromoted_piece_on(make_square(f, r))];
+              // Promoted shogi pieces, e.g., +r for dragon
+              {
+                  Square sq = make_square(f, r);
+                  ss << "+" << piece_to_char()[unpromoted_piece_on(sq)];
+                  if (dormantPieces & square_bb(sq))
+                      ss << "!";
+              }
               else
               {
-                  ss << piece_to_char()[piece_on(make_square(f, r))];
+                  Square sq = make_square(f, r);
+                  ss << piece_to_char()[piece_on(sq)];
 
                   // Set promoted pieces
-                  if (((captures_to_hand() && !drop_loop()) || two_boards() ||  showPromoted) && is_promoted(make_square(f, r)))
+                  if (((captures_to_hand() && !drop_loop()) || two_boards() ||  showPromoted) && is_promoted(sq))
                       ss << "~";
+
+                  if (dormantPieces & square_bb(sq))
+                      ss << "!";
               }
           }
       }
@@ -925,29 +958,32 @@ Bitboard Position::slider_blockers(Bitboard sliders, Square s, Bitboard& pinners
 
 Bitboard Position::attackers_to(Square s, Bitboard occupied, Color c, Bitboard janggiCannons) const {
 
+  Bitboard activeMask = ~dormantPieces;
+
   // Use a faster version for variants with moderate rule variations
   if (var->fastAttacks)
   {
-      return  (pawn_attacks_bb(~c, s)          & pieces(c, PAWN))
-            | (attacks_bb<KNIGHT>(s)           & pieces(c, KNIGHT, ARCHBISHOP, CHANCELLOR))
-            | (attacks_bb<  ROOK>(s, occupied) & pieces(c, ROOK, QUEEN, CHANCELLOR))
-            | (attacks_bb<BISHOP>(s, occupied) & pieces(c, BISHOP, QUEEN, ARCHBISHOP))
-            | (attacks_bb<KING>(s)             & pieces(c, KING, COMMONER));
+      return  (pawn_attacks_bb(~c, s)          & (pieces(c, PAWN) & activeMask))
+            | (attacks_bb<KNIGHT>(s)           & (pieces(c, KNIGHT, ARCHBISHOP, CHANCELLOR) & activeMask))
+            | (attacks_bb<  ROOK>(s, occupied) & (pieces(c, ROOK, QUEEN, CHANCELLOR) & activeMask))
+            | (attacks_bb<BISHOP>(s, occupied) & (pieces(c, BISHOP, QUEEN, ARCHBISHOP) & activeMask))
+            | (attacks_bb<KING>(s)             & (pieces(c, KING, COMMONER) & activeMask));
   }
 
   // Use a faster version for selected fairy pieces
   if (var->fastAttacks2)
   {
-      return  (pawn_attacks_bb(~c, s)             & pieces(c, PAWN, BREAKTHROUGH_PIECE, GOLD))
-            | (attacks_bb<KNIGHT>(s)              & pieces(c, KNIGHT))
-            | (attacks_bb<  ROOK>(s, occupied)    & (  pieces(c, ROOK, QUEEN, DRAGON)
-                                                     | (pieces(c, LANCE) & PseudoAttacks[~c][LANCE][s])))
-            | (attacks_bb<BISHOP>(s, occupied)    & pieces(c, BISHOP, QUEEN, DRAGON_HORSE))
-            | (attacks_bb<KING>(s)                & pieces(c, KING, COMMONER))
-            | (attacks_bb<FERS>(s)                & pieces(c, FERS, DRAGON, SILVER))
-            | (attacks_bb<WAZIR>(s)               & pieces(c, WAZIR, DRAGON_HORSE, GOLD))
-            | (LeaperAttacks[~c][SHOGI_KNIGHT][s] & pieces(c, SHOGI_KNIGHT))
-            | (LeaperAttacks[~c][SHOGI_PAWN][s]   & pieces(c, SHOGI_PAWN, SILVER));
+      Bitboard activeLances = pieces(c, LANCE) & activeMask;
+      return  (pawn_attacks_bb(~c, s)             & (pieces(c, PAWN, BREAKTHROUGH_PIECE, GOLD) & activeMask))
+            | (attacks_bb<KNIGHT>(s)              & (pieces(c, KNIGHT) & activeMask))
+            | (attacks_bb<  ROOK>(s, occupied)    & ( (pieces(c, ROOK, QUEEN, DRAGON) & activeMask)
+                                                     | (activeLances & PseudoAttacks[~c][LANCE][s])))
+            | (attacks_bb<BISHOP>(s, occupied)    & (pieces(c, BISHOP, QUEEN, DRAGON_HORSE) & activeMask))
+            | (attacks_bb<KING>(s)                & (pieces(c, KING, COMMONER) & activeMask))
+            | (attacks_bb<FERS>(s)                & (pieces(c, FERS, DRAGON, SILVER) & activeMask))
+            | (attacks_bb<WAZIR>(s)               & (pieces(c, WAZIR, DRAGON_HORSE, GOLD) & activeMask))
+            | (LeaperAttacks[~c][SHOGI_KNIGHT][s] & (pieces(c, SHOGI_KNIGHT) & activeMask))
+            | (LeaperAttacks[~c][SHOGI_PAWN][s]   & (pieces(c, SHOGI_PAWN, SILVER) & activeMask));
   }
 
   Bitboard b = 0;
@@ -957,10 +993,12 @@ Bitboard Position::attackers_to(Square s, Bitboard occupied, Color c, Bitboard j
       if (board_bb(c, pt) & s)
       {
           PieceType move_pt = pt == KING ? king_type() : pt;
+          Bitboard activePieces = pieces(c, pt) & activeMask;
+
           // Consider asymmetrical moves (e.g., horse)
           if (AttackRiderTypes[move_pt] & ASYMMETRICAL_RIDERS)
           {
-              Bitboard asymmetricals = PseudoAttacks[~c][move_pt][s] & pieces(c, pt);
+              Bitboard asymmetricals = PseudoAttacks[~c][move_pt][s] & activePieces;
               while (asymmetricals)
               {
                   Square s2 = pop_lsb(asymmetricals);
@@ -969,9 +1007,11 @@ Bitboard Position::attackers_to(Square s, Bitboard occupied, Color c, Bitboard j
               }
           }
           else if (pt == JANGGI_CANNON)
-              b |= attacks_bb(~c, move_pt, s, occupied) & attacks_bb(~c, move_pt, s, occupied & ~janggiCannons) & pieces(c, JANGGI_CANNON);
+              b |= attacks_bb(~c, move_pt, s, occupied)
+                 & attacks_bb(~c, move_pt, s, occupied & ~janggiCannons)
+                 & activePieces;
           else
-              b |= attacks_bb(~c, move_pt, s, occupied) & pieces(c, pt);
+              b |= attacks_bb(~c, move_pt, s, occupied) & activePieces;
       }
   }
 
@@ -980,13 +1020,13 @@ Bitboard Position::attackers_to(Square s, Bitboard occupied, Color c, Bitboard j
   {
       Bitboard diags = 0;
       if (king_type() == WAZIR)
-          diags |= attacks_bb(~c, FERS, s, occupied) & pieces(c, KING);
-      diags |= attacks_bb(~c, FERS, s, occupied) & pieces(c, WAZIR);
-      diags |= attacks_bb(~c, PAWN, s, occupied) & pieces(c, SOLDIER);
-      diags |= rider_attacks_bb<RIDER_BISHOP>(s, occupied) & pieces(c, ROOK);
+          diags |= attacks_bb(~c, FERS, s, occupied) & (pieces(c, KING) & activeMask);
+      diags |= attacks_bb(~c, FERS, s, occupied) & (pieces(c, WAZIR) & activeMask);
+      diags |= attacks_bb(~c, PAWN, s, occupied) & (pieces(c, SOLDIER) & activeMask);
+      diags |= rider_attacks_bb<RIDER_BISHOP>(s, occupied) & (pieces(c, ROOK) & activeMask);
       diags |=  rider_attacks_bb<RIDER_CANNON_DIAG>(s, occupied)
               & rider_attacks_bb<RIDER_CANNON_DIAG>(s, occupied & ~janggiCannons)
-              & pieces(c, JANGGI_CANNON);
+              & (pieces(c, JANGGI_CANNON) & activeMask);
       b |= diags & diagonal_lines();
   }
 
@@ -1370,6 +1410,9 @@ bool Position::pseudo_legal(const Move m) const {
   if (pc == NO_PIECE || color_of(pc) != us)
       return false;
 
+  if (capture(m) && capture_disabled())
+      return false;
+
   // The destination square cannot be occupied by a friendly piece unless self capture is allowed
   if (pieces(us) & to)
   {
@@ -1569,6 +1612,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
   newSt.previous = st;
   st = &newSt;
   st->move = m;
+  st->dormantBefore = dormantPieces;
 
   // Increment ply counters. In particular, rule50 will be reset to zero later on
   // in case of a capture or a pawn move.
@@ -1583,13 +1627,44 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
   st->accumulator.computed[BLACK] = false;
   auto& dp = st->dirtyPiece;
   dp.dirty_num = 1;
+  bool decrementedCheck = false;
 
   Color us = sideToMove;
   Color them = ~us;
   Square from = from_sq(m);
   Square to = to_sq(m);
   Piece pc = moved_piece(m);
+  if (Eval::useNNUE)
+  {
+      dp.piece[0] = pc;
+      dp.newPiece[0] = pc;
+      dp.handPiece[0] = NO_PIECE;
+      dp.handCount[0] = 0;
+      dp.from[0] = from;
+      dp.to[0] = to;
+  }
+  if (pc == NO_PIECE)
+  {
+      assert(is_pass(m));
+
+      st->capturedpromoted = false;
+      st->unpromotedCapturedPiece = NO_PIECE;
+      st->capturedPiece = NO_PIECE;
+      st->pass = true;
+
+      dp.dirty_num = 0;
+      dp.newPiece[0] = NO_PIECE;
+      st->key = k;
+      st->checkersBB = Bitboard(0);
+      sideToMove = ~sideToMove;
+      set_check_info(st);
+      st->repetition = 0;
+
+      assert(pos_is_ok());
+      return;
+  }
   Piece captured = piece_on(type_of(m) == EN_PASSANT ? capture_square(to) : to);
+  bool isCaptureMove = captured != NO_PIECE;
   if (to == from)
   {
       assert((type_of(m) == PROMOTION && sittuyin_promotion()) || (is_pass(m) && (pass(us) || var->wallOrMove )));
@@ -1598,6 +1673,11 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
   st->capturedpromoted = is_promoted(to);
   st->unpromotedCapturedPiece = captured ? unpromoted_piece_on(to) : NO_PIECE;
   st->pass = is_pass(m);
+  st->colorChangeSquares = 0;
+  st->colorChangeWasPromoted = 0;
+
+  if (type_of(m) != DROP && (dormantPieces & square_bb(from)))
+      dormantPieces &= ~square_bb(from);
 
   assert(color_of(pc) == us);
   assert(captured == NO_PIECE
@@ -1607,8 +1687,110 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
                 || (self_capture() && color_of(captured) == us))));
   assert(type_of(captured) != KING);
 
+  auto trigger_matches = [](ColorChangeTrigger trigger, bool isCapture) {
+      switch (trigger)
+      {
+      case ColorChangeTrigger::NEVER:
+          return false;
+      case ColorChangeTrigger::ON_CAPTURE:
+          return isCapture;
+      case ColorChangeTrigger::ON_NON_CAPTURE:
+          return !isCapture;
+      case ColorChangeTrigger::ALWAYS:
+          return true;
+      }
+      return false;
+  };
+
+  auto resolve_target_color = [&](ColorChangeTarget target, Color moverColor, Color currentColor, Piece capturedPiece) {
+      switch (target)
+      {
+      case ColorChangeTarget::NONE:
+          return currentColor;
+      case ColorChangeTarget::MOVER:
+          return moverColor;
+      case ColorChangeTarget::OPPONENT:
+          return ~moverColor;
+      case ColorChangeTarget::CAPTURED:
+          return capturedPiece ? color_of(capturedPiece) : ~moverColor;
+      case ColorChangeTarget::WHITE:
+          return WHITE;
+      case ColorChangeTarget::BLACK:
+          return BLACK;
+      }
+      return currentColor;
+  };
+
+  auto apply_color_change = [&](Square s, Piece newPiece, bool newPromoted, Piece newUnpromoted, bool setDormant) {
+      Piece originalPiece = piece_on(s);
+      if (originalPiece == NO_PIECE)
+          return false;
+      bool originalPromoted = is_promoted(s);
+      Piece originalUnpromoted = unpromoted_piece_on(s);
+
+      if (originalPiece == newPiece && originalPromoted == newPromoted
+          && (!newPromoted || originalUnpromoted == newUnpromoted))
+          return false;
+
+      if (st->castlingRights && castlingRightsMask[s])
+      {
+          k ^= Zobrist::castling[st->castlingRights];
+          st->castlingRights &= ~castlingRightsMask[s];
+          k ^= Zobrist::castling[st->castlingRights];
+      }
+
+      st->colorChangeSquares |= square_bb(s);
+      if (originalPromoted)
+          st->colorChangeWasPromoted |= square_bb(s);
+      st->colorChangeOriginal[s] = originalPiece;
+      st->colorChangeUnpromoted[s] = originalUnpromoted;
+
+      remove_piece(s);
+      k ^= Zobrist::psq[originalPiece][s];
+      st->materialKey ^= Zobrist::psq[originalPiece][pieceCount[originalPiece]];
+      if (type_of(originalPiece) == PAWN)
+          st->pawnKey ^= Zobrist::psq[originalPiece][s];
+      if (type_of(originalPiece) != PAWN)
+          st->nonPawnMaterial[color_of(originalPiece)] -= PieceValue[MG][originalPiece];
+
+      put_piece(newPiece, s, newPromoted, newUnpromoted);
+      k ^= Zobrist::psq[newPiece][s];
+      st->materialKey ^= Zobrist::psq[newPiece][pieceCount[newPiece] - 1];
+      if (type_of(newPiece) == PAWN)
+          st->pawnKey ^= Zobrist::psq[newPiece][s];
+      if (type_of(newPiece) != PAWN)
+          st->nonPawnMaterial[color_of(newPiece)] += PieceValue[MG][newPiece];
+
+      if (setDormant)
+          dormantPieces |= square_bb(s);
+      else
+          dormantPieces &= ~square_bb(s);
+
+      return true;
+  };
+
+  auto push_dirty_board_change = [&](Piece oldPiece, Piece updatedPiece, Square fromSq, Square toSq) {
+      if (!Eval::useNNUE || (oldPiece == NO_PIECE && updatedPiece == NO_PIECE))
+          return;
+
+      if (dp.dirty_num < DirtyPiece::Max)
+      {
+          dp.piece[dp.dirty_num] = oldPiece;
+          dp.newPiece[dp.dirty_num] = updatedPiece;
+          dp.handPiece[dp.dirty_num] = NO_PIECE;
+          dp.handCount[dp.dirty_num] = 0;
+          dp.from[dp.dirty_num] = fromSq;
+          dp.to[dp.dirty_num] = toSq;
+      }
+
+      dp.dirty_num = std::min(dp.dirty_num + 1, DirtyPiece::Max);
+  };
+
   if (check_counting() && givesCheck)
+  {
       k ^= Zobrist::checks[us][st->checksRemaining[us]] ^ Zobrist::checks[us][--(st->checksRemaining[us])];
+      decrementedCheck = true;
+  }
 
   if (type_of(m) == CASTLING)
   {
@@ -1647,8 +1829,11 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
       {
           dp.dirty_num = 2;  // 1 piece moved, 1 piece captured
           dp.piece[1] = captured;
+          dp.newPiece[1] = NO_PIECE;
           dp.from[1] = capsq;
           dp.to[1] = SQ_NONE;
+          dp.handPiece[1] = NO_PIECE;
+          dp.handCount[1] = 0;
       }
 
       // Update board and piece lists
@@ -1780,6 +1965,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
       {
           // Add drop piece
           dp.piece[0] = pc;
+          dp.newPiece[0] = pc;
           dp.handPiece[0] = make_piece(us, in_hand_piece_type(m));
           dp.handCount[0] = pieceCountInHand[us][in_hand_piece_type(m)];
           dp.from[0] = SQ_NONE;
@@ -1822,6 +2008,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
       if (Eval::useNNUE)
       {
           dp.piece[0] = pc;
+          dp.newPiece[0] = pc;
           dp.from[0] = from;
           dp.to[0] = to;
       }
@@ -1845,17 +2032,12 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
 
           if (Eval::useNNUE)
           {
-              // Promoting pawn to SQ_NONE, promoted piece from SQ_NONE
-              dp.to[0] = SQ_NONE;
+              dp.newPiece[0] = promotion;
               dp.handPiece[0] = NO_PIECE;
-              dp.piece[dp.dirty_num] = promotion;
-              dp.handPiece[dp.dirty_num] = NO_PIECE;
-              dp.from[dp.dirty_num] = SQ_NONE;
-              dp.to[dp.dirty_num] = to;
-              dp.dirty_num++;
+              dp.to[0] = to;
           }
 
-          // Update hash keys
+      // Update hash keys
           k ^= Zobrist::psq[pc][to] ^ Zobrist::psq[promotion][to];
           st->pawnKey ^= Zobrist::psq[pc][to];
           st->materialKey ^=  Zobrist::psq[promotion][pieceCount[promotion]-1]
@@ -1900,14 +2082,9 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
 
       if (Eval::useNNUE)
       {
-          // Promoting piece to SQ_NONE, promoted piece from SQ_NONE
-          dp.to[0] = SQ_NONE;
+          dp.newPiece[0] = promotion;
           dp.handPiece[0] = NO_PIECE;
-          dp.piece[dp.dirty_num] = promotion;
-          dp.handPiece[dp.dirty_num] = NO_PIECE;
-          dp.from[dp.dirty_num] = SQ_NONE;
-          dp.to[dp.dirty_num] = to;
-          dp.dirty_num++;
+          dp.to[0] = to;
       }
 
       // Update hash keys
@@ -1927,14 +2104,9 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
 
       if (Eval::useNNUE)
       {
-          // Demoting piece to SQ_NONE, demoted piece from SQ_NONE
-          dp.to[0] = SQ_NONE;
+          dp.newPiece[0] = demotion;
           dp.handPiece[0] = NO_PIECE;
-          dp.piece[dp.dirty_num] = demotion;
-          dp.handPiece[dp.dirty_num] = NO_PIECE;
-          dp.from[dp.dirty_num] = SQ_NONE;
-          dp.to[dp.dirty_num] = to;
-          dp.dirty_num++;
+          dp.to[0] = to;
       }
 
       // Update hash keys
@@ -1968,6 +2140,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
       {
           // Add gating piece
           dp.piece[dp.dirty_num] = gating_piece;
+          dp.newPiece[dp.dirty_num] = gating_piece;
           dp.handPiece[dp.dirty_num] = gating_piece;
           dp.handCount[dp.dirty_num] = pieceCountInHand[us][gating_type(m)];
           dp.from[dp.dirty_num] = SQ_NONE;
@@ -2002,6 +2175,22 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
       st->gatesBB[them] ^= square<KING>(them);
 
 
+  if (st->colorChangeSquares)
+  {
+      Bitboard changed = st->colorChangeSquares;
+      while (changed)
+      {
+          Square s = pop_lsb(changed);
+          Piece original = st->colorChangeOriginal[s];
+          bool wasPromoted = st->colorChangeWasPromoted & square_bb(s);
+          Piece originalUnpromoted = st->colorChangeUnpromoted[s];
+          remove_piece(s);
+          put_piece(original, s, wasPromoted, originalUnpromoted);
+      }
+      pc = piece_on(to);
+  }
+
+
   // Remove the blast pieces
   if (captured && (blast_on_capture() || var->petrifyOnCaptureTypes))
   {
@@ -2025,7 +2214,9 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
           if (Eval::useNNUE)
           {
               dp.piece[dp.dirty_num] = bpc;
+              dp.newPiece[dp.dirty_num] = NO_PIECE;
               dp.handPiece[dp.dirty_num] = NO_PIECE;
+              dp.handCount[dp.dirty_num] = 0;
               dp.from[dp.dirty_num] = bsq;
               dp.to[dp.dirty_num] = SQ_NONE;
               dp.dirty_num++;
@@ -2084,6 +2275,134 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
       }
   }
 
+  Piece moverPieceBeforeChange = piece_on(to);
+  if (moverPieceBeforeChange != NO_PIECE)
+  {
+      PieceType moverTypeBeforeChange = type_of(moverPieceBeforeChange);
+
+      if (trigger_matches(var->changingColors.trigger, isCaptureMove)
+          && (var->changingColors.pieceTypes & moverTypeBeforeChange)
+          && var->changingColors.colors[us])
+      {
+          if (!(var->changingColors.requireDifferentCaptureType
+                && (!isCaptureMove || !captured || type_of(captured) == moverTypeBeforeChange)))
+          {
+              PieceType targetType = moverTypeBeforeChange;
+              bool newPromoted = is_promoted(to);
+              Piece newUnpromoted = newPromoted ? unpromoted_piece_on(to) : NO_PIECE;
+
+              if (var->changingColors.changeTypeToCaptured && isCaptureMove && captured)
+              {
+                  targetType = type_of(captured);
+                  if (var->changingColors.resetPromotionState || targetType != moverTypeBeforeChange)
+                  {
+                      newPromoted = false;
+                      newUnpromoted = NO_PIECE;
+                  }
+              }
+              else if (var->changingColors.resetPromotionState)
+              {
+                  newPromoted = false;
+                  newUnpromoted = NO_PIECE;
+              }
+
+              Color targetColor = resolve_target_color(var->changingColors.target, us, color_of(moverPieceBeforeChange), captured);
+              Piece newPiece = make_piece(targetColor, targetType);
+              if (apply_color_change(to, newPiece, newPromoted, newUnpromoted, false) && Eval::useNNUE)
+                  dp.newPiece[0] = piece_on(to);
+          }
+      }
+  }
+
+  Piece moverPieceAfterChange = piece_on(to);
+  if (moverPieceAfterChange != NO_PIECE)
+  {
+      Color moverColorAfterChange = color_of(moverPieceAfterChange);
+      PieceType moverTypeAfterChange = type_of(moverPieceAfterChange);
+
+      if (var->attackedChangingColors.enabled
+          && trigger_matches(var->attackedChangingColors.trigger, isCaptureMove)
+          && var->attackedChangingColors.moverColors[us]
+          && (var->attackedChangingColors.moverPieceTypes & moverTypeAfterChange))
+      {
+          Bitboard attacked = attacks_from(moverColorAfterChange, moverTypeAfterChange, to) & pieces();
+          while (attacked)
+          {
+              Square s = pop_lsb(attacked);
+              Piece victim = piece_on(s);
+              if (!victim)
+                  continue;
+              Color victimColor = color_of(victim);
+              if (victimColor == moverColorAfterChange)
+                  continue;
+              if (!var->attackedChangingColors.targetColors[victimColor])
+                  continue;
+              if (!(var->attackedChangingColors.targetPieceTypes & type_of(victim)))
+                  continue;
+
+              Color newColor = resolve_target_color(var->attackedChangingColors.target, moverColorAfterChange, victimColor, NO_PIECE);
+              if (newColor == victimColor)
+                  continue;
+
+              bool newPromoted = is_promoted(s);
+              Piece newUnpromoted = newPromoted ? unpromoted_piece_on(s) : NO_PIECE;
+              if (var->attackedChangingColors.resetPromotionState)
+              {
+                  newPromoted = false;
+                  newUnpromoted = NO_PIECE;
+              }
+
+              Piece newPiece = make_piece(newColor, type_of(victim));
+              if (apply_color_change(s, newPiece, newPromoted, newUnpromoted,
+                                     var->attackedChangingColors.convertedPiecesDormant))
+                  push_dirty_board_change(victim, piece_on(s), s, s);
+          }
+      }
+  }
+
+  Bitboard checkers = Bitboard(0);
+
+  if (count<KING>(them))
+  {
+      if (st->colorChangeSquares)
+      {
+          checkers = attackers_to(square<KING>(them), us) & pieces(us);
+
+          if (check_counting())
+          {
+              if (checkers && !decrementedCheck)
+              {
+                  k ^= Zobrist::checks[us][st->checksRemaining[us]]
+                     ^ Zobrist::checks[us][--(st->checksRemaining[us])];
+                  decrementedCheck = true;
+              }
+              else if (!checkers && decrementedCheck)
+              {
+                  k ^= Zobrist::checks[us][st->checksRemaining[us]]
+                     ^ Zobrist::checks[us][st->checksRemaining[us] + 1];
+                  ++st->checksRemaining[us];
+                  decrementedCheck = false;
+              }
+          }
+
+          givesCheck = bool(checkers);
+      }
+      else if (givesCheck)
+          checkers = attackers_to(square<KING>(them), us) & pieces(us);
+  }
+  else
+  {
+      if (check_counting() && decrementedCheck)
+      {
+          k ^= Zobrist::checks[us][st->checksRemaining[us]]
+             ^ Zobrist::checks[us][st->checksRemaining[us] + 1];
+          ++st->checksRemaining[us];
+          decrementedCheck = false;
+      }
+
+      givesCheck = false;
+  }
+
   // Add gated wall square
   // if wallOrMove, only actually place the wall if they gave up their move
   if (walling() && (!var->wallOrMove || (from==to)))
@@ -2105,7 +2424,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
   // Update the key with the final value
   st->key = k;
   // Calculate checkers bitboard (if move gives check)
-  st->checkersBB = givesCheck ? attackers_to(square<KING>(them), us) & pieces(us) : Bitboard(0);
+  st->checkersBB = count<KING>(them) ? checkers : Bitboard(0);
   assert(givesCheck == bool(st->checkersBB));
 
   sideToMove = ~sideToMove;
@@ -2164,6 +2483,24 @@ void Position::undo_move(Move m) {
   Square from = from_sq(m);
   Square to = to_sq(m);
   Piece pc = piece_on(to);
+
+  if (st->colorChangeSquares)
+  {
+      Bitboard changed = st->colorChangeSquares;
+      while (changed)
+      {
+          Square s = pop_lsb(changed);
+          Piece original = st->colorChangeOriginal[s];
+          bool wasPromoted = st->colorChangeWasPromoted & square_bb(s);
+          Piece originalUnpromoted = st->colorChangeUnpromoted[s];
+
+          if (piece_on(s))
+              remove_piece(s);
+          if (original)
+              put_piece(original, s, wasPromoted, originalUnpromoted);
+      }
+      pc = piece_on(to);
+  }
 
   assert(type_of(m) == DROP || empty(from) || type_of(m) == CASTLING || is_gating(m)
          || (type_of(m) == PROMOTION && sittuyin_promotion())
@@ -2280,6 +2617,8 @@ void Position::undo_move(Move m) {
       }
   }
 
+  dormantPieces = st->dormantBefore;
+
   // Finally point our state pointer back to the previous state
   st = st->previous;
   --gamePly;
@@ -2305,11 +2644,17 @@ void Position::do_castling(Color us, Square from, Square& to, Square& rfrom, Squ
   {
       auto& dp = st->dirtyPiece;
       dp.piece[0] = castlingKingPiece;
+      dp.newPiece[0] = castlingKingPiece;
       dp.from[0] = from;
       dp.to[0] = to;
+      dp.handPiece[0] = NO_PIECE;
+      dp.handCount[0] = 0;
       dp.piece[1] = castlingRookPiece;
+      dp.newPiece[1] = castlingRookPiece;
       dp.from[1] = rfrom;
       dp.to[1] = rto;
+      dp.handPiece[1] = NO_PIECE;
+      dp.handCount[1] = 0;
       dp.dirty_num = 2;
   }
 
@@ -2337,6 +2682,7 @@ void Position::do_null_move(StateInfo& newSt) {
 
   st->dirtyPiece.dirty_num = 0;
   st->dirtyPiece.piece[0] = NO_PIECE; // Avoid checks in UpdateAccumulator()
+  st->dirtyPiece.newPiece[0] = NO_PIECE;
   st->accumulator.computed[WHITE] = false;
   st->accumulator.computed[BLACK] = false;
 
@@ -2639,6 +2985,8 @@ bool Position::see_ge(Move m, Value threshold) const {
 
 bool Position::is_optional_game_end(Value& result, int ply, int countStarted) const {
 
+  result = VALUE_ZERO;
+
   // n-move rule
   if (n_move_rule() && st->rule50 > (2 * n_move_rule() - 1) && (!checkers() || MoveList<LEGAL>(*this).size()))
   {
@@ -2776,6 +3124,8 @@ bool Position::is_optional_game_end(Value& result, int ply, int countStarted) co
 /// It does not detect stalemates.
 
 bool Position::is_immediate_game_end(Value& result, int ply) const {
+
+  result = VALUE_ZERO;
 
   // Extinction
   // Extinction does not apply for pseudo-royal pieces, because they can not be captured
