@@ -599,9 +599,9 @@ void Position::set_check_info(StateInfo* si) const {
       {
           PieceType pt = pop_lsb(ps);
           si->pseudoRoyalCandidates |= pieces(pt);
-          if (count(sideToMove, pt) <= var->extinctionPieceCount + 1)
+          if (extinction_first_capture() || count(sideToMove, pt) <= var->extinctionPieceCount + 1)
               si->pseudoRoyals |= pieces(sideToMove, pt);
-          if (count(~sideToMove, pt) <= var->extinctionPieceCount + 1)
+          if (extinction_first_capture() || count(~sideToMove, pt) <= var->extinctionPieceCount + 1)
               si->pseudoRoyals |= pieces(~sideToMove, pt);
       }
   }
@@ -1284,7 +1284,24 @@ bool Position::legal(Move m) const {
           attackers &= ~SquareBB[capture_square(to)];
 
       if (attackers)
-          return false;
+      {
+          bool captureEndsGame = false;
+
+          if (   extinction_first_capture()
+              && capture(m))
+          {
+              Square captureSq = type_of(m) == EN_PASSANT ? capture_square(to) : to;
+              Piece captured = piece_on(captureSq);
+
+              if (   captured != NO_PIECE
+                  && color_of(captured) == ~us
+                  && (extinction_piece_types() & piece_set(type_of(captured))))
+                  captureEndsGame = true;
+          }
+
+          if (!captureEndsGame)
+              return false;
+      }
   }
 
   // Flying general rule and bikjang

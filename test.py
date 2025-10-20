@@ -471,6 +471,24 @@ class TestPyffish(unittest.TestCase):
         moves = sf.legal_moves("battlekings", fen, [])
         self.assertIn("a2b2", moves)
 
+    def test_battlekings_commoner_capture_ends_game_even_if_gate_attacked(self):
+        fen = "B1B1BB1q/qqBBRQqq/RB1qRBqQ/qRBqqB1R/QqqQqB1R/Rqqqqq1q/qkkqqqqq/kqqrq1br b - - 0 64"
+
+        moves = sf.legal_moves("battlekings", fen, [])
+        self.assertNotIn("b2a3", moves)
+
+        white_to_move = "B1B1BB1q/qqBBRQqq/RB1qRBqQ/qRBqqB1R/QqqQqB1R/kqqqqq1q/q1kqqqqq/kqqrq1br w - - 0 65"
+        white_moves = sf.legal_moves("battlekings", white_to_move, [])
+        self.assertIn("a4a3", white_moves)
+
+        self._check_immediate_game_end(
+            "battlekings",
+            white_to_move,
+            ["a4a3"],
+            True,
+            -sf.VALUE_MATE,
+        )
+
     def test_legal_moves(self):
         fen = "10/10/10/10/10/k9/10/K9 w - - 0 1"
         result = sf.legal_moves("capablanca", fen, [])
