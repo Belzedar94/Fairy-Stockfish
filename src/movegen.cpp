@@ -78,7 +78,10 @@ namespace {
     }
 
     if (forcedGate != NO_PIECE_TYPE)
-        *moveList++ = make_gating<T>(from, to, forcedGate, forcedGateSquare);
+    {
+        PieceType encodedGate = (T == PROMOTION ? pt : forcedGate);
+        *moveList++ = make_gating<T>(from, to, encodedGate, forcedGateSquare);
+    }
     else
         *moveList++ = make<T>(from, to, pt);
 

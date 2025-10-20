@@ -89,7 +89,7 @@ namespace {
     PieceType mover = type_of(pos.moved_piece(m));
     bonus += battle_kings_mover_bonus(mover);
 
-    if (PieceType gate = gating_type(m); gate != NO_PIECE_TYPE)
+    if (PieceType gate = pos.gating_piece_type(m); gate != NO_PIECE_TYPE)
         bonus += battle_kings_gate_bonus(gate);
 
     if (pos.capture(m))

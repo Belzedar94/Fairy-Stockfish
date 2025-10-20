@@ -293,7 +293,7 @@ inline const std::string move_to_san(Position& pos, Move m, Notation n) {
 
         if (is_gating(m))
         {
-            san += std::string("/") + (char)toupper(pos.piece_to_char()[make_piece(us, gating_type(m))]);
+            san += std::string("/") + (char)toupper(pos.piece_to_char()[make_piece(us, pos.gating_piece_type(m))]);
             san += square(pos, gating_square(m), n);
         }
     }
@@ -342,7 +342,7 @@ inline const std::string move_to_san(Position& pos, Move m, Notation n) {
         else if (type_of(m) == NORMAL && is_shogi(n) && pos.pseudo_legal(make<PIECE_PROMOTION>(from, to)))
             san += std::string("=");
         if (is_gating(m))
-            san += std::string("/") + (char)toupper(pos.piece_to_char()[make_piece(us, gating_type(m))]);
+            san += std::string("/") + (char)toupper(pos.piece_to_char()[make_piece(us, pos.gating_piece_type(m))]);
     }
 
     // Wall square
