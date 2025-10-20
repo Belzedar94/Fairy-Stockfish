@@ -792,7 +792,7 @@ namespace {
         v->extinctionValue = -VALUE_MATE;
         v->extinctionPieceTypes = piece_set(COMMONER);
         v->extinctionMustAppear = piece_set(COMMONER);
-     //   v->extinctionPseudoRoyal = true;
+        v->extinctionPseudoRoyal = true;
         v->extinctionFirstCaptureWins = true;
         return v;
     }
