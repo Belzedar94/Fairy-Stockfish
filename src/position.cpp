@@ -220,6 +220,27 @@ Key Position::material_key(EndgameEval e) const {
 }
 
 
+PieceType Position::gating_piece_type(Move m, Color c, Piece moving) const {
+
+  if (!gating() || !is_gating(m))
+      return NO_PIECE_TYPE;
+
+  if (type_of(m) == PROMOTION && !gating_from_hand())
+  {
+      if (moving == NO_PIECE)
+          moving = moved_piece(m);
+      if (moving != NO_PIECE)
+      {
+          PieceType forced = forced_gating_type(c, type_of(moving));
+          if (forced != NO_PIECE_TYPE)
+              return forced;
+      }
+  }
+
+  return gating_type(m);
+}
+
+
 /// Position::set() initializes the position object with the given FEN string.
 /// This function is not very robust - make sure that input FENs are correct,
 /// this is assumed to be the responsibility of the GUI.
@@ -1263,11 +1284,12 @@ bool Position::legal(Move m) const {
 
   Bitboard occupied = (type_of(m) != DROP ? pieces() ^ from : pieces()) | to;
 
-  bool gatingCreatesExtinctionPiece =   gating_type(m) != NO_PIECE_TYPE
-                                     && (extinction_piece_types() & piece_set(gating_type(m)));
+  PieceType gateType = gating_piece_type(m, us);
+  bool gatingCreatesExtinctionPiece =   gateType != NO_PIECE_TYPE
+                                     && (extinction_piece_types() & piece_set(gateType));
 
   if (   gating() && is_gating(m)
-      && (   gating_type(m) == KING
+      && (   gateType == KING
           || (   gatingCreatesExtinctionPiece
               && (extinction_pseudo_royal() || extinction_first_capture()))))
   {
@@ -1522,7 +1544,7 @@ bool Position::gives_check(Move m) const {
 
   // Is there a check by gated pieces?
   if (    gating() && is_gating(m)
-      && attacks_bb(sideToMove, gating_type(m), gating_square(m), (pieces() ^ from) | to) & square<KING>(~sideToMove))
+      && attacks_bb(sideToMove, gating_piece_type(m, sideToMove), gating_square(m), (pieces() ^ from) | to) & square<KING>(~sideToMove))
       return true;
 
   // Petrified piece can't give check
@@ -1639,6 +1661,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
   st->capturedpromoted = is_promoted(to);
   st->unpromotedCapturedPiece = captured ? unpromoted_piece_on(to) : NO_PIECE;
   st->pass = is_pass(m);
+  st->gatingPieceType = NO_PIECE_TYPE;
 
   assert(color_of(pc) == us);
   assert(captured == NO_PIECE
@@ -2003,7 +2026,9 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
   if (gating() && is_gating(m))
   {
       Square gate = gating_square(m);
-      Piece gating_piece = make_piece(us, gating_type(m));
+      PieceType gateTypeForMove = gating_piece_type(m, us, pc);
+      Piece gating_piece = make_piece(us, gateTypeForMove);
+      st->gatingPieceType = gateTypeForMove;
 
       if (Eval::useNNUE)
       {
@@ -2012,7 +2037,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
           if (gating_from_hand())
           {
               dp.handPiece[dp.dirty_num] = gating_piece;
-              dp.handCount[dp.dirty_num] = pieceCountInHand[us][gating_type(m)];
+              dp.handCount[dp.dirty_num] = pieceCountInHand[us][gateTypeForMove];
           }
           else
           {
@@ -2254,7 +2279,9 @@ void Position::undo_move(Move m) {
   // Remove gated piece
   if (gating() && is_gating(m))
   {
-      Piece gating_piece = make_piece(us, gating_type(m));
+      PieceType gateTypeForMove = st->gatingPieceType != NO_PIECE_TYPE ? st->gatingPieceType
+                                                                       : gating_piece_type(m, us);
+      Piece gating_piece = make_piece(us, gateTypeForMove);
       remove_piece(gating_square(m));
       board[gating_square(m)] = NO_PIECE;
       if (gating_from_hand())

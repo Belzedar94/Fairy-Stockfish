@@ -56,6 +56,7 @@ struct StateInfo {
   Square castlingKingSquare[COLOR_NB];
   Bitboard wallSquares;
   Bitboard gatesBB[COLOR_NB];
+  PieceType gatingPieceType;
   PieceSet extinctionSeen[COLOR_NB];
 
   // Not copied when making a move (will be recomputed anyhow)
@@ -191,6 +192,9 @@ public:
   bool gating_from_hand() const;
   PieceType gating_piece_after(Color c, PieceType pt) const;
   PieceType forced_gating_type(Color c, PieceType pt) const;
+  PieceType gating_piece_type(Move m) const;
+  PieceType gating_piece_type(Move m, Color c) const;
+  PieceType gating_piece_type(Move m, Color c, Piece moving) const;
   bool walling() const;
   WallingRule walling_rule() const;
   bool wall_or_move() const;
@@ -876,6 +880,14 @@ inline PieceType Position::forced_gating_type(Color c, PieceType pt) const {
   if (next == KING && count<KING>(c))
       return NO_PIECE_TYPE;
   return next;
+}
+
+inline PieceType Position::gating_piece_type(Move m) const {
+    return gating_piece_type(m, sideToMove, NO_PIECE);
+}
+
+inline PieceType Position::gating_piece_type(Move m, Color c) const {
+  return gating_piece_type(m, c, NO_PIECE);
 }
 
 inline bool Position::walling() const {

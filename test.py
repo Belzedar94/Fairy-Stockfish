@@ -424,9 +424,9 @@ class TestPyffish(unittest.TestCase):
         expected = "8/ppnppppp/8/2n5/2N1P3/2P1BP2/PNPnNNPP/3n4 w - - 0 6"
 
         legal = sf.legal_moves("battlekings", start, [])
-        self.assertIn("d2d1", legal)
+        self.assertIn("d2d1n", legal)
 
-        fen = sf.get_fen("battlekings", start, ["d2d1"])
+        fen = sf.get_fen("battlekings", start, ["d2d1n"])
         self.assertEqual(fen, expected)
 
     def test_chess_promotion_does_not_gate(self):
@@ -488,6 +488,13 @@ class TestPyffish(unittest.TestCase):
             True,
             -sf.VALUE_MATE,
         )
+
+    def test_battlekings_pawn_promotion_lists_all_choices(self):
+        fen = "8/ppppnppp/8/4N3/3PN3/3P4/PPNBpPPP/8 b - - 0 5"
+
+        moves = sf.legal_moves("battlekings", fen, [])
+        promotions = [move for move in moves if move.startswith("e2e1")]
+        self.assertCountEqual(promotions, ["e2e1n", "e2e1b", "e2e1r", "e2e1q"])
 
     def test_legal_moves(self):
         fen = "10/10/10/10/10/k9/10/K9 w - - 0 1"

@@ -539,23 +539,7 @@ string UCI::move(const Position& pos, Move m) {
       move += "," + UCI::square(pos, to) + UCI::square(pos, gating_square(m));
 
   if (type_of(m) == PROMOTION)
-  {
-      PieceType forced = NO_PIECE_TYPE;
-      if (pos.gating() && is_gating(m) && !pos.gating_from_hand())
-      {
-          Piece moving = pos.moved_piece(m);
-          if (moving != NO_PIECE)
-              forced = pos.forced_gating_type(pos.side_to_move(), type_of(moving));
-      }
-
-      bool autoPromotion =   pos.gating()
-                          && forced != NO_PIECE_TYPE
-                          && forced == promotion_type(m)
-                          && forced == gating_type(m);
-
-      if (!autoPromotion)
-          move += pos.piece_to_char()[make_piece(BLACK, promotion_type(m))];
-  }
+      move += pos.piece_to_char()[make_piece(BLACK, promotion_type(m))];
   else if (type_of(m) == PIECE_PROMOTION)
       move += '+';
   else if (type_of(m) == PIECE_DEMOTION)
@@ -564,7 +548,7 @@ string UCI::move(const Position& pos, Move m) {
   {
       if (pos.gating_from_hand())
       {
-          move += pos.piece_to_char()[make_piece(BLACK, gating_type(m))];
+          move += pos.piece_to_char()[make_piece(BLACK, pos.gating_piece_type(m))];
           if (gating_square(m) != from)
               move += UCI::square(pos, gating_square(m));
       }
@@ -607,7 +591,8 @@ Move UCI::to_move(const Position& pos, string& str) {
           PieceType forced = pos.gating() && is_gating(m) && !pos.gating_from_hand() && moving != NO_PIECE
                               ? pos.forced_gating_type(pos.side_to_move(), type_of(moving))
                               : NO_PIECE_TYPE;
-          if (forced != NO_PIECE_TYPE && forced == promotion_type(m) && forced == gating_type(m)
+          PieceType gatePiece = pos.gating_piece_type(m);
+          if (forced != NO_PIECE_TYPE && forced == promotion_type(m) && forced == gatePiece
               && str == uciMove.substr(0, 4))
               return m;
       }
