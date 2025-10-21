@@ -220,14 +220,15 @@ Key Position::material_key(EndgameEval e) const {
 }
 
 
-PieceType Position::gating_piece_type(Move m, Color c) const {
+PieceType Position::gating_piece_type(Move m, Color c, Piece moving) const {
 
   if (!gating() || !is_gating(m))
       return NO_PIECE_TYPE;
 
   if (type_of(m) == PROMOTION && !gating_from_hand())
   {
-      Piece moving = moved_piece(m);
+      if (moving == NO_PIECE)
+          moving = moved_piece(m);
       if (moving != NO_PIECE)
       {
           PieceType forced = forced_gating_type(c, type_of(moving));
@@ -2025,7 +2026,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
   if (gating() && is_gating(m))
   {
       Square gate = gating_square(m);
-      PieceType gateTypeForMove = gating_piece_type(m, us);
+      PieceType gateTypeForMove = gating_piece_type(m, us, pc);
       Piece gating_piece = make_piece(us, gateTypeForMove);
       st->gatingPieceType = gateTypeForMove;
 
