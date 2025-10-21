@@ -194,6 +194,7 @@ public:
   PieceType forced_gating_type(Color c, PieceType pt) const;
   PieceType gating_piece_type(Move m) const;
   PieceType gating_piece_type(Move m, Color c) const;
+  PieceType gating_piece_type(Move m, Color c, Piece moving) const;
   bool walling() const;
   WallingRule walling_rule() const;
   bool wall_or_move() const;
@@ -882,7 +883,11 @@ inline PieceType Position::forced_gating_type(Color c, PieceType pt) const {
 }
 
 inline PieceType Position::gating_piece_type(Move m) const {
-  return gating_piece_type(m, sideToMove);
+    return gating_piece_type(m, sideToMove, NO_PIECE);
+}
+
+inline PieceType Position::gating_piece_type(Move m, Color c) const {
+  return gating_piece_type(m, c, NO_PIECE);
 }
 
 inline bool Position::walling() const {
