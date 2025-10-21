@@ -424,9 +424,9 @@ class TestPyffish(unittest.TestCase):
         expected = "8/ppnppppp/8/2n5/2N1P3/2P1BP2/PNPnNNPP/3n4 w - - 0 6"
 
         legal = sf.legal_moves("battlekings", start, [])
-        self.assertIn("d2d1", legal)
+        self.assertIn("d2d1n", legal)
 
-        fen = sf.get_fen("battlekings", start, ["d2d1"])
+        fen = sf.get_fen("battlekings", start, ["d2d1n"])
         self.assertEqual(fen, expected)
 
     def test_chess_promotion_does_not_gate(self):
