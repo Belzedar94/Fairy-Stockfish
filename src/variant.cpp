@@ -2003,6 +2003,43 @@ Variant* Variant::conclude() {
                   && !restrictedMobility
                   && !cambodianMoves
                   && !diagonalLines;
+    fastCheckDetection =  fastAttacks
+                       && !twoBoards
+                       && !pieceDrops
+                       && !capturesToHand
+                       && !dropLoop
+                       && !mustDrop
+                       && !gating
+                       && !seirawanGating
+                       && wallingRule == NO_WALLING
+                       && !wallOrMove
+                       && !freeDrops
+                       && !selfCapture
+                       && !pass[WHITE] && !pass[BLACK]
+                       && !passOnStalemate[WHITE] && !passOnStalemate[BLACK]
+                       && !makpongRule
+                       && !flyingGeneral
+                       && !cambodianMoves
+                       && !diagonalLines
+                       && petrifyOnCaptureTypes == NO_PIECE_SET
+                       && !blastOnCapture
+                       && !pieceDemotion
+                       && !piecePromotionOnCapture
+                       && !dropPromoted
+                       && dropNoDoubled == NO_PIECE_TYPE
+                       && !dropOppositeColoredBishop
+                       && !promotionZonePawnDrops
+                       && !immobilityIllegal
+                       && !checkCounting
+                       && flipEnclosedPieces == NO_ENCLOSING
+                       && !flagMove
+                       && !bikjangRule
+                       && extinctionValue == VALUE_NONE
+                       && !extinctionClaim
+                       && !extinctionPseudoRoyal
+                       && connectN == 0
+                       && countingRule == NO_COUNTING
+                       && chasingRule == NO_CHASING;
 
     // Initialize calculated NNUE properties
     nnueKing =  pieceTypes & KING ? KING
