@@ -756,6 +756,31 @@ namespace {
         v->promotionPieceTypes[BLACK] = piece_set(ARCHBISHOP) | CHANCELLOR | QUEEN | ROOK | BISHOP | KNIGHT;
         return v;
     }
+    // Battle of the Kings
+    // https://www.chessvariants.com/rules/battle-of-kings-
+    Variant* battle_kings_variant() {
+        Variant* v = chess_variant_base()->init();
+        v->startFen = "8/pppppppp/8/8/8/8/PPPPPPPP/8 w - - 0 1";
+        v->castling = false;
+        v->gating = true;
+        v->gatingFromHand = false;
+        for (Color c : {WHITE, BLACK})
+        {
+            v->gatingPieceAfter[c][PAWN] = KNIGHT;
+            v->gatingPieceAfter[c][KNIGHT] = BISHOP;
+            v->gatingPieceAfter[c][BISHOP] = ROOK;
+            v->gatingPieceAfter[c][ROOK] = QUEEN;
+            v->gatingPieceAfter[c][QUEEN] = KING;
+        }
+        v->stalemateValue = -VALUE_MATE;
+        v->nMoveRule = 0;
+        v->nFoldRule = 2;
+        v->nFoldValue = VALUE_MATE;
+        v->extinctionValue = -VALUE_MATE;
+        v->extinctionPieceTypes = piece_set(KING);
+        v->extinctionMustAppear = piece_set(KING);
+        return v;
+    }
     // S-House
     // A hybrid variant of S-Chess and Crazyhouse.
     // Pieces in the pocket can either be gated or dropped.
@@ -1908,6 +1933,7 @@ void VariantMap::init() {
     add("placement", placement_variant());
     add("sittuyin", sittuyin_variant());
     add("seirawan", seirawan_variant());
+    add("battlekings", battle_kings_variant());
     add("shouse", shouse_variant());
     add("dragon", dragon_variant());
     add("paradigm", paradigm_variant());

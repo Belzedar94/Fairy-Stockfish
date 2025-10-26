@@ -56,6 +56,7 @@ struct StateInfo {
   Square castlingKingSquare[COLOR_NB];
   Bitboard wallSquares;
   Bitboard gatesBB[COLOR_NB];
+  PieceSet extinctionSeen[COLOR_NB];
 
   // Not copied when making a move (will be recomputed anyhow)
   Key        key;
@@ -187,6 +188,9 @@ public:
   PieceSet en_passant_types(Color c) const;
   bool immobility_illegal() const;
   bool gating() const;
+  bool gating_from_hand() const;
+  PieceType gating_piece_after(Color c, PieceType pt) const;
+  PieceType forced_gating_type(Color c, PieceType pt) const;
   bool walling() const;
   WallingRule walling_rule() const;
   bool wall_or_move() const;
@@ -207,6 +211,7 @@ public:
   Value extinction_value(int ply = 0) const;
   bool extinction_claim() const;
   PieceSet extinction_piece_types() const;
+  PieceSet extinction_must_appear() const;
   bool extinction_single_piece() const;
   int extinction_piece_count() const;
   int extinction_opponent_piece_count() const;
@@ -853,6 +858,25 @@ inline bool Position::gating() const {
   return var->gating;
 }
 
+inline bool Position::gating_from_hand() const {
+  assert(var != nullptr);
+  return var->gatingFromHand;
+}
+
+inline PieceType Position::gating_piece_after(Color c, PieceType pt) const {
+  assert(var != nullptr);
+  return var->gatingPieceAfter[c][pt];
+}
+
+inline PieceType Position::forced_gating_type(Color c, PieceType pt) const {
+  PieceType next = gating_piece_after(c, pt);
+  if (next == NO_PIECE_TYPE)
+      return NO_PIECE_TYPE;
+  if (next == KING && count<KING>(c))
+      return NO_PIECE_TYPE;
+  return next;
+}
+
 inline bool Position::walling() const {
   assert(var != nullptr);
   return var->wallingRule != NO_WALLING;
@@ -1025,6 +1049,11 @@ inline bool Position::extinction_claim() const {
 inline PieceSet Position::extinction_piece_types() const {
   assert(var != nullptr);
   return var->extinctionPieceTypes;
+}
+
+inline PieceSet Position::extinction_must_appear() const {
+  assert(var != nullptr);
+  return var->extinctionMustAppear;
 }
 
 inline bool Position::extinction_single_piece() const {
@@ -1528,6 +1557,8 @@ inline void Position::put_piece(Piece pc, Square s, bool isPromoted, Piece unpro
   if (isPromoted)
       promotedPieces |= s;
   unpromotedBoard[s] = unpromotedPc;
+  if (extinction_must_appear() & piece_set(type_of(pc)))
+      st->extinctionSeen[color_of(pc)] |= piece_set(type_of(pc));
 }
 
 inline void Position::remove_piece(Square s) {

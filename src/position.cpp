@@ -1263,6 +1263,15 @@ bool Position::legal(Move m) const {
 
   Bitboard occupied = (type_of(m) != DROP ? pieces() ^ from : pieces()) | to;
 
+  if (is_gating(m) && gating_type(m) == KING)
+  {
+      Bitboard occ = occupied | gating_square(m);
+      if (type_of(m) == EN_PASSANT)
+          occ ^= capture_square(to);
+      if (attackers_to(gating_square(m), occ, ~us))
+          return false;
+  }
+
   // Flying general rule and bikjang
   // In case of bikjang passing is always allowed, even when in check
   if (st->bikjang && is_pass(m))
@@ -1968,15 +1977,24 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
       {
           // Add gating piece
           dp.piece[dp.dirty_num] = gating_piece;
-          dp.handPiece[dp.dirty_num] = gating_piece;
-          dp.handCount[dp.dirty_num] = pieceCountInHand[us][gating_type(m)];
           dp.from[dp.dirty_num] = SQ_NONE;
           dp.to[dp.dirty_num] = gate;
+          if (gating_from_hand())
+          {
+              dp.handPiece[dp.dirty_num] = gating_piece;
+              dp.handCount[dp.dirty_num] = pieceCountInHand[us][gating_type(m)];
+          }
+          else
+          {
+              dp.handPiece[dp.dirty_num] = NO_PIECE;
+              dp.handCount[dp.dirty_num] = 0;
+          }
           dp.dirty_num++;
       }
 
       put_piece(gating_piece, gate);
-      remove_from_hand(gating_piece);
+      if (gating_from_hand())
+          remove_from_hand(gating_piece);
 
       st->gatesBB[us] ^= gate;
       k ^= Zobrist::psq[gating_piece][gate];
@@ -2204,7 +2222,8 @@ void Position::undo_move(Move m) {
       Piece gating_piece = make_piece(us, gating_type(m));
       remove_piece(gating_square(m));
       board[gating_square(m)] = NO_PIECE;
-      add_to_hand(gating_piece);
+      if (gating_from_hand())
+          add_to_hand(gating_piece);
       st->gatesBB[us] |= gating_square(m);
   }
 
@@ -2785,6 +2804,8 @@ bool Position::is_immediate_game_end(Value& result, int ply) const {
           for (PieceSet ps = extinction_piece_types(); ps;)
           {
               PieceType pt = pop_lsb(ps);
+              if ((extinction_must_appear() & piece_set(pt)) && !(st->extinctionSeen[c] & piece_set(pt)))
+                  continue;
               if (   count_with_hand( c, pt) <= var->extinctionPieceCount
                   && count_with_hand(~c, pt) >= var->extinctionOpponentPieceCount + (extinction_claim() && c == sideToMove))
               {
