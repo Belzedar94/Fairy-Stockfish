@@ -90,6 +90,7 @@ struct Variant {
   bool oppositeCastling = false;
   PieceType kingType = KING;
   bool checking = true;
+  bool checkless = false;
   bool dropChecks = true;
   bool mustCapture = false;
   bool mustDrop = false;

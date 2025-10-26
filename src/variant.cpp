@@ -348,6 +348,13 @@ namespace {
         v->endgameEval = EG_EVAL_RK;
         return v;
     }
+    // Checkless chess
+    Variant* checkless_variant() {
+        Variant* v = chess_variant_base()->init();
+        v->checking = false;
+        v->checkless = true;
+        return v;
+    }
     // Knightmate
     // https://www.chessvariants.com/diffobjective.dir/knightmate.html
     Variant* knightmate_variant() {
@@ -1872,6 +1879,7 @@ void VariantMap::init() {
     add("newzealand", newzealand_variant());
     add("kingofthehill", kingofthehill_variant());
     add("racingkings", racingkings_variant());
+    add("checkless", checkless_variant());
     add("knightmate", knightmate_variant());
     add("misere", misere_variant());
     add("losers", losers_variant());
@@ -1980,6 +1988,9 @@ void VariantMap::init() {
 // Pre-calculate derived properties
 Variant* Variant::conclude() {
     // Enforce consistency to allow runtime optimizations
+    if (checkless)
+        checking = false;
+
     if (!doubleStep)
         doubleStepRegion[WHITE] = doubleStepRegion[BLACK] = 0;
     if (!doubleStepRegion[WHITE] && !doubleStepRegion[BLACK])
