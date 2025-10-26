@@ -187,6 +187,9 @@ public:
   PieceSet en_passant_types(Color c) const;
   bool immobility_illegal() const;
   bool gating() const;
+  bool gating_from_hand() const;
+  PieceType gating_piece_after(Color c, PieceType pt) const;
+  PieceType forced_gating_type(Color c, PieceType pt) const;
   bool walling() const;
   WallingRule walling_rule() const;
   bool wall_or_move() const;
@@ -851,6 +854,25 @@ inline bool Position::immobility_illegal() const {
 inline bool Position::gating() const {
   assert(var != nullptr);
   return var->gating;
+}
+
+inline bool Position::gating_from_hand() const {
+  assert(var != nullptr);
+  return var->gatingFromHand;
+}
+
+inline PieceType Position::gating_piece_after(Color c, PieceType pt) const {
+  assert(var != nullptr);
+  return var->gatingPieceAfter[c][pt];
+}
+
+inline PieceType Position::forced_gating_type(Color c, PieceType pt) const {
+  PieceType next = gating_piece_after(c, pt);
+  if (next == NO_PIECE_TYPE)
+      return NO_PIECE_TYPE;
+  if (next == KING && count<KING>(c))
+      return NO_PIECE_TYPE;
+  return next;
 }
 
 inline bool Position::walling() const {

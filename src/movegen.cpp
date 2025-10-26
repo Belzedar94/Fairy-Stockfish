@@ -64,7 +64,23 @@ namespace {
         return moveList;
     }
 
-    *moveList++ = make<T>(from, to, pt);
+    PieceType forcedGate = NO_PIECE_TYPE;
+    Square forcedGateSquare = SQ_NONE;
+    if (from != to)
+    {
+        Piece pcFrom = pos.piece_on(from);
+        if (pcFrom != NO_PIECE)
+        {
+            forcedGate = pos.forced_gating_type(us, type_of(pcFrom));
+            if (forcedGate != NO_PIECE_TYPE)
+                forcedGateSquare = from;
+        }
+    }
+
+    if (forcedGate != NO_PIECE_TYPE)
+        *moveList++ = make_gating<T>(from, to, forcedGate, forcedGateSquare);
+    else
+        *moveList++ = make<T>(from, to, pt);
 
     // Gating moves
     if (pos.seirawan_gating() && (pos.gates(us) & from))
