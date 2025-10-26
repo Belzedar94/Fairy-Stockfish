@@ -136,6 +136,14 @@ pawnTypes = ps
 # Capture-anything: allow self-capture while keeping standard chess rules otherwise
 [capture-anything:chess]
 selfCapture = true
+
+[customqueen:chess]
+customPiece1 = a:Q
+startFen = 4k3/8/8/8/4A3/8/8/4K3 w - - 0 1
+
+[custombishop:chess]
+customPiece1 = a:B
+startFen = 4k3/8/8/8/4A3/8/8/4K3 w - - 0 1
 """
 
 sf.load_variant_config(ini_text)
@@ -255,6 +263,12 @@ variant_positions = {
     "multipawn": {
         "k7/p7/8/8/8/8/8/K7 w - - 0 1": (True, False),  # K vs KP
         "k7/s7/8/8/8/8/8/K7 w - - 0 1": (True, False),  # K vs KS
+    },
+    "customqueen": {
+        "4k3/8/8/8/4A3/8/8/4K3 w - - 0 1": (False, True),  # KA vs K
+    },
+    "custombishop": {
+        "4k3/8/8/8/4A3/8/8/4K3 w - - 0 1": (True, True),  # KB vs K
     },
 }
 
