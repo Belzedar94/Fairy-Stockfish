@@ -2777,6 +2777,20 @@ bool Position::is_optional_game_end(Value& result, int ply, int countStarted) co
 
 bool Position::is_immediate_game_end(Value& result, int ply) const {
 
+  if (n_move_hard_limit_rule() && game_ply() >= 2 * n_move_hard_limit_rule())
+  {
+      if (var->nMoveHardLimitValue == VALUE_NONE)
+          result = var->materialCounting ? convert_mate_value(material_counting_result(), ply) : VALUE_DRAW;
+      else
+      {
+          Value limitValue =  var->nMoveHardLimitValueAbsolute && sideToMove == BLACK
+                            ? -var->nMoveHardLimitValue
+                            :  var->nMoveHardLimitValue;
+          result = convert_mate_value(limitValue, ply);
+      }
+      return true;
+  }
+
   // Extinction
   // Extinction does not apply for pseudo-royal pieces, because they can not be captured
   if (extinction_value() != VALUE_NONE && (!var->extinctionPseudoRoyal || blast_on_capture()))
