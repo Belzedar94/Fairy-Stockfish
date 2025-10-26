@@ -163,6 +163,7 @@ struct Variant {
   int collinearN = 0;
   Value connectValue = VALUE_MATE;
   MaterialCounting materialCounting = NO_MATERIAL_COUNTING;
+  bool reverseMaterialCounting = false; // reverse the winner determined by materialCounting
   bool adjudicateFullBoard = false;
   CountingRule countingRule = NO_COUNTING;
   CastlingRights castlingWins = NO_CASTLING;
