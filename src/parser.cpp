@@ -16,6 +16,7 @@
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#include <algorithm>
 #include <string>
 #include <sstream>
 
@@ -248,6 +249,74 @@ template <bool DoCheck>
 Variant* VariantParser<DoCheck>::parse(Variant* v) {
     parse_attribute("maxRank", v->maxRank);
     parse_attribute("maxFile", v->maxFile);
+
+    auto trim = [](std::string& s) {
+        auto begin = s.begin();
+        auto end = s.end();
+        while (begin != end && std::isspace(static_cast<unsigned char>(*begin)))
+            ++begin;
+        while (begin != end && std::isspace(static_cast<unsigned char>(*(end - 1))))
+            --end;
+        s.assign(begin, end);
+    };
+
+    enum class PieceParseResult { Valid, Remove, Invalid };
+
+    auto parsePieceDescriptor = [&](const std::string& descriptor,
+                                    char& whiteChar,
+                                    char& blackChar,
+                                    std::string& betza) -> PieceParseResult {
+        whiteChar = 0;
+        blackChar = 0;
+        betza.clear();
+
+        std::string value = descriptor;
+        trim(value);
+        if (value.empty())
+            return PieceParseResult::Invalid;
+
+        size_t colonPos = value.find(':');
+        std::string charSpec = colonPos == std::string::npos ? value : value.substr(0, colonPos);
+        betza = colonPos == std::string::npos ? "" : value.substr(colonPos + 1);
+        trim(charSpec);
+        trim(betza);
+
+        charSpec.erase(std::remove_if(charSpec.begin(), charSpec.end(),
+                                      [](unsigned char ch) { return std::isspace(ch); }),
+                       charSpec.end());
+
+        if (charSpec.empty())
+            return PieceParseResult::Invalid;
+
+        if (charSpec == "-")
+            return PieceParseResult::Remove;
+
+        if (charSpec.size() == 1)
+            whiteChar = charSpec[0];
+        else if (charSpec.size() == 3 && charSpec[1] == '/')
+        {
+            whiteChar = charSpec[0];
+            blackChar = charSpec[2];
+        }
+        else
+            return PieceParseResult::Invalid;
+
+        auto invalidChar = [](char ch) {
+            unsigned char uch = static_cast<unsigned char>(ch);
+            return !std::isprint(uch) || std::isspace(uch) || std::isdigit(uch) || ch == '/' || ch == '+' || ch == '[' || ch == ']';
+        };
+
+        if (invalidChar(whiteChar) || (blackChar && invalidChar(blackChar)))
+            return PieceParseResult::Invalid;
+
+        if (blackChar && whiteChar == blackChar)
+            return PieceParseResult::Invalid;
+
+        if (!std::isalpha(static_cast<unsigned char>(whiteChar)) && !blackChar)
+            return PieceParseResult::Invalid;
+
+        return PieceParseResult::Valid;
+    };
     // piece types
     for (PieceType pt = PAWN; pt <= KING; ++pt)
     {
@@ -261,40 +330,58 @@ Variant* VariantParser<DoCheck>::parse(Variant* v) {
         const auto& keyValue = config.find(name);
         if (keyValue != config.end() && !keyValue->second.empty())
         {
-            if (isalpha(keyValue->second.at(0)))
-                v->add_piece(pt, keyValue->second.at(0));
-            else
+            char pieceWhite = 0;
+            char pieceBlack = 0;
+            std::string descriptor = keyValue->second;
+            trim(descriptor);
+            std::string betza;
+            PieceParseResult result = parsePieceDescriptor(descriptor, pieceWhite, pieceBlack, betza);
+
+            if (result == PieceParseResult::Invalid)
             {
-                if (DoCheck && keyValue->second.at(0) != '-')
-                    std::cerr << name << " - Invalid letter: " << keyValue->second.at(0) << std::endl;
+                if (DoCheck && descriptor != "-")
+                    std::cerr << name << " - Invalid letter: " << descriptor << std::endl;
                 v->remove_piece(pt);
             }
-            // betza
-            if (is_custom(pt))
+            else if (result == PieceParseResult::Remove)
             {
-                if (keyValue->second.size() > 1)
-                {
-                    v->customPiece[pt - CUSTOM_PIECES] = keyValue->second.substr(2);
-                    // Is there an en passant flag in the Betza notation?
-                    if (v->customPiece[pt - CUSTOM_PIECES].find('e') != std::string::npos)
-                    {
-                        v->enPassantTypes[WHITE] |= piece_set(pt);
-                        v->enPassantTypes[BLACK] |= piece_set(pt);
-                    }
-                }
-                else if (DoCheck)
-                    std::cerr << name << " - Missing Betza move notation" << std::endl;
+                v->remove_piece(pt);
+                if (pt == KING)
+                    v->kingType = NO_PIECE_TYPE;
             }
-            else if (pt == KING)
+            else
             {
-                if (keyValue->second.size() > 1)
-                {
-                    // custom royal piece
-                    v->customPiece[CUSTOM_PIECES_ROYAL - CUSTOM_PIECES] = keyValue->second.substr(2);
-                    v->kingType = CUSTOM_PIECES_ROYAL;
-                }
+                if (pieceBlack)
+                    v->add_piece(pt, pieceWhite, betza, ' ', pieceBlack);
                 else
-                    v->kingType = KING;
+                    v->add_piece(pt, pieceWhite, betza);
+
+                bool hasBetza = !betza.empty();
+                if (is_custom(pt))
+                {
+                    if (hasBetza)
+                    {
+                        if (betza.find('e') != std::string::npos)
+                        {
+                            v->enPassantTypes[WHITE] |= piece_set(pt);
+                            v->enPassantTypes[BLACK] |= piece_set(pt);
+                        }
+                        else if (DoCheck && betza.find('E') != std::string::npos)
+                            std::cerr << name << " - Invalid Betza move notation (Use lowercase e): " << betza << std::endl;
+                    }
+                    else if (DoCheck)
+                        std::cerr << name << " - Missing Betza move notation" << std::endl;
+                }
+                else if (pt == KING)
+                {
+                    if (hasBetza)
+                    {
+                        v->customPiece[CUSTOM_PIECES_ROYAL - CUSTOM_PIECES] = betza;
+                        v->kingType = CUSTOM_PIECES_ROYAL;
+                    }
+                    else
+                        v->kingType = KING;
+                }
             }
         }
         // mobility region
