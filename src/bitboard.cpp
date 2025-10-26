@@ -36,9 +36,12 @@ Bitboard PseudoAttacks[COLOR_NB][PIECE_TYPE_NB][SQUARE_NB];
 Bitboard PseudoMoves[2][COLOR_NB][PIECE_TYPE_NB][SQUARE_NB];
 Bitboard LeaperAttacks[COLOR_NB][PIECE_TYPE_NB][SQUARE_NB];
 Bitboard LeaperMoves[2][COLOR_NB][PIECE_TYPE_NB][SQUARE_NB];
+Bitboard PseudoCheckAttacks[COLOR_NB][PIECE_TYPE_NB][SQUARE_NB];
+Bitboard LeaperCheckAttacks[COLOR_NB][PIECE_TYPE_NB][SQUARE_NB];
 Bitboard BoardSizeBB[FILE_NB][RANK_NB];
 RiderType AttackRiderTypes[PIECE_TYPE_NB];
 RiderType MoveRiderTypes[2][PIECE_TYPE_NB];
+RiderType CheckRiderTypes[PIECE_TYPE_NB];
 
 Magic RookMagicsH[SQUARE_NB];
 Magic RookMagicsV[SQUARE_NB];
@@ -235,76 +238,117 @@ void Bitboards::init_pieces() {
   {
       const PieceInfo* pi = pieceMap.find(pt)->second;
 
-      // Detect rider types
-      for (auto modality : {MODALITY_QUIET, MODALITY_CAPTURE})
-      {
-          for (bool initial : {false, true})
+      auto updateRiders = [&](RiderType& riderTypes,
+                              const std::map<Direction, int>& steps,
+                              const std::map<Direction, int>& slider,
+                              const std::map<Direction, int>& hopper) {
+          for (auto const& [d, limit] : steps)
           {
-              // We do not support initial captures
-              if (modality == MODALITY_CAPTURE && initial)
-                  continue;
-              auto& riderTypes = modality == MODALITY_CAPTURE ? AttackRiderTypes[pt] : MoveRiderTypes[initial][pt];
-              riderTypes = NO_RIDER;
-              for (auto const& [d, limit] : pi->steps[initial][modality])
-              {
-                  if (limit && LameDabbabaDirections.find(d) != LameDabbabaDirections.end())
-                      riderTypes |= RIDER_LAME_DABBABA;
-                  if (limit && HorseDirections.find(d) != HorseDirections.end())
-                      riderTypes |= RIDER_HORSE;
-                  if (limit && ElephantDirections.find(d) != ElephantDirections.end())
-                      riderTypes |= RIDER_ELEPHANT;
-                  if (limit && JanggiElephantDirections.find(d) != JanggiElephantDirections.end())
-                      riderTypes |= RIDER_JANGGI_ELEPHANT;
-              }
-              for (auto const& [d, limit] : pi->slider[initial][modality])
-              {
-                  if (BishopDirections.find(d) != BishopDirections.end())
-                      riderTypes |= RIDER_BISHOP;
-                  if (RookDirectionsH.find(d) != RookDirectionsH.end())
-                      riderTypes |= RIDER_ROOK_H;
-                  if (RookDirectionsV.find(d) != RookDirectionsV.end())
-                      riderTypes |= RIDER_ROOK_V;
-                  if (HorseDirections.find(d) != HorseDirections.end())
-                      riderTypes |= RIDER_NIGHTRIDER;
-              }
-              for (auto const& [d, limit] : pi->hopper[initial][modality])
-              {
-                  if (RookDirectionsH.find(d) != RookDirectionsH.end())
-                      riderTypes |= limit == 1 ? RIDER_GRASSHOPPER_H : RIDER_CANNON_H;
-                  if (RookDirectionsV.find(d) != RookDirectionsV.end())
-                      riderTypes |= limit == 1 ? RIDER_GRASSHOPPER_V : RIDER_CANNON_V;
-                  if (BishopDirections.find(d) != BishopDirections.end())
-                      riderTypes |= limit == 1 ? RIDER_GRASSHOPPER_D : RIDER_CANNON_DIAG;
-              }
+              if (limit && LameDabbabaDirections.find(d) != LameDabbabaDirections.end())
+                  riderTypes |= RIDER_LAME_DABBABA;
+              if (limit && HorseDirections.find(d) != HorseDirections.end())
+                  riderTypes |= RIDER_HORSE;
+              if (limit && ElephantDirections.find(d) != ElephantDirections.end())
+                  riderTypes |= RIDER_ELEPHANT;
+              if (limit && JanggiElephantDirections.find(d) != JanggiElephantDirections.end())
+                  riderTypes |= RIDER_JANGGI_ELEPHANT;
           }
+          for (auto const& [d, limit] : slider)
+          {
+              if (BishopDirections.find(d) != BishopDirections.end())
+                  riderTypes |= RIDER_BISHOP;
+              if (RookDirectionsH.find(d) != RookDirectionsH.end())
+                  riderTypes |= RIDER_ROOK_H;
+              if (RookDirectionsV.find(d) != RookDirectionsV.end())
+                  riderTypes |= RIDER_ROOK_V;
+              if (HorseDirections.find(d) != HorseDirections.end())
+                  riderTypes |= RIDER_NIGHTRIDER;
+          }
+          for (auto const& [d, limit] : hopper)
+          {
+              if (RookDirectionsH.find(d) != RookDirectionsH.end())
+                  riderTypes |= limit == 1 ? RIDER_GRASSHOPPER_H : RIDER_CANNON_H;
+              if (RookDirectionsV.find(d) != RookDirectionsV.end())
+                  riderTypes |= limit == 1 ? RIDER_GRASSHOPPER_V : RIDER_CANNON_V;
+              if (BishopDirections.find(d) != BishopDirections.end())
+                  riderTypes |= limit == 1 ? RIDER_GRASSHOPPER_D : RIDER_CANNON_DIAG;
+          }
+      };
+
+      for (bool initial : {false, true})
+      {
+          MoveRiderTypes[initial][pt] = NO_RIDER;
+          updateRiders(MoveRiderTypes[initial][pt],
+                       pi->steps[initial][MODALITY_QUIET],
+                       pi->slider[initial][MODALITY_QUIET],
+                       pi->hopper[initial][MODALITY_QUIET]);
       }
+
+      AttackRiderTypes[pt] = NO_RIDER;
+      updateRiders(AttackRiderTypes[pt],
+                   pi->steps[0][MODALITY_CAPTURE],
+                   pi->slider[0][MODALITY_CAPTURE],
+                   pi->hopper[0][MODALITY_CAPTURE]);
+
+      CheckRiderTypes[pt] = NO_RIDER;
+      for (bool initial : {false, true})
+          updateRiders(CheckRiderTypes[pt],
+                       pi->steps[initial][MODALITY_CHECK],
+                       pi->slider[initial][MODALITY_CHECK],
+                       pi->hopper[initial][MODALITY_CHECK]);
 
       // Initialize move/attack bitboards
       for (Color c : { WHITE, BLACK })
       {
           for (Square s = SQ_A1; s <= SQ_MAX; ++s)
           {
-              for (auto modality : {MODALITY_QUIET, MODALITY_CAPTURE})
+              for (bool initial : {false, true})
               {
-                  for (bool initial : {false, true})
+                  auto& pseudoMove = PseudoMoves[initial][c][pt][s];
+                  auto& leaperMove = LeaperMoves[initial][c][pt][s];
+                  pseudoMove = 0;
+                  leaperMove = 0;
+                  for (auto const& [d, limit] : pi->steps[initial][MODALITY_QUIET])
                   {
-                      // We do not support initial captures
-                      if (modality == MODALITY_CAPTURE && initial)
-                          continue;
-                      auto& pseudo = modality == MODALITY_CAPTURE ? PseudoAttacks[c][pt][s] : PseudoMoves[initial][c][pt][s];
-                      auto& leaper = modality == MODALITY_CAPTURE ? LeaperAttacks[c][pt][s] : LeaperMoves[initial][c][pt][s];
-                      pseudo = 0;
-                      leaper = 0;
-                      for (auto const& [d, limit] : pi->steps[initial][modality])
-                      {
-                          pseudo |= safe_destination(s, c == WHITE ? d : -d);
-                          if (!limit)
-                              leaper |= safe_destination(s, c == WHITE ? d : -d);
-                      }
-                      pseudo |= sliding_attack<RIDER>(pi->slider[initial][modality], s, 0, c);
-                      pseudo |= sliding_attack<HOPPER_RANGE>(pi->hopper[initial][modality], s, 0, c);
+                      Bitboard dest = safe_destination(s, c == WHITE ? d : -d);
+                      pseudoMove |= dest;
+                      if (!limit)
+                          leaperMove |= dest;
                   }
+                  pseudoMove |= sliding_attack<RIDER>(pi->slider[initial][MODALITY_QUIET], s, 0, c);
+                  pseudoMove |= sliding_attack<HOPPER_RANGE>(pi->hopper[initial][MODALITY_QUIET], s, 0, c);
               }
+
+              Bitboard pseudoAttack = 0;
+              Bitboard leaperAttack = 0;
+              for (auto const& [d, limit] : pi->steps[0][MODALITY_CAPTURE])
+              {
+                  Bitboard dest = safe_destination(s, c == WHITE ? d : -d);
+                  pseudoAttack |= dest;
+                  if (!limit)
+                      leaperAttack |= dest;
+              }
+              pseudoAttack |= sliding_attack<RIDER>(pi->slider[0][MODALITY_CAPTURE], s, 0, c);
+              pseudoAttack |= sliding_attack<HOPPER_RANGE>(pi->hopper[0][MODALITY_CAPTURE], s, 0, c);
+              PseudoAttacks[c][pt][s] = pseudoAttack;
+              LeaperAttacks[c][pt][s] = leaperAttack;
+
+              Bitboard pseudoCheck = 0;
+              Bitboard leaperCheck = 0;
+              for (bool initial : {false, true})
+              {
+                  for (auto const& [d, limit] : pi->steps[initial][MODALITY_CHECK])
+                  {
+                      Bitboard dest = safe_destination(s, c == WHITE ? d : -d);
+                      pseudoCheck |= dest;
+                      if (!limit)
+                          leaperCheck |= dest;
+                  }
+                  pseudoCheck |= sliding_attack<RIDER>(pi->slider[initial][MODALITY_CHECK], s, 0, c);
+                  pseudoCheck |= sliding_attack<HOPPER_RANGE>(pi->hopper[initial][MODALITY_CHECK], s, 0, c);
+              }
+              PseudoCheckAttacks[c][pt][s] = pseudoCheck;
+              LeaperCheckAttacks[c][pt][s] = leaperCheck;
           }
       }
   }
