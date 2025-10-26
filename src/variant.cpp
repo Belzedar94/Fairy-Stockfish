@@ -401,6 +401,7 @@ namespace {
         v->endgameEval = EG_EVAL_ANTI;
         return v;
     }
+
     // Antichess
     // https://lichess.org/variant/antichess
     Variant* antichess_variant() {
