@@ -48,6 +48,7 @@ namespace {
     Variant* chess_variant() {
         Variant* v = chess_variant_base()->init();
         v->nnueAlias = "nn-";
+        v->tablebaseVariant = TB_VARIANT_CHESS;
         return v;
     }
     // Chess960 aka Fischer random chess
@@ -399,6 +400,7 @@ namespace {
         v->mustCapture = true;
         v->nnueAlias = "antichess";
         v->endgameEval = EG_EVAL_ANTI;
+        v->tablebaseVariant = TB_VARIANT_GIVEAWAY;
         return v;
     }
     // Antichess
@@ -408,6 +410,7 @@ namespace {
         v->startFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w - - 0 1";
         v->castling = false;
         v->endgameEval = EG_EVAL_ANTI;
+        v->tablebaseVariant = TB_VARIANT_GIVEAWAY;
         return v;
     }
     // Suicide chess
@@ -418,6 +421,7 @@ namespace {
         v->stalematePieceCount = true;
         v->nnueAlias = "antichess";
         v->endgameEval = EG_EVAL_ANTI;
+        v->tablebaseVariant = TB_VARIANT_SUICIDE;
         return v;
     }
     // Codrus
@@ -503,6 +507,7 @@ namespace {
         v->extinctionPieceTypes = piece_set(COMMONER);
         v->blastOnCapture = true;
         v->nnueAlias = "atomic";
+        v->tablebaseVariant = TB_VARIANT_ATOMIC;
         return v;
     }
     // Atomic chess
@@ -511,6 +516,7 @@ namespace {
         Variant* v = nocheckatomic_variant()->init();
         v->extinctionPseudoRoyal = true;
         v->endgameEval = EG_EVAL_ATOMIC;
+        v->tablebaseVariant = TB_VARIANT_ATOMIC;
         return v;
     }
 
@@ -520,6 +526,7 @@ namespace {
         Variant* v = nocheckatomic_variant()->init();
         v->blastImmuneTypes = piece_set(COMMONER);
         v->mutuallyImmuneTypes = piece_set(COMMONER);
+        v->tablebaseVariant = TB_VARIANT_ATOMIC;
         return v;
     }
 
