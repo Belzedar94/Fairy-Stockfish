@@ -1162,7 +1162,8 @@ moves_loop: // When in check, search starts from here
                   continue;
 
               // SEE based pruning
-              if (!pos.see_ge(move, Value(-218 - 120 * pos.captures_to_hand()) * depth)) // (~25 Elo)
+              // Skip for extinction_first_capture variants where SEE may be unreliable
+              if (!pos.extinction_first_capture() && !pos.see_ge(move, Value(-218 - 120 * pos.captures_to_hand()) * depth)) // (~25 Elo)
                   continue;
           }
           else
@@ -1185,7 +1186,8 @@ moves_loop: // When in check, search starts from here
                   continue;
 
               // Prune moves with negative SEE (~20 Elo)
-              if (!(pos.walling_rule() == DUCK) && !pos.see_ge(move, Value(-(30 - std::min(lmrDepth, 18) + 10 * !!pos.flag_region(pos.side_to_move())) * lmrDepth * lmrDepth)))
+              // Skip for duck chess and extinction_first_capture variants where SEE may be unreliable
+              if (!(pos.walling_rule() == DUCK) && !pos.extinction_first_capture() && !pos.see_ge(move, Value(-(30 - std::min(lmrDepth, 18) + 10 * !!pos.flag_region(pos.side_to_move())) * lmrDepth * lmrDepth)))
                   continue;
           }
       }
@@ -1662,7 +1664,8 @@ moves_loop: // When in check, search starts from here
               continue;
           }
 
-          if (futilityBase <= alpha && !pos.see_ge(move, VALUE_ZERO + 1))
+          // Skip SEE check for extinction_first_capture variants where SEE may be unreliable
+          if (!pos.extinction_first_capture() && futilityBase <= alpha && !pos.see_ge(move, VALUE_ZERO + 1))
           {
               bestValue = std::max(bestValue, futilityBase);
               continue;
@@ -1670,7 +1673,9 @@ moves_loop: // When in check, search starts from here
       }
 
       // Do not search moves with negative SEE values
+      // Skip for extinction_first_capture variants where SEE may be unreliable
       if (    bestValue > VALUE_TB_LOSS_IN_MAX_PLY
+          && !pos.extinction_first_capture()
           && !pos.see_ge(move))
           continue;
 

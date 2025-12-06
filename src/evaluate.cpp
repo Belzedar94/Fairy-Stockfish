@@ -1620,6 +1620,11 @@ Value Eval::evaluate(const Position& pos) {
                      + 32 * pos.count<PAWN>()
                      + 32 * pos.non_pawn_material() / 1024;
 
+         // Cap scale to prevent eval inflation in variants with unusual piece values
+         // or extinction rules (e.g., battlekings) where large material can cause runaway RL
+         if (pos.extinction_first_capture())
+             scale = std::min(scale, 1024);
+
          Value nnue = NNUE::evaluate(pos, true) * scale / 1024;
 
          if (pos.is_chess960())
