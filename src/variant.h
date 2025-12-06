@@ -27,6 +27,7 @@
 #include <functional>
 #include <sstream>
 #include <iostream>
+#include <algorithm>
 
 #include "types.h"
 #include "bitboard.h"
@@ -109,6 +110,8 @@ struct Variant {
   int dropNoDoubledCount = 1;
   bool immobilityIllegal = false;
   bool gating = false;
+  bool gatingFromHand = true;
+  PieceType gatingPieceAfter[COLOR_NB][PIECE_TYPE_NB] = {};
   WallingRule wallingRule = NO_WALLING;
   Bitboard wallingRegion[COLOR_NB] = {AllSquares, AllSquares};
   bool wallOrMove = false;
@@ -141,8 +144,10 @@ struct Variant {
   Value extinctionValue = VALUE_NONE;
   bool extinctionClaim = false;
   bool extinctionPseudoRoyal = false;
+  bool extinctionFirstCaptureWins = false;
   bool dupleCheck = false;
   PieceSet extinctionPieceTypes = NO_PIECE_SET;
+  PieceSet extinctionMustAppear = NO_PIECE_SET;
   int extinctionPieceCount = 0;
   int extinctionOpponentPieceCount = 0;
   PieceType flagPiece[COLOR_NB] = {ALL_PIECES, ALL_PIECES};
@@ -226,6 +231,10 @@ struct Variant {
   Variant* init() {
       nnueAlias = "";
       endgameEval = EG_EVAL_CHESS;
+      gatingFromHand = true;
+      extinctionMustAppear = NO_PIECE_SET;
+      for (Color c : {WHITE, BLACK})
+          std::fill(std::begin(gatingPieceAfter[c]), std::end(gatingPieceAfter[c]), NO_PIECE_TYPE);
       return this;
   }
 
