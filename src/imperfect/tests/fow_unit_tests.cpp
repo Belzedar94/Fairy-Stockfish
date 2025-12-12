@@ -14,8 +14,8 @@
 #include "../Selection.h"
 #include "../Subgame.h"
 #include "../Visibility.h"
-#include "../planner.h"
-#include "../uci.h"
+#include "../Planner.h"
+#include "../../uci.h"
 #include "../../movegen.h"
 #include "../../position.h"
 #include "../../thread.h"
@@ -198,13 +198,13 @@ TestSuiteResult run_benchmark_suite() {
     TestSuiteResult suite{"benchmarks"};
 
     Position pos = make_position("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
-    StateInfo st;
-    pos.set(chess_variant(), pos.fen(), false, &st, nullptr);
+    ObservationHistory history = seed_observation_history(pos);
+    BeliefState belief;
+    belief.rebuild_from_observations(history, pos);
 
     // quick one-ply evaluations for FoW vs baseline consistency
-    Eval::Evaluator evaluator;
-    float baseline = evaluator.evaluate(pos);
-    float fowLeaf = evaluator.evaluate_belief_state({pos.fen()}, pos.variant());
+    float baseline = evaluate(pos);
+    float fowLeaf = evaluate_belief_state(belief, pos.variant());
 
     suite.cases.push_back({"benchmark: evaluator parity", std::abs(baseline - fowLeaf) < 1.5f, "baseline=" + std::to_string(baseline)});
     return suite;
