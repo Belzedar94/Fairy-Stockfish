@@ -374,11 +374,29 @@ The current implementation includes:
 ### Current Limitations
 
 - Belief enumeration still ignores crazyhouse piece-in-hand speculation beyond observed inventory.
-- Castling/visibility corner cases (e.g., exotic variants) need additional coverage.
+- Edge-case visibility (exotic castling/variant rules) may still need deeper C++ unit coverage beyond the
+  lightweight shell tests.
 - Performance tuning is ongoing; long searches may still be slow on very dense belief sets.
 
 ### Practical Usage
 
 - Use `position fog_fen` for partial observations; the engine will prune beliefs incrementally as play continues.
 - Run `tests/fow_incremental.sh` after building `src/stockfish` to smoke-test the FoW pipeline.
+- Run `tests/fow_suite.sh` for quick checks of castling/en-passant visibility, crazyhouse pockets, and a
+  short FoW search seeded by `fog_fen`.
+- Run `tests/fow_api_checks.sh` to validate API-facing visibility for castling rights, en-passant markers,
+  and darkcrazyhouse pockets supplied via `fog_fen`.
+- Run `tests/fow_stress.sh` for a short regression loop that alternates FoW and non-FoW searches to ensure
+  teardown/re-initialization paths stay stable.
+- Run `tests/fow_compare.sh` to sanity-check that baseline chess and FoW searches both surface bestmoves under
+  short search windows.
+- Run `tests/fow_leakcheck.sh` (when valgrind is installed) for a quick leak probe over FoW and baseline search
+  initialization/teardown paths.
+- Run `tests/fow_logic.sh` for focused integration checks that stress belief enumeration on heavy `fog_fen`
+  inputs, shallow KLUSS frontiers, purified selection, and back-to-back CFR runs.
+- Run `tests/fow_units.sh` to execute the C++ unit suites compiled into the engine (`--fow-unittests`), covering
+  visibility, belief enumeration caps, CFR lifecycle hooks, purified selection, and KLUSS hashing.
+- Run `tests/fow_sanitizers.sh` to rebuild sanitized binaries (`stockfish-address`, `stockfish-thread`) and rerun
+  the FoW unit and init/teardown loops under ASan/TSan.
+- Run `tests/fow_benchmarks.sh` to compare a short chess bench against FoW evaluator parity probes.
 - For deeper implementation details, see `OBSCURO_FOW_IMPLEMENTATION.md`.
