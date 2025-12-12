@@ -33,16 +33,16 @@ using StateKey = uint64_t;
 
 /// Observation represents what the player can see at a given point
 struct Observation {
-    Bitboard visible;           // Squares that are visible
-    Bitboard myPieces;          // Our pieces (always known exactly)
-    Bitboard seenOpponentPieces; // Opponent pieces that we can see
-    Color sideToMove;           // Who moves next
-    Bitboard epSquares;         // En-passant squares if visible
-    int castlingRights;         // Our known castling rights
+    Bitboard visible = 0;            // Squares that are visible
+    Bitboard myPieces = 0;           // Our pieces (always known exactly)
+    Bitboard seenOpponentPieces = 0; // Opponent pieces that we can see
+    Color sideToMove = WHITE;        // Who moves next
+    Bitboard epSquares = 0;          // En-passant squares if visible
+    int castlingRights = 0;          // Our known castling rights
 
     // For reconstruction
-    int halfmoveClock;          // 50-move counter
-    int fullmoveNumber;         // Full move number
+    int halfmoveClock = 0;           // 50-move counter
+    int fullmoveNumber = 1;          // Full move number
 };
 
 /// ObservationHistory maintains the sequence of observations
@@ -85,9 +85,16 @@ public:
     /// Check if a position is consistent with observations
     static bool is_consistent(const Position& pos, const Observation& obs);
 
+    /// Parse a partial FoW FEN (fog_fen) into an Observation structure
+    static Observation parse_fog_fen(const std::string& fogFen, const Variant* variant);
+
 private:
     std::vector<std::string> stateFens; // FEN strings instead of Position objects
     std::unordered_set<StateKey> stateKeys; // For deduplication
+
+    const Variant* variant = nullptr;
+    bool isChess960 = false;
+    Thread* owningThread = nullptr;
 
     /// Generate candidate positions from observations
     void enumerate_candidates(const ObservationHistory& obsHist,
@@ -98,6 +105,9 @@ private:
 
     /// Helper: Check if king is capturable (game would have ended)
     bool is_king_capturable(const Position& pos) const;
+
+    /// Helper: create a Position from a FEN using the current variant context
+    bool set_position_from_fen(Position& pos, StateInfo& st, const std::string& fen) const;
 };
 
 /// create_observation() creates an observation from current position

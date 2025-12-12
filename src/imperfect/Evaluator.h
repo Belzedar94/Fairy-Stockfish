@@ -26,7 +26,7 @@
 namespace Stockfish {
 
 class Position;
-class StateInfo;
+struct StateInfo;
 
 namespace FogOfWar {
 

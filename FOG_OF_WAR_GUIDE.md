@@ -258,16 +258,14 @@ go infinite
 ```
 
 In a fog FEN:
-- `?` represents unknown/fogged squares
+- `?` (or `*`) represents unknown/fogged squares
 - Visible pieces are shown normally (e.g., `p`, `P`, `N`, etc.)
 - Empty visible squares are shown as part of the rank count (e.g., `8`, `1`)
 
 The engine will:
 1. Parse and store the fog FEN
-2. Use it to initialize the belief state (set of possible positions consistent with observations)
-3. Search over the belief state to find the best move
-
-**Note**: The fog_fen feature is currently a basic implementation. The engine stores the fog FEN and reports it, but full integration with belief state enumeration requires additional development.
+2. Enumerate positions consistent with what the fog FEN shows (permuting hidden opponent pieces across unseen squares)
+3. Use that belief state to guide the Obscuro search before selecting a move
 
 ## Viewing the Fog-of-War Board State
 
@@ -344,14 +342,12 @@ The current implementation includes:
 - ✅ FoW visibility computation (Appendix A rules)
 - ✅ UCI integration and options
 - ✅ Multi-threaded search (1 CFR solver + 2 expanders)
-- ✅ Basic fog_fen parsing and storage
+- ✅ fog_fen parsing wired into belief state enumeration
+- ✅ Belief state management (enumerates hidden opponent permutations up to 1024 states per observation)
 - ✅ NNUE evaluation for all FoW variants
-- ⚠️ Belief state management (simplified - stores true position only)
 - ⚠️ Action purification (placeholder implementation)
-- ⚠️ fog_fen integration with belief state (parses but doesn't enumerate)
-- 🔲 Full belief enumeration (enumerate positions consistent with observation)
-- 🔲 Full KLUSS order-2 neighborhood computation
-- 🔲 Complete gadget implementation (Resolve/Maxmargin)
+- ⚠️ KLUSS order-2 neighborhood is still simplified
+- ⚠️ Resolve/Maxmargin gadget details are incomplete
 - 🔲 Instrumentation (Appendix B.4 metrics)
 
  
@@ -369,16 +365,16 @@ The current implementation includes:
 
 **What Doesn't Work Yet**:
 
-1. **Belief enumeration**: The engine doesn't enumerate possible positions consistent with what you see. It only uses the true position, meaning it plays as if it has perfect information about hidden pieces.
- 
-2. **fog_fen analysis**: While you can specify a partial observation with `position fog_fen`, the engine doesn't use it to build a proper belief state. It starts from the variant's starting position.
+1. **Belief diversity limits**: Enumeration permutes hidden opponent pieces from the current position and caps at 1024 states; it does not yet model captures beyond the observed piece set or piece-in-hand drops for crazyhouse variants.
 
-3. **True imperfect information play**: Without belief enumeration, the engine essentially plays perfect information chess with FoW move restrictions, rather than reasoning about what might be hidden.
+2. **KLUSS neighborhood**: The KLUSS computation is still a placeholder and does not freeze/unfreeze infosets per the paper's order-2 definition.
+
+3. **Purification and gadgets**: Action purification and Resolve/Maxmargin gadget details remain simplified, so play quality may vary in tricky information sets.
 
 ### Practical Usage
 
-**Current best use case**: Using the standard FoW search to explore how the engine handles the FoW visibility rules and move generation. The search infrastructure is in place for future belief state enumeration.
+**Current best use case**: Using `position fog_fen` to explore imperfect-information situations where hidden opponent pieces could be on multiple unseen squares. The engine will enumerate those possibilities and search them, but higher-level gadgets and purification are still simplified.
 
-**Not yet suitable for**: Analyzing positions where you want the engine to reason about hidden pieces based on partial observations.
+**Not yet suitable for**: Positions that rely on advanced KLUSS freezing/unfreezing logic or deep purification requirements (e.g., adversarial bluffing scenarios and crazyhouse drop speculation).
 
 For development status and technical details, see `OBSCURO_FOW_IMPLEMENTATION.md`.
