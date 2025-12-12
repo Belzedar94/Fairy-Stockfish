@@ -237,6 +237,9 @@ bool Expander::run_expansion_step(Subgame& subgame) {
         expand_leaf(leaf, subgame, pos);
     }
 
+    // Enforce memory limits after the new nodes are attached
+    subgame.enforce_node_limit();
+
     // Alternate exploring side (Appendix B.3.3)
     alternate_exploring_side();
 

@@ -101,7 +101,8 @@ enum class GadgetType {
 class Subgame {
 public:
     Subgame() : rootNode(nullptr), currentGadget(GadgetType::NONE),
-                resolveEntered(false), nodeIdCounter(0), variantPtr(nullptr) {}
+                resolveEntered(false), nodeIdCounter(0), variantPtr(nullptr),
+                liveNodeCount(0), nodeLimit(50000) {}
 
     /// construct() builds the subgame from sampled states (Figure 9)
     /// Takes FEN strings representing sampled positions
@@ -142,6 +143,14 @@ public:
     std::shared_mutex& mutex() { return treeMutex; }
     const std::shared_mutex& mutex() const { return treeMutex; }
 
+    /// Memory management
+    void set_node_limit(size_t limit) { nodeLimit = limit; }
+    void prune_outside_kluss();
+    void enforce_node_limit();
+
+    /// Live node tracking
+    size_t live_nodes() const { return liveNodeCount; }
+
     /// Statistics
     size_t count_nodes() const;
     int average_depth() const;
@@ -154,6 +163,9 @@ private:
     std::atomic<NodeId> nodeIdCounter;
     const Stockfish::Variant* variantPtr;
     mutable std::shared_mutex treeMutex;
+    size_t liveNodeCount;
+    size_t nodeLimit;
+    std::vector<std::unique_ptr<GameTreeNode>> nodePool;
 
     /// Helper: Generate sequence ID from move sequence
     SequenceId compute_sequence_id(const std::vector<Move>& moves);
@@ -162,6 +174,8 @@ private:
     /// Helper: Build tree from sampled states (FEN strings)
     void build_tree_from_samples(const std::vector<std::string>& sampledStateFens);
     void mark_frozen_state(GameTreeNode* node);
+    std::unique_ptr<GameTreeNode> acquire_node();
+    size_t release_subtree(std::unique_ptr<GameTreeNode>& node);
 };
 
 /// compute_sequence_id() generates a unique ID for a move sequence

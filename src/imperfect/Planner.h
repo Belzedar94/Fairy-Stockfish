@@ -45,6 +45,8 @@ struct PlannerConfig {
     int maxSupport = 3;           // Max actions in purified strategy (paper uses 3)
     int maxTimeMs = 5000;         // Maximum thinking time in milliseconds
     bool enableIncrementalBelief = false; // Use incremental belief update
+    size_t maxNodes = 50000;      // Soft limit on tree nodes before pruning
+    size_t maxBeliefStates = 2048; // Cap on belief states before compression
 };
 
 /// Planner is the main coordinator for Obscuro-style FoW search
@@ -70,6 +72,13 @@ public:
         int cfrIterations;
         int totalExpansions;
         int timeUsedMs;
+        int constructTimeMs;
+        int searchTimeMs;
+        int selectionTimeMs;
+        float exploitabilityApprox;
+        float actionEntropy;
+        size_t nodeCountPeak;
+        std::vector<size_t> nodeTimeline;
     };
     Statistics get_statistics() const { return stats; }
 

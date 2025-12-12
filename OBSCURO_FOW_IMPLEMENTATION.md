@@ -189,21 +189,9 @@ Resolve gadgets now build the paper's prior α(J) via `compute_resolve_prior()` 
 
  
 
-#### 5. Leaf Evaluation Integration (MEDIUM PRIORITY)
+#### 5. Leaf Evaluation Integration (DONE)
 
-Depth-1 child evaluation is wired into Stockfish's evaluator and normalized to [-1, +1]; remaining work is focused on FoW-specific averaging over the belief set and caching repeated states.
-
- 
-
-**Implementation Tasks**:
-
-1. Complete `Evaluator::evaluate()` to call Stockfish search
-
-2. Implement `evaluate_belief_state()` that averages over positions
-
-3. Add caching to avoid re-evaluating same positions
-
-4. Handle terminal position detection
+Depth-1 child evaluation now uses a shallow Stockfish search (depth = 1) with terminal detection and normalization to [-1, +1]. `Evaluator::evaluate()` caches results by Zobrist key to avoid re-running searches on duplicate states, and `evaluate_belief_state()` walks the belief set to return the averaged score. Terminal states (mate/draw/stalemate and variant-specific endings) are intercepted before search to keep heuristics stable.
 
  
 
@@ -211,49 +199,27 @@ Depth-1 child evaluation is wired into Stockfish's evaluator and normalized to [
 
  
 
-#### 6. Instrumentation (Appendix B.4) (LOW PRIORITY)
+#### 6. Instrumentation (Appendix B.4) (DONE)
+
+- Planner statistics now record exploitability approximation using the mean positive regret across infosets, action entropy at the root, peak node counts, and a timeline of node sizes.
+- Time is broken down across construction, search, and selection so the UCI `info string` can report where FoW time was spent.
+
+
+#### 7. Memory Management (DONE)
+
+- Subgame nodes are pulled from and returned to a recycling pool, keeping allocations bounded.
+- Out-of-KLUSS branches are pruned eagerly and a soft node limit triggers pruning of deep or frozen leaves.
+- Belief states are compressed to a configurable cap before sampling, shrinking both memory footprint and sampling cost.
 
  
 
-**What's Needed**:
+#### 8. Incremental Belief Updates (DONE)
 
-- CFR convergence metrics (exploitability approximation)
-
-- Tree size statistics over time
-
-- Action entropy tracking
-
-- Time breakdown per component
-
- 
-
-#### 7. Memory Management (LOW PRIORITY)
-
- 
-
-**What's Needed**:
-
-- Tree pruning for old/unused nodes
-
-- Node recycling pool
-
-- Belief state compression
-
-- Memory limits and cleanup
-
- 
-
-#### 8. Incremental Belief Updates (LOW PRIORITY)
-
- 
-
-**What's Needed**:
-
-- When new observation arrives, filter existing belief set
-
-- Much faster than re-enumeration from scratch
-
-- Requires careful tracking of observation sequence
+- `BeliefState::update_incrementally()` now filters the current belief set against the
+  latest observation, reuses cached positions when visibility shrinks, and triggers
+  a full rebuild only when the observation expands or filtering collapses the set.
+- The planner wires incremental updates through `enableIncrementalBelief`, falling
+  back to full reconstruction when disabled or when the belief set underflows.
 
  
 
@@ -284,6 +250,11 @@ Depth-1 child evaluation is wired into Stockfish's evaluator and normalized to [
 3. **Multi-threaded stress test**: Race condition detection
 
 4. **Memory leak detection**: Run extended searches
+
+Implemented smoke coverage:
+
+- `tests/fow_incremental.sh` exercises fog_fen parsing, incremental belief filtering,
+  and the FoW planner pipeline end-to-end.
 
  
 

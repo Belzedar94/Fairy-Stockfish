@@ -42,6 +42,7 @@ struct Variant {
   Rank maxRank = RANK_8;
   File maxFile = FILE_H;
   bool chess960 = false;
+  bool doubleChess960 = false;
   bool twoBoards = false;
   int pieceValue[PHASE_NB][PIECE_TYPE_NB] = {};
   std::string customPiece[CUSTOM_PIECES_NB] = {};

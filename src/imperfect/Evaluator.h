@@ -19,9 +19,10 @@
 #ifndef EVALUATOR_H_INCLUDED
 #define EVALUATOR_H_INCLUDED
 
-#include <vector>
 #include <utility>
+#include <vector>
 #include "../types.h"
+#include "Belief.h"
 
 namespace Stockfish {
 
@@ -43,6 +44,14 @@ std::vector<ChildEvaluation> evaluate_children(Position& pos);
 
 /// normalize_value() converts a Value to [-1, +1] range
 float normalize_value(Value v);
+
+/// evaluate() runs a shallow Stockfish search and returns a normalized score
+/// Scores are in the perspective of the side to move in the given position
+float evaluate(Position& pos);
+
+/// evaluate_belief_state() averages evaluations across all belief states
+/// Each state's evaluation is cached by Zobrist key to avoid recomputation
+float evaluate_belief_state(const BeliefState& beliefState, const Variant* variant);
 
 /// get_best_child() returns the best child from evaluations
 Move get_best_child(const std::vector<ChildEvaluation>& evals);
