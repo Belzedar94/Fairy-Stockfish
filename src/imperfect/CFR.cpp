@@ -53,6 +53,8 @@ std::vector<float> regret_matching(const std::vector<float>& regrets) {
 std::vector<float> positive_regret_matching_plus(const std::vector<float>& regrets,
                                                    const std::vector<float>& oldStrategy,
                                                    float discountFactor) {
+    (void)oldStrategy;
+
     // PRM+ uses linear discount on regrets
     std::vector<float> discountedRegrets(regrets.size());
     for (size_t i = 0; i < regrets.size(); ++i)

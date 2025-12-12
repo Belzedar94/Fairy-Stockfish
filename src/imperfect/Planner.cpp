@@ -37,6 +37,8 @@ Planner::~Planner() {
 }
 
 bool is_fow_variant(const Position& pos) {
+    (void)pos;
+
     // Check if this is Fog-of-War chess
     // For now, we'll check via a variant name or flag
     // This should be properly implemented based on variant system

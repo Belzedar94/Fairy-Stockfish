@@ -55,6 +55,8 @@ InfosetNode* Subgame::get_infoset(SequenceId seqId, Color player) {
 
 void Subgame::construct(const std::vector<std::string>& sampledStateFens,
                         int minInfosetSize) {
+    (void)minInfosetSize; // Parameter currently unused
+
     // Clear existing tree
     rootNode = std::make_unique<GameTreeNode>();
     infosets.clear();
@@ -204,6 +206,9 @@ int Subgame::average_depth() const {
 float compute_alternative_value(const InfosetNode* infoset,
                                  const std::vector<float>& currentX,
                                  const std::vector<float>& currentY) {
+    (void)currentX;
+    (void)currentY;
+
     // Simplified implementation: return current value estimate
     // Full implementation would compute min(evaluate(s), v*) for new states
     return infoset ? infoset->value : 0.0f;
