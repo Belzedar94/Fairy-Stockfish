@@ -69,6 +69,7 @@ bool BeliefState::is_consistent(const Position& pos, const Observation& obs) {
         return false;
 
     Color us = obs.sideToMove;
+    Color them = ~us;
 
     // Check that our pieces match exactly
     if (pos.pieces(us) != obs.myPieces)
@@ -116,7 +117,6 @@ Observation BeliefState::parse_fog_fen(const std::string& fogFen, const Variant*
     obs.sideToMove = (stmToken == "b" ? BLACK : WHITE);
 
     Color us = obs.sideToMove;
-    Color them = ~us;
 
     auto files = variant ? int(variant->maxFile) + 1 : FILE_NB;
     auto ranks = variant ? int(variant->maxRank) + 1 : RANK_NB;
@@ -215,11 +215,16 @@ bool BeliefState::set_position_from_fen(Position& pos, StateInfo& st, const std:
     if (!variant)
         return false;
 
+#if defined(__cpp_exceptions) || defined(__EXCEPTIONS)
     try {
         pos.set(variant, fen, isChess960, &st, owningThread);
     } catch (...) {
         return false;
     }
+#else
+    // Exceptions are disabled (e.g., when built with -fno-exceptions)
+    pos.set(variant, fen, isChess960, &st, owningThread);
+#endif
 
     return true;
 }
