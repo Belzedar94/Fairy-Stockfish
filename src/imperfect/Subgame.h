@@ -175,7 +175,7 @@ private:
     void build_tree_from_samples(const std::vector<std::string>& sampledStateFens);
     void mark_frozen_state(GameTreeNode* node);
     std::unique_ptr<GameTreeNode> acquire_node();
-    void release_subtree(std::unique_ptr<GameTreeNode>& node);
+    size_t release_subtree(std::unique_ptr<GameTreeNode>& node);
 };
 
 /// compute_sequence_id() generates a unique ID for a move sequence

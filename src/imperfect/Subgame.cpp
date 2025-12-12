@@ -65,18 +65,24 @@ std::unique_ptr<GameTreeNode> Subgame::acquire_node() {
     return node;
 }
 
-void Subgame::release_subtree(std::unique_ptr<GameTreeNode>& node) {
+size_t Subgame::release_subtree(std::unique_ptr<GameTreeNode>& node) {
     if (!node)
-        return;
+        return 0;
 
+    size_t released = 1;
     for (auto& child : node->children)
-        release_subtree(child);
+        released += release_subtree(child);
 
     node->children.clear();
     nodePool.push_back(std::move(node));
     node = nullptr;
-    if (liveNodeCount > 0)
-        --liveNodeCount;
+
+    if (released >= liveNodeCount)
+        liveNodeCount = 0;
+    else
+        liveNodeCount -= released;
+
+    return released;
 }
 
 std::shared_ptr<InfosetNode> Subgame::get_infoset(SequenceId seqId, Color player) {
@@ -345,7 +351,7 @@ void Subgame::enforce_node_limit() {
 
     std::unique_lock<std::shared_mutex> lock(treeMutex);
 
-    auto select_prunable_leaf = [this](GameTreeNode* root) {
+    auto select_prunable_leaf = [](GameTreeNode* root) {
         GameTreeNode* target = nullptr;
         GameTreeNode* targetParent = nullptr;
         size_t targetIndex = 0;
