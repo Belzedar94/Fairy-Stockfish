@@ -280,6 +280,7 @@ void Subgame::mark_frozen_state(GameTreeNode* node) {
 float compute_alternative_value(const InfosetNode* infoset,
                                  const std::vector<float>& currentX,
                                  const std::vector<float>& currentY) {
+    (void)currentX; // Suppress unused parameter warning
     if (!infoset)
         return 0.0f;
 

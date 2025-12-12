@@ -202,7 +202,7 @@ void Expander::expand_leaf(GameTreeNode* leaf, Subgame& subgame, Position& pos) 
     infoset->variances.resize(numActions, 2.0f); // Variance prior {-1, +1}
 
     // Initialize to best child (Appendix B.3.4)
-    initialize_to_best_child(infoset, childEvals);
+    initialize_to_best_child(infoset.get(), childEvals);
 
     infoset->expanded = true;
 }
