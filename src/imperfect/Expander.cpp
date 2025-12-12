@@ -23,6 +23,7 @@
 #include <algorithm>
 #include <cmath>
 #include <random>
+#include <shared_mutex>
 
 namespace Stockfish {
 namespace FogOfWar {
@@ -112,7 +113,7 @@ GameTreeNode* Expander::select_leaf(GameTreeNode* root, Subgame& subgame) {
         // For now, alternate by depth (even=WHITE, odd=BLACK)
         Color nodePlayer = (current->depth % 2 == 0) ? WHITE : BLACK;
         SequenceId seqId = nodePlayer == WHITE ? current->ourSequence : current->theirSequence;
-        InfosetNode* infoset = subgame.get_infoset(seqId, nodePlayer);
+        auto infoset = subgame.get_infoset(seqId, nodePlayer);
 
         if (!infoset || infoset->actions.empty())
             break;
@@ -120,7 +121,7 @@ GameTreeNode* Expander::select_leaf(GameTreeNode* root, Subgame& subgame) {
         // If this is the exploring side, use PUCT; otherwise use current strategy
         size_t actionIdx;
         if (nodePlayer == exploringSide) {
-            actionIdx = select_action_puct(infoset);
+            actionIdx = select_action_puct(infoset.get());
         } else {
             // Sample from current strategy
             std::discrete_distribution<size_t> dist(infoset->strategy.begin(),
@@ -181,12 +182,13 @@ void Expander::expand_leaf(GameTreeNode* leaf, Subgame& subgame, Position& pos) 
     // Get or create infoset for this node
     Color nodePlayer = pos.side_to_move();
     SequenceId seqId = nodePlayer == WHITE ? leaf->ourSequence : leaf->theirSequence;
-    InfosetNode* infoset = subgame.get_infoset(seqId, nodePlayer);
+    auto infoset = subgame.get_infoset(seqId, nodePlayer);
 
     if (!infoset)
         return;
 
     // Initialize infoset with actions
+    std::lock_guard<std::mutex> guard(infoset->infosetMutex);
     infoset->actions.clear();
     for (const auto& eval : childEvals)
         infoset->actions.push_back(eval.move);
@@ -200,7 +202,7 @@ void Expander::expand_leaf(GameTreeNode* leaf, Subgame& subgame, Position& pos) 
     infoset->variances.resize(numActions, 2.0f); // Variance prior {-1, +1}
 
     // Initialize to best child (Appendix B.3.4)
-    initialize_to_best_child(infoset, childEvals);
+    initialize_to_best_child(infoset.get(), childEvals);
 
     infoset->expanded = true;
 }
@@ -211,10 +213,14 @@ bool Expander::run_expansion_step(Subgame& subgame) {
     if (!subgame.root())
         return false;
 
+    std::shared_lock<std::shared_mutex> readLock(subgame.mutex());
+
     // Select a leaf node
     GameTreeNode* leaf = select_leaf(subgame.root(), subgame);
     if (!leaf || leaf->expanded)
         return false;
+
+    readLock.unlock();
 
     // Expand the leaf
     StateInfo st;
@@ -226,7 +232,10 @@ bool Expander::run_expansion_step(Subgame& subgame) {
         return false;
 
     pos.set(variant, leaf->stateFen, false, &st, nullptr, true);
-    expand_leaf(leaf, subgame, pos);
+    {
+        std::unique_lock<std::shared_mutex> writeLock(subgame.mutex());
+        expand_leaf(leaf, subgame, pos);
+    }
 
     // Alternate exploring side (Appendix B.3.3)
     alternate_exploring_side();

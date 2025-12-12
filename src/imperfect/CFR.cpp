@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <numeric>
 #include <cmath>
+#include <shared_mutex>
 
 namespace Stockfish {
 namespace FogOfWar {
@@ -64,7 +65,12 @@ std::vector<float> positive_regret_matching_plus(const std::vector<float>& regre
 }
 
 void CFRSolver::compute_strategy(InfosetNode* infoset) {
-    if (!infoset || infoset->regrets.empty())
+    if (!infoset || !infoset->unfrozen)
+        return;
+
+    std::lock_guard<std::mutex> guard(infoset->infosetMutex);
+
+    if (infoset->regrets.empty())
         return;
 
     infoset->strategy = regret_matching(infoset->regrets);
@@ -75,6 +81,11 @@ void CFRSolver::update_regrets(InfosetNode* infoset,
                                 float nodeValue,
                                 float reachProb) {
     if (!infoset || actionValues.size() != infoset->actions.size())
+        return;
+
+    std::lock_guard<std::mutex> guard(infoset->infosetMutex);
+
+    if (!infoset->unfrozen)
         return;
 
     // Update regrets: R(a) += reach_prob * (V(a) - V(node))
@@ -93,50 +104,79 @@ float CFRSolver::compute_cfv(GameTreeNode* node, Subgame& subgame,
     if (!node)
         return 0.0f;
 
+    // Capture a snapshot of the node under the tree mutex, then release before recursing
+    bool terminal = false;
+    bool inKLUSS = false;
+    bool expanded = false;
+    float terminalValue = 0.0f;
+    size_t nodeDepth = 0;
+    SequenceId ourSeq = 0;
+    SequenceId theirSeq = 0;
+    std::vector<GameTreeNode*> children;
+
+    {
+        std::shared_lock<std::shared_mutex> lock(subgame.mutex());
+        terminal = node->terminal;
+        terminalValue = node->terminalValue;
+        inKLUSS = node->inKLUSS;
+        expanded = node->expanded;
+        nodeDepth = node->depth;
+        ourSeq = node->ourSequence;
+        theirSeq = node->theirSequence;
+
+        children.reserve(node->children.size());
+        for (auto& child : node->children)
+            children.push_back(child.get());
+    }
+
     // Terminal node
-    if (node->terminal)
-        return node->terminalValue;
+    if (terminal)
+        return terminalValue;
 
     // If not in KLUSS, return cached value
-    if (!node->inKLUSS)
-        return 0.0f; // Placeholder: should use cached value
+    if (!inKLUSS)
+        return terminalValue;
 
     // If node hasn't been expanded yet, return 0
-    if (!node->expanded)
+    if (!expanded)
         return 0.0f;
 
     // Get infoset
     // TODO: Determine side to move from FEN or pass as parameter
     // For now, alternate by depth (even=WHITE, odd=BLACK)
-    Color nodePlayer = (node->depth % 2 == 0) ? WHITE : BLACK;
-    SequenceId seqId = nodePlayer == WHITE ? node->ourSequence : node->theirSequence;
-    InfosetNode* infoset = subgame.get_infoset(seqId, nodePlayer);
+    Color nodePlayer = (nodeDepth % 2 == 0) ? WHITE : BLACK;
+    SequenceId seqId = nodePlayer == WHITE ? ourSeq : theirSeq;
+    auto infosetPtr = subgame.get_infoset(seqId, nodePlayer);
+    InfosetNode* infoset = infosetPtr.get();
 
     if (!infoset || infoset->actions.empty())
         return 0.0f;
 
     // Compute strategy if needed
-    if (infoset->strategy.empty() || infoset->strategy.size() != infoset->actions.size())
+    if (infoset->unfrozen && (infoset->strategy.empty() || infoset->strategy.size() != infoset->actions.size()))
         compute_strategy(infoset);
+
+    std::lock_guard<std::mutex> guard(infoset->infosetMutex);
+
+    const std::vector<float>& policy = infoset->unfrozen && !infoset->strategy.empty()
+        ? infoset->strategy
+        : (!infoset->trunkStrategy.empty() ? infoset->trunkStrategy : infoset->strategy);
 
     // Compute value of each action
     size_t numActions = infoset->actions.size();
     std::vector<float> actionValues(numActions, 0.0f);
     float nodeValue = 0.0f;
 
-    // Get a snapshot of children size to avoid race conditions
-    size_t numChildren = node->children.size();
-
     for (size_t i = 0; i < numActions; ++i) {
         // Find child corresponding to this action
         // Simplified: assume children match actions in order
-        if (i < numChildren) {
-            GameTreeNode* child = node->children[i].get();
+        if (i < children.size()) {
+            GameTreeNode* child = children[i];
             if (child) {
                 float childValue = compute_cfv(child, subgame, reach_probs, player);
                 actionValues[i] = childValue;
-                if (i < infoset->strategy.size())
-                    nodeValue += infoset->strategy[i] * childValue;
+                if (i < policy.size())
+                    nodeValue += policy[i] * childValue;
             }
         }
     }
@@ -145,6 +185,11 @@ float CFRSolver::compute_cfv(GameTreeNode* node, Subgame& subgame,
     if (nodePlayer == player) {
         float reachProb = reach_probs[player];
         update_regrets(infoset, actionValues, nodeValue, reachProb);
+    }
+
+    // Alternative values for Resolve gadget
+    if (subgame.get_gadget_type() == GadgetType::RESOLVE && !subgame.has_resolve_entered()) {
+        nodeValue = add_alternative_value(nodeValue, infoset, policy, policy);
     }
 
     infoset->value = nodeValue;
@@ -187,8 +232,8 @@ void CFRSolver::run_iteration(Subgame& subgame) {
     compute_cfv(subgame.root(), subgame, reachProbs, BLACK);
 
     // Update all strategies
-    for (auto& [seqId, infoset] : subgame.get_infosets())
-        compute_strategy(&infoset);
+    for (auto& infoset : subgame.snapshot_infosets())
+        compute_strategy(infoset.get());
 
     iterations++;
 }

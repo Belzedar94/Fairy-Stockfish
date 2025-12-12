@@ -22,6 +22,7 @@
 #include <thread>
 #include <memory>
 #include <atomic>
+#include <mutex>
 #include "../types.h"
 #include "Belief.h"
 #include "Subgame.h"

@@ -21,6 +21,7 @@
 
 #include <vector>
 #include <atomic>
+#include <mutex>
 #include "../types.h"
 #include "Subgame.h"
 
