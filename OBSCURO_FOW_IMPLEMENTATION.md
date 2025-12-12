@@ -88,7 +88,7 @@ UCI_FoW_TimeMs        = 5000       // Time budget per move in milliseconds
 | Appendix B.3.6 (PCFR+) | `CFR.cpp::run_iteration()` | ✓ |
 | Appendix B.3.7 (Purification) | `Selection.cpp::purify_strategy()` | ✓ |
 
-### Recent Bug Fixes (December 2024)
+### Recent Bug Fixes (December 2025)
 
  
 
