@@ -70,7 +70,7 @@ TestCase visibility_pawn_masking() {
 }
 
 TestSuiteResult run_visibility_suite() {
-    TestSuiteResult suite{"visibility"};
+    TestSuiteResult suite{"visibility", {}};
     suite.cases.push_back(visibility_castling_and_ep());
     suite.cases.push_back(visibility_pawn_masking());
     return suite;
@@ -119,7 +119,7 @@ TestCase belief_incremental_filter() {
 }
 
 TestSuiteResult run_belief_suite() {
-    TestSuiteResult suite{"belief"};
+    TestSuiteResult suite{"belief", {}};
     suite.cases.push_back(belief_enumeration_cap());
     suite.cases.push_back(belief_incremental_filter());
     return suite;
@@ -163,7 +163,7 @@ TestCase selection_resolve_determinism() {
 }
 
 TestSuiteResult run_selection_suite() {
-    TestSuiteResult suite{"selection"};
+    TestSuiteResult suite{"selection", {}};
     suite.cases.push_back(selection_purification_support());
     suite.cases.push_back(selection_resolve_determinism());
     return suite;
@@ -178,7 +178,7 @@ TestCase kluss_sequence_id_stability() {
 }
 
 TestSuiteResult run_kluss_suite() {
-    TestSuiteResult suite{"kluss"};
+    TestSuiteResult suite{"kluss", {}};
     suite.cases.push_back(kluss_sequence_id_stability());
     return suite;
 }
@@ -193,13 +193,13 @@ TestCase cfr_reset_and_stop() {
 }
 
 TestSuiteResult run_cfr_suite() {
-    TestSuiteResult suite{"cfr"};
+    TestSuiteResult suite{"cfr", {}};
     suite.cases.push_back(cfr_reset_and_stop());
     return suite;
 }
 
 TestSuiteResult run_benchmark_suite() {
-    TestSuiteResult suite{"benchmarks"};
+    TestSuiteResult suite{"benchmarks", {}};
 
     StateInfo st;
     Position pos;
@@ -217,7 +217,7 @@ TestSuiteResult run_benchmark_suite() {
 }
 
 TestSuiteResult run_sanitizer_suite() {
-    TestSuiteResult suite{"sanitizers"};
+    TestSuiteResult suite{"sanitizers", {}};
     // Minimal construction/destruction loops to flag leaks/races in ASan/TSan runs
     for (int i = 0; i < 3; ++i) {
         StateInfo st;
