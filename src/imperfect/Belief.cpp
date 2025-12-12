@@ -17,9 +17,14 @@
 */
 
 #include <algorithm>
+#include <functional>
+#include <numeric>
 #include <random>
+#include <sstream>
+#include <unordered_map>
 #include "Belief.h"
 #include "../movegen.h"
+#include "../bitboard.h"
 
 namespace Stockfish {
 namespace FogOfWar {
@@ -64,7 +69,6 @@ bool BeliefState::is_consistent(const Position& pos, const Observation& obs) {
         return false;
 
     Color us = obs.sideToMove;
-    Color them = ~us;
 
     // Check that our pieces match exactly
     if (pos.pieces(us) != obs.myPieces)
@@ -94,6 +98,105 @@ bool BeliefState::is_consistent(const Position& pos, const Observation& obs) {
     return true;
 }
 
+Observation BeliefState::parse_fog_fen(const std::string& fogFen, const Variant* variant) {
+    Observation obs;
+
+    if (fogFen.empty())
+        return obs;
+
+    std::istringstream ss(fogFen);
+    std::string boardToken, stmToken, castlingToken, epToken;
+
+    ss >> boardToken >> stmToken >> castlingToken >> epToken;
+    if (!(ss >> obs.halfmoveClock))
+        obs.halfmoveClock = 0;
+    if (!(ss >> obs.fullmoveNumber))
+        obs.fullmoveNumber = 1;
+
+    obs.sideToMove = (stmToken == "b" ? BLACK : WHITE);
+
+    Color us = obs.sideToMove;
+    Color them = ~us;
+
+    auto files = variant ? int(variant->maxFile) + 1 : FILE_NB;
+    auto ranks = variant ? int(variant->maxRank) + 1 : RANK_NB;
+
+    int rankIdx = 0;
+    int fileIdx = 0;
+
+    auto mark_square = [&](int f, int r) {
+        if (f >= files || r >= ranks)
+            return Square(SQ_NONE);
+        return make_square(File(f), Rank(ranks - 1 - r));
+    };
+
+    for (char c : boardToken) {
+        if (c == '/') {
+            rankIdx++;
+            fileIdx = 0;
+            continue;
+        }
+
+        if (std::isdigit(static_cast<unsigned char>(c))) {
+            int emptyCount = c - '0';
+            for (int i = 0; i < emptyCount && fileIdx < files; ++i, ++fileIdx) {
+                Square sq = mark_square(fileIdx, rankIdx);
+                if (sq != SQ_NONE)
+                    obs.visible |= sq;
+            }
+            continue;
+        }
+
+        Square sq = mark_square(fileIdx, rankIdx);
+        ++fileIdx;
+
+        if (sq == SQ_NONE)
+            continue;
+
+        if (c == '*' || c == '?')
+            continue; // Unknown square, remains invisible
+
+        obs.visible |= sq;
+
+        if (c >= 'A' && c <= 'Z') {
+            if (us == WHITE)
+                obs.myPieces |= sq;
+            else
+                obs.seenOpponentPieces |= sq;
+        } else if (c >= 'a' && c <= 'z') {
+            if (us == BLACK)
+                obs.myPieces |= sq;
+            else
+                obs.seenOpponentPieces |= sq;
+        }
+    }
+
+    // Castling rights we know for our side only
+    if (castlingToken != "-") {
+        if (us == WHITE && (castlingToken.find('K') != std::string::npos ||
+                            castlingToken.find('Q') != std::string::npos))
+            obs.castlingRights = 1;
+        else if (us == BLACK && (castlingToken.find('k') != std::string::npos ||
+                                 castlingToken.find('q') != std::string::npos))
+            obs.castlingRights = 1;
+    }
+
+    // En-passant square visibility
+    if (epToken != "-") {
+        if (epToken.size() >= 2) {
+            File f = File(epToken[0] - 'a');
+            Rank r = Rank(epToken[1] - '1');
+            if (f >= FILE_A && f < FILE_NB && r >= RANK_1 && r < RANK_NB) {
+                Square sq = make_square(f, r);
+                obs.epSquares |= sq;
+                obs.visible |= sq;
+            }
+        }
+    }
+
+    return obs;
+}
+
 bool BeliefState::is_king_capturable(const Position& pos) const {
     // Check if the side-to-move can capture the opponent's king
     // If so, the game would have already ended, so this state is illegal
@@ -108,56 +211,131 @@ bool BeliefState::is_king_capturable(const Position& pos) const {
     return bool(pos.attackers_to(theirKing) & pos.pieces(us));
 }
 
+bool BeliefState::set_position_from_fen(Position& pos, StateInfo& st, const std::string& fen) const {
+    if (!variant)
+        return false;
+
+    try {
+        pos.set(variant, fen, isChess960, &st, owningThread);
+    } catch (...) {
+        return false;
+    }
+
+    return true;
+}
+
 void BeliefState::enumerate_candidates(const ObservationHistory& obsHist,
                                         const Position& truePos) {
-    // Simple baseline: start from the true position for now
-    // In a full implementation, we would enumerate all possible placements
-    // of unseen opponent pieces on unseen squares
-
     if (obsHist.empty())
         return;
 
-    // For baseline implementation, we'll use a simplified approach:
-    // 1. Take the true position as the starting point
-    // 2. Generate variations by considering different placements of unseen pieces
+    const Observation& obs = obsHist.last();
+    Color us = obs.sideToMove;
+    Color them = ~us;
 
-    // Start with the true position (store as FEN)
-    std::string fen = truePos.fen();
-    stateFens.push_back(fen);
-    stateKeys.insert(truePos.key());
+    Bitboard visible = obs.visible;
+    Bitboard myPieces = obs.myPieces;
 
-    // TODO: Full enumeration would generate all possible positions by:
-    // - Identifying unseen squares (not in currentObs.visible)
-    // - Enumerating possible placements of opponent pieces on those squares
-    // - Considering piece counts and material balance
-    // - Respecting pawn structure constraints
-    // - Checking castling rights possibilities
+    Bitboard oppPieces = truePos.pieces(them);
+    Bitboard hiddenOpp = oppPieces & ~visible;
 
-    // For now, this simplified version keeps only the true position
-    // A production implementation would expand this significantly
+    std::vector<Square> hiddenSquares;
+    Bitboard unseen = (~visible & ~myPieces) & AllSquares;
+    Bitboard tmpUnseen = unseen;
+    while (tmpUnseen) {
+        hiddenSquares.push_back(pop_lsb(tmpUnseen));
+    }
+
+    std::vector<Square> hiddenOppSquares;
+    std::vector<Piece> hiddenOppPieces;
+    Bitboard tmpHiddenOpp = hiddenOpp;
+    while (tmpHiddenOpp) {
+        Square sq = pop_lsb(tmpHiddenOpp);
+        hiddenOppSquares.push_back(sq);
+        hiddenOppPieces.push_back(truePos.piece_on(sq));
+    }
+
+    // If there are no hidden opponent pieces, the true position is the only consistent state
+    if (hiddenOppPieces.empty()) {
+        stateFens.push_back(truePos.fen());
+        stateKeys.insert(truePos.key());
+        return;
+    }
+
+    if (hiddenSquares.size() < hiddenOppPieces.size()) {
+        // Not enough locations to hide opponent pieces, keep true position only
+        stateFens.push_back(truePos.fen());
+        stateKeys.insert(truePos.key());
+        return;
+    }
+
+    // Limit enumeration to avoid combinatorial explosion
+    constexpr size_t kMaxEnumeratedStates = 1024;
+    size_t generated = 0;
+    std::vector<Square> assignment(hiddenOppPieces.size());
+
+    std::string baseFen = truePos.fen();
+
+    std::function<void(size_t, Bitboard)> dfs = [&](size_t idx, Bitboard used) {
+        if (generated >= kMaxEnumeratedStates)
+            return;
+
+        if (idx == hiddenOppPieces.size()) {
+            StateInfo st;
+            Position candidate;
+            if (!set_position_from_fen(candidate, st, baseFen))
+                return;
+
+            for (Square sq : hiddenOppSquares)
+                candidate.remove_piece(sq);
+
+            for (size_t i = 0; i < hiddenOppPieces.size(); ++i)
+                candidate.put_piece(hiddenOppPieces[i], assignment[i], false, NO_PIECE);
+
+            if (is_consistent(candidate, obs) && !is_king_capturable(candidate)) {
+                StateKey key = candidate.key();
+                if (stateKeys.insert(key).second) {
+                    stateFens.push_back(candidate.fen());
+                    ++generated;
+                }
+            }
+            return;
+        }
+
+        for (Square sq : hiddenSquares) {
+            Bitboard sqBB = square_bb(sq);
+            if (used & sqBB)
+                continue;
+            assignment[idx] = sq;
+            dfs(idx + 1, used | sqBB);
+            if (generated >= kMaxEnumeratedStates)
+                break;
+        }
+    };
+
+    dfs(0, 0);
+
+    if (stateFens.empty()) {
+        stateFens.push_back(truePos.fen());
+        stateKeys.insert(truePos.key());
+    }
 }
 
 void BeliefState::filter_illegal_states() {
-    // Remove states where:
-    // 1. The opponent's king is capturable (game would have ended)
-    // 2. The position is not legal according to chess rules
+    if (!variant)
+        return;
 
-    // Note: We need to create temporary Position objects to check legality
-    // This is expensive but necessary since we store FENs
     auto it = stateFens.begin();
     while (it != stateFens.end()) {
-        bool remove = false;
-
-        // Create temporary position from FEN
         StateInfo st;
         Position tempPos;
-        // We need variant and thread info - use defaults for now
-        // In production, these should be passed from context
-        // tempPos.set(variant, *it, false, &st, nullptr);
-        // For now, skip detailed legality checks and just keep all states
-        // TODO: Proper legality checking with correct variant context
+        if (!set_position_from_fen(tempPos, st, *it)) {
+            it = stateFens.erase(it);
+            continue;
+        }
 
-        if (remove) {
+        if (is_king_capturable(tempPos)) {
+            stateKeys.erase(tempPos.key());
             it = stateFens.erase(it);
         } else {
             ++it;
@@ -169,6 +347,10 @@ void BeliefState::rebuild_from_observations(const ObservationHistory& obsHist,
                                              const Position& truePos) {
     stateFens.clear();
     stateKeys.clear();
+
+    variant = truePos.variant();
+    isChess960 = truePos.is_chess960();
+    owningThread = truePos.this_thread();
 
     if (obsHist.empty())
         return;
@@ -185,11 +367,25 @@ void BeliefState::rebuild_from_observations(const ObservationHistory& obsHist,
 }
 
 void BeliefState::update_incrementally(const Observation& newObs) {
-    // Incremental update: filter existing states by new observation
-    // This is more efficient than rebuilding from scratch
-    // For now, simplified implementation - just keep all states
-    // TODO: Parse FENs and check consistency
-    (void)newObs; // Suppress unused parameter warning
+    if (!variant)
+        return;
+
+    auto it = stateFens.begin();
+    while (it != stateFens.end()) {
+        StateInfo st;
+        Position pos;
+        if (!set_position_from_fen(pos, st, *it)) {
+            it = stateFens.erase(it);
+            continue;
+        }
+
+        if (!is_consistent(pos, newObs) || is_king_capturable(pos)) {
+            stateKeys.erase(pos.key());
+            it = stateFens.erase(it);
+        } else {
+            ++it;
+        }
+    }
 }
 
 std::vector<std::string> BeliefState::sample_states(size_t n, uint64_t seed) const {

@@ -16,6 +16,7 @@ This implementation follows the Obscuro paper's algorithms for imperfect-informa
   - Maintains set P of consistent positions
   - Observation history tracking
   - From-scratch enumeration (Figure 9, lines 2-4)
+  - Enumerates hidden opponent piece permutations consistent with `fog_fen` observations (capped at 1024 states)
 
 - [x] **Evaluator Hook** (`src/imperfect/Evaluator.{h,cpp}`)
   - MultiPV depth-1 evaluation for all children
@@ -150,107 +151,17 @@ This section provides a detailed analysis of what remains to be implemented to a
 
  
 
-#### 1. Full Belief State Enumeration (HIGH PRIORITY)
+#### Addressed Critical Gaps
+
+The latest update implements the two previously missing foundation pieces:
+
+- **Full belief state enumeration**: `BeliefState::enumerate_candidates()` now permutes hidden opponent pieces across unseen squares (masked by visibility) and keeps every state consistent with the latest observation. Enumeration is capped at 1024 states to prevent combinatorial blowups, and illegal or king-capturable positions are filtered out before sampling.
+
+- **fog_fen integration**: `BeliefState::parse_fog_fen()` converts partial FoW FEN strings (supports `*` or `?` for unknown squares) into observations, and `Planner::construct_subgame()` seeds the belief state directly from a supplied `fog_fen` before running the solver.
 
  
 
-**Current State**: The belief state module (`Belief.cpp`) stores only the true position FEN. The `sample_states()` method returns a single-element vector containing just the current position.
-
- 
-
-**What's Needed**:
-
-- **Observation-consistent enumeration**: Given an observation (what the player sees), enumerate ALL positions that could produce that observation
-
-- **Efficient representation**: Use bitboards or piece placement constraints to represent the set of unknown piece locations
-
-- **Incremental updates**: When a new observation arrives, filter existing belief states rather than re-enumerating from scratch
-
- 
-
-**Algorithm** (from Figure 9, lines 2-4):
-
-```
-
-P ← EnumerateConsistentPositions(observation_history)
-
-I ← SampleSubset(P, MinInfosetSize)  // Sample 256 positions
-
-```
-
- 
-
-**Implementation Tasks**:
-
-1. Implement `enumerate_consistent_positions()` that:
-
-   - Parses fog_fen to identify unknown squares ('?')
-
-   - Computes all possible piece placements on unknown squares
-
-   - Filters positions that would produce the observed fog_fen
-
-   - Respects piece count constraints (e.g., max 8 pawns per side)
-
- 
-
-2. Implement efficient sampling:
-
-   - Random sampling from large belief sets
-
-   - Stratified sampling to ensure diversity
-
-   - Weighted sampling based on position likelihood
-
- 
-
-**Complexity**: High - this is the most algorithmically complex missing piece
-
- 
-
-#### 2. fog_fen Integration with Belief State (HIGH PRIORITY)
-
- 
-
-**Current State**: `position fog_fen <fen>` parses and stores the fog_fen string, but it's not used by the belief state module.
-
- 
-
-**What's Needed**:
-
-```cpp
-
-// In Planner::construct_subgame():
-
-if (!get_fog_fen().empty()) {
-
-    // Parse fog_fen to create observation
-
-    Observation obs = parse_fog_fen(get_fog_fen());
-
-    // Enumerate positions consistent with this observation
-
-    beliefState.enumerate_from_fog_fen(obs);
-
-}
-
-```
-
- 
-
-**Implementation Tasks**:
-
-1. Create `parse_fog_fen()` function that converts fog_fen string to Observation struct
-
-2. Implement `BeliefState::enumerate_from_fog_fen()`
-
-3. Connect fog_fen to belief state in Planner
-
-4. Handle piece-in-hand visibility for crazyhouse variants
-
- 
-
-#### 3. Proper KLUSS Order-2 Neighborhood (MEDIUM PRIORITY)
+#### 1. Proper KLUSS Order-2 Neighborhood (MEDIUM PRIORITY)
 
  
 
@@ -296,7 +207,7 @@ For each state s in belief_state:
 
  
 
-#### 4. Thread Synchronization Improvements (MEDIUM PRIORITY)
+#### 2. Thread Synchronization Improvements (MEDIUM PRIORITY)
 
  
 
@@ -350,7 +261,7 @@ For each state s in belief_state:
 
  
 
-#### 5. Action Purification (MEDIUM PRIORITY)
+#### 3. Action Purification (MEDIUM PRIORITY)
 
  
 
@@ -396,7 +307,7 @@ renormalize(purified)
 
  
 
-#### 6. Gadget Implementation (MEDIUM PRIORITY)
+#### 4. Gadget Implementation (MEDIUM PRIORITY)
 
  
 
@@ -440,7 +351,7 @@ renormalize(purified)
 
  
 
-#### 7. Leaf Evaluation Integration (MEDIUM PRIORITY)
+#### 5. Leaf Evaluation Integration (MEDIUM PRIORITY)
 
  
 
@@ -476,7 +387,7 @@ renormalize(purified)
 
  
 
-#### 8. Instrumentation (Appendix B.4) (LOW PRIORITY)
+#### 6. Instrumentation (Appendix B.4) (LOW PRIORITY)
 
  
 
@@ -492,7 +403,7 @@ renormalize(purified)
 
  
 
-#### 9. Memory Management (LOW PRIORITY)
+#### 7. Memory Management (LOW PRIORITY)
 
  
 
@@ -508,7 +419,7 @@ renormalize(purified)
 
  
 
-#### 10. Incremental Belief Updates (LOW PRIORITY)
+#### 8. Incremental Belief Updates (LOW PRIORITY)
 
  
 
@@ -568,9 +479,9 @@ renormalize(purified)
 
 **Phase 1: Core Functionality** (Essential for correct play)
 
-1. Full belief state enumeration
+1. ✅ Full belief state enumeration (hidden-piece permutations, capped at 1024)
 
-2. fog_fen integration
+2. ✅ fog_fen integration (parse + seed belief state)
 
 3. Action purification
 

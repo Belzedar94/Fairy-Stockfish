@@ -20,6 +20,7 @@
 #include "../position.h"
 #include "../misc.h"
 #include "../movegen.h"
+#include "../uci.h"
 #include <chrono>
 #include <iostream>
 
@@ -50,11 +51,20 @@ void Planner::update_observation_history(const Position& pos) {
 void Planner::construct_subgame(const Position& pos) {
     // Implements ConstructSubgame from Figure 9
 
+    ObservationHistory workingHistory = obsHistory;
+
+    if (!get_fog_fen().empty()) {
+        Observation fogObservation = BeliefState::parse_fog_fen(get_fog_fen(), pos.variant());
+        workingHistory.clear();
+        workingHistory.add_observation(fogObservation);
+        obsHistory = workingHistory;
+    }
+
     // Step 1: Rebuild belief state P from observations
-    if (config.enableIncrementalBelief && !obsHistory.observations().empty()) {
-        beliefState.update_incrementally(obsHistory.last());
+    if (config.enableIncrementalBelief && !workingHistory.observations().empty()) {
+        beliefState.update_incrementally(workingHistory.last());
     } else {
-        beliefState.rebuild_from_observations(obsHistory, pos);
+        beliefState.rebuild_from_observations(workingHistory, pos);
     }
 
     // Step 2: Sample I ⊂ P (default 256 states)
