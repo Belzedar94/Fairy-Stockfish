@@ -175,12 +175,16 @@ GameTreeNode* Subgame::expand_node(GameTreeNode* leaf, Position& pos) {
         child->parent = leaf;
         child->depth = leaf->depth + 1;
 
-        // Update sequences
+        // Initialize sequences from parent so both perspectives remain valid
+        child->ourSequence = leaf->ourSequence;
+        child->theirSequence = leaf->theirSequence;
+
+        // Update sequences for the mover
         Color mover = pos.side_to_move();
         if (mover == WHITE)
-            child->ourSequence = extend_sequence_id(leaf->ourSequence, m);
+            child->ourSequence = extend_sequence_id(child->ourSequence, m);
         else
-            child->theirSequence = extend_sequence_id(leaf->theirSequence, m);
+            child->theirSequence = extend_sequence_id(child->theirSequence, m);
 
         // Make move to get child state FEN
         pos.do_move(m, st);
