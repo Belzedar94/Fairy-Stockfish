@@ -19,6 +19,9 @@
 #include <cstdlib>
 #include <cassert>
 #include <cmath>
+#include <algorithm>
+#include <array>
+#include <random>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -33,6 +36,7 @@
 #include "uci.h"
 #include "xboard.h"
 #include "syzygy/tbprobe.h"
+#include "imperfect/Planner.h"
 
 using namespace std;
 
@@ -40,30 +44,149 @@ namespace Stockfish {
 
 extern vector<string> setup_bench(const Position&, istream&);
 
+// Global fog FEN for FOW analysis
+static std::string g_fogFen;
+
+// Get the fog FEN for FOW analysis
+const std::string& get_fog_fen() { return g_fogFen; }
+
+// Clear the fog FEN
+void clear_fog_fen() { g_fogFen.clear(); }
+
 namespace {
+
+  std::string generate_chess960_rank(std::mt19937_64& rng, bool whiteSide) {
+    std::array<char, 8> rank{};
+    rank.fill(' ');
+
+    auto pick_slot = [&](std::vector<int>& slots) {
+        std::uniform_int_distribution<int> dist(0, int(slots.size()) - 1);
+        int idx = dist(rng);
+        int value = slots[idx];
+        slots.erase(slots.begin() + idx);
+        return value;
+    };
+
+    // Bishops on opposite colors
+    std::vector<int> even{0, 2, 4, 6};
+    std::vector<int> odd{1, 3, 5, 7};
+    int b1 = pick_slot(even);
+    int b2 = pick_slot(odd);
+    rank[b1] = whiteSide ? 'B' : 'b';
+    rank[b2] = whiteSide ? 'B' : 'b';
+
+    // Fill slot list for remaining squares
+    std::vector<int> slots;
+    for (int i = 0; i < 8; ++i)
+        if (rank[i] == ' ')
+            slots.push_back(i);
+
+    // Place queen
+    int q = pick_slot(slots);
+    rank[q] = whiteSide ? 'Q' : 'q';
+
+    // Place knights
+    int n1 = pick_slot(slots);
+    int n2 = pick_slot(slots);
+    rank[n1] = whiteSide ? 'N' : 'n';
+    rank[n2] = whiteSide ? 'N' : 'n';
+
+    // Remaining squares become rook, king, rook with king between rooks
+    std::sort(slots.begin(), slots.end());
+    rank[slots[0]] = whiteSide ? 'R' : 'r';
+    rank[slots[1]] = whiteSide ? 'K' : 'k';
+    rank[slots[2]] = whiteSide ? 'R' : 'r';
+
+    return std::string(rank.begin(), rank.end());
+  }
+
+  std::string build_castling_rights(const std::string& whiteRank, const std::string& blackRank) {
+    auto rights_for_rank = [](const std::string& rank, bool white) {
+        int kingFile = -1;
+        std::vector<int> rookFiles;
+        for (int f = 0; f < 8; ++f) {
+            char c = rank[f];
+            if (c == (white ? 'K' : 'k'))
+                kingFile = f;
+            else if (c == (white ? 'R' : 'r'))
+                rookFiles.push_back(f);
+        }
+
+        std::string flags;
+        if (kingFile != -1 && rookFiles.size() >= 2) {
+            int queenRook = *std::min_element(rookFiles.begin(), rookFiles.end());
+            int kingRook = *std::max_element(rookFiles.begin(), rookFiles.end());
+            char queenFlag = (white ? 'A' : 'a') + queenRook;
+            char kingFlag = (white ? 'A' : 'a') + kingRook;
+            flags.push_back(kingFlag);
+            flags.push_back(queenFlag);
+        }
+        return flags;
+    };
+
+    std::string rights = rights_for_rank(whiteRank, true);
+    rights += rights_for_rank(blackRank, false);
+    return rights.empty() ? std::string("-") : rights;
+  }
+
+  std::string generate_double_frc_fen(const Variant* v) {
+    (void)v;
+    std::mt19937_64 rng(std::random_device{}());
+    std::string whiteRank = generate_chess960_rank(rng, true);
+    std::string blackRank = generate_chess960_rank(rng, false);
+    std::string castling = build_castling_rights(whiteRank, blackRank);
+
+    std::string board = blackRank + "/pppppppp/8/8/8/8/PPPPPPPP/" + whiteRank + "[]";
+    return board + " w " + castling + " - 0 1";
+  }
 
   // position() is called when engine receives the "position" UCI command.
   // The function sets up the position described in the given FEN string ("fen")
   // or the starting position ("startpos") and then makes the moves given in the
   // following move list ("moves").
+  // Also supports "fog_fen" for Fog-of-War analysis positions.
 
   void position(Position& pos, istringstream& is, StateListPtr& states) {
 
     Move m;
     string token, fen;
+    const Variant* currentVariant = variants.find(Options["UCI_Variant"])->second;
 
     is >> token;
     // Parse as SFEN if specified
     bool sfen = token == "sfen";
 
+    // Clear any previous fog_fen
+    g_fogFen.clear();
+
     if (token == "startpos")
     {
-        fen = variants.find(Options["UCI_Variant"])->second->startFen;
+        fen = currentVariant->doubleChess960 ? generate_double_frc_fen(currentVariant)
+                                             : currentVariant->startFen;
         is >> token; // Consume "moves" token if any
     }
     else if (token == "fen" || token == "sfen")
         while (is >> token && token != "moves")
             fen += token + " ";
+    else if (token == "fog_fen")
+    {
+        // fog_fen: stores the partial observation FEN for FOW analysis
+        // Format: position fog_fen <fog_fen_string>
+        // The fog FEN uses '?' for unknown squares
+        while (is >> token && token != "moves")
+            g_fogFen += token + " ";
+
+        // Trim trailing space
+        if (!g_fogFen.empty() && g_fogFen.back() == ' ')
+            g_fogFen.pop_back();
+
+        // For fog_fen, we store the partial observation but use the variant's
+        // start FEN for the actual position. The fog_fen contains unknown squares
+        // ('?' or '*') which are not valid FEN characters. The FoW planner will
+        // use g_fogFen for belief state enumeration, not the actual position.
+        fen = variants.find(Options["UCI_Variant"])->second->startFen;
+        sync_cout << "info string fog_fen set: " << g_fogFen << sync_endl;
+    }
     else
         return;
 
@@ -171,7 +294,27 @@ namespace {
             limits.time[BLACK] += byoyomi;
         }
 
-    Threads.start_thinking(pos, states, limits, ponderMode);
+    // Check if Fog-of-War mode is enabled
+    if (Options["UCI_FoW"] && Options["UCI_IISearch"]) {
+        // Use FoW Obscuro-style planner instead of normal search
+        FogOfWar::Planner planner;
+        FogOfWar::PlannerConfig config;
+
+        config.minInfosetSize = Options["UCI_MinInfosetSize"];
+        config.numExpanderThreads = Options["UCI_ExpansionThreads"];
+        config.numSolverThreads = Options["UCI_CFRThreads"];
+        config.maxSupport = Options["UCI_PurifySupport"];
+        config.puctConstant = float(int(Options["UCI_PUCT_C"])) / 100.0f;
+        config.maxTimeMs = Options["UCI_FoW_TimeMs"];
+
+        Move bestMove = planner.plan_move(pos, config);
+
+        // Output best move
+        sync_cout << "bestmove " << UCI::move(pos, bestMove) << sync_endl;
+    } else {
+        // Normal perfect-information search
+        Threads.start_thinking(pos, states, limits, ponderMode);
+    }
   }
 
   // bench() is called when engine receives the "bench" command. Firstly

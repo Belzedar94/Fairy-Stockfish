@@ -27,6 +27,7 @@
 #include "thread.h"
 #include "tt.h"
 #include "uci.h"
+#include "imperfect/tests/fow_unit_tests.h"
 
 #include "piece.h"
 #include "variant.h"
@@ -52,6 +53,36 @@ int main(int argc, char* argv[]) {
   Threads.set(size_t(Options["Threads"]));
   Search::clear(); // After threads are up
   Eval::NNUE::init();
+
+  bool runFoWUnits = false;
+  bool runFoWSanitizers = false;
+  bool runFoWBenchmarks = false;
+  for (int i = 1; i < argc; ++i)
+  {
+      std::string arg(argv[i]);
+      if (arg == "--fow-unittests")
+          runFoWUnits = true;
+      else if (arg == "--fow-sanitizers")
+          runFoWSanitizers = true;
+      else if (arg == "--fow-benchmarks")
+          runFoWBenchmarks = true;
+  }
+
+  if (runFoWUnits || runFoWSanitizers || runFoWBenchmarks)
+  {
+      int status = 0;
+      if (runFoWUnits)
+          status |= FogOfWar::run_fow_unit_suites(std::cout);
+      if (runFoWSanitizers)
+          status |= FogOfWar::run_fow_sanitizer_suites(std::cout);
+      if (runFoWBenchmarks)
+          status |= FogOfWar::run_fow_benchmark_suites(std::cout);
+      Threads.set(0);
+      variants.clear_all();
+      pieceMap.clear_all();
+      delete XBoard::stateMachine;
+      return status;
+  }
 
   UCI::loop(argc, argv);
 
