@@ -90,8 +90,9 @@ namespace {
         if (!g_fogFen.empty() && g_fogFen.back() == ' ')
             g_fogFen.pop_back();
 
-        // For the actual position, use startpos (the FOW planner will use fog_fen)
-        fen = variants.find(Options["UCI_Variant"])->second->startFen;
+        // Initialize the position from the supplied fog_fen observation
+        fen = g_fogFen.empty() ? variants.find(Options["UCI_Variant"])->second->startFen
+                               : g_fogFen;
         sync_cout << "info string fog_fen set: " << g_fogFen << sync_endl;
     }
     else

@@ -96,14 +96,6 @@ void Planner::construct_subgame(const Position& pos) {
             rootInfoset->qValues.assign(numActions, 0.0f);
             rootInfoset->variances.assign(numActions, 1.0f);
         }
-
-        // Mark as expanded
-        rootInfoset->expanded = true;
-    }
-
-    // Mark root game tree node as expanded
-    if (subgame->root()) {
-        subgame->root()->expanded = true;
     }
 
     // Step 5: Initialize Resolve and Maxmargin gadgets
