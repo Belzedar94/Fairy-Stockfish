@@ -20,6 +20,7 @@
 #include "../movegen.h"
 #include <algorithm>
 #include <numeric>
+#include <stack>
 
 namespace Stockfish {
 namespace FogOfWar {
@@ -41,16 +42,24 @@ SequenceId Subgame::compute_sequence_id(const std::vector<Move>& moves) {
     return compute_sequence_id_from_moves(moves);
 }
 
-InfosetNode* Subgame::get_infoset(SequenceId seqId, Color player) {
+SequenceId Subgame::extend_sequence_id(SequenceId base, Move move) const {
+    SequenceId hash = base;
+    constexpr SequenceId prime = 0x100000001b3ULL;
+    hash ^= static_cast<SequenceId>(move);
+    hash *= prime;
+    return hash;
+}
+
+std::shared_ptr<InfosetNode> Subgame::get_infoset(SequenceId seqId, Color player) {
     auto it = infosets.find(seqId);
     if (it != infosets.end())
-        return &it->second;
+        return it->second;
 
-    // Create new infoset
-    InfosetNode& iset = infosets[seqId];
-    iset.sequenceId = seqId;
-    iset.player = player;
-    return &iset;
+    auto iset = std::make_shared<InfosetNode>();
+    iset->sequenceId = seqId;
+    iset->player = player;
+    infosets[seqId] = iset;
+    return iset;
 }
 
 void Subgame::construct(const std::vector<std::string>& sampledStateFens,
@@ -71,6 +80,8 @@ void Subgame::construct(const std::vector<std::string>& sampledStateFens,
 }
 
 void Subgame::build_tree_from_samples(const std::vector<std::string>& sampledStateFens) {
+    std::unique_lock<std::shared_mutex> lock(treeMutex);
+
     if (sampledStateFens.empty())
         return;
 
@@ -86,15 +97,18 @@ void Subgame::build_tree_from_samples(const std::vector<std::string>& sampledSta
 
     // For now, create a simple root infoset without parsing FENs
     // TODO: Parse FENs to determine correct player and actions
-    InfosetNode* rootInfoset = get_infoset(0, WHITE); // Default to WHITE
+    auto rootInfoset = get_infoset(0, WHITE); // Default to WHITE
 
     // Initialize with empty actions (will be filled during expansion)
-    rootInfoset->regrets.clear();
-    rootInfoset->strategy.clear();
-    rootInfoset->cumulativeStrategy.clear();
-    rootInfoset->visitCounts.clear();
-    rootInfoset->qValues.clear();
-    rootInfoset->variances.clear();
+    if (rootInfoset) {
+        std::lock_guard<std::mutex> guard(rootInfoset->infosetMutex);
+        rootInfoset->regrets.clear();
+        rootInfoset->strategy.clear();
+        rootInfoset->cumulativeStrategy.clear();
+        rootInfoset->visitCounts.clear();
+        rootInfoset->qValues.clear();
+        rootInfoset->variances.clear();
+    }
 }
 
 void Subgame::compute_kluss_region(const std::vector<std::string>& sampledStateFens) {
@@ -103,15 +117,33 @@ void Subgame::compute_kluss_region(const std::vector<std::string>& sampledStateF
     // Simplified implementation: mark root and immediate children as in KLUSS
     (void)sampledStateFens; // Suppress unused parameter warning
 
+    std::unique_lock<std::shared_mutex> lock(treeMutex);
+
     if (!rootNode)
         return;
 
     // Root is always in KLUSS
-    rootNode->inKLUSS = true;
+    std::stack<GameTreeNode*> stack;
+    stack.push(rootNode.get());
 
-    // Children of root are also in KLUSS (order-1 neighborhood)
-    for (auto& child : rootNode->children)
-        child->inKLUSS = true;
+    while (!stack.empty()) {
+        GameTreeNode* node = stack.top();
+        stack.pop();
+
+        if (!node)
+            continue;
+
+        node->inKLUSS = node->depth <= 2;
+
+        // Track frozen/unfrozen infosets based on distance
+        mark_frozen_state(node);
+
+        for (auto& child : node->children) {
+            child->depth = node->depth + 1;
+            if (child->depth <= 2)
+                stack.push(child.get());
+        }
+    }
 }
 
 bool Subgame::is_in_kluss(const GameTreeNode* node) const {
@@ -144,13 +176,19 @@ GameTreeNode* Subgame::expand_node(GameTreeNode* leaf, Position& pos) {
         child->depth = leaf->depth + 1;
 
         // Update sequences
-        child->ourSequence = leaf->ourSequence; // Will be updated with move
-        child->theirSequence = leaf->theirSequence;
+        Color mover = pos.side_to_move();
+        if (mover == WHITE)
+            child->ourSequence = extend_sequence_id(leaf->ourSequence, m);
+        else
+            child->theirSequence = extend_sequence_id(leaf->theirSequence, m);
 
         // Make move to get child state FEN
         pos.do_move(m, st);
         child->stateFen = pos.fen();
         pos.undo_move(m);
+
+        child->inKLUSS = child->depth <= 2;
+        mark_frozen_state(child.get());
 
         leaf->children.push_back(std::move(child));
     }
@@ -160,6 +198,8 @@ GameTreeNode* Subgame::expand_node(GameTreeNode* leaf, Position& pos) {
 }
 
 size_t Subgame::count_nodes() const {
+    std::shared_lock<std::shared_mutex> lock(treeMutex);
+
     if (!rootNode)
         return 0;
 
@@ -180,6 +220,8 @@ size_t Subgame::count_nodes() const {
 }
 
 int Subgame::average_depth() const {
+    std::shared_lock<std::shared_mutex> lock(treeMutex);
+
     if (!rootNode)
         return 0;
 
@@ -201,17 +243,60 @@ int Subgame::average_depth() const {
     return nodeCount > 0 ? totalDepth / nodeCount : 0;
 }
 
+std::vector<std::shared_ptr<InfosetNode>> Subgame::snapshot_infosets() const {
+    std::shared_lock<std::shared_mutex> lock(treeMutex);
+    std::vector<std::shared_ptr<InfosetNode>> result;
+    result.reserve(infosets.size());
+    for (const auto& kv : infosets)
+        result.push_back(kv.second);
+    return result;
+}
+
+void Subgame::mark_frozen_state(GameTreeNode* node) {
+    if (!node)
+        return;
+
+    // Determine which sequence to use based on depth parity
+    Color nodePlayer = (node->depth % 2 == 0) ? WHITE : BLACK;
+    SequenceId seqId = nodePlayer == WHITE ? node->ourSequence : node->theirSequence;
+
+    auto infoset = get_infoset(seqId, nodePlayer);
+    if (!infoset)
+        return;
+
+    std::lock_guard<std::mutex> guard(infoset->infosetMutex);
+    infoset->unfrozen = node->depth <= 1;
+
+    if (!infoset->unfrozen && infoset->trunkStrategy.empty()) {
+        if (!infoset->strategy.empty())
+            infoset->trunkStrategy = infoset->strategy;
+        else if (!infoset->actions.empty())
+            infoset->trunkStrategy.assign(infoset->actions.size(), 1.0f / infoset->actions.size());
+    }
+}
+
 /// compute_alternative_value() for Resolve gadget (Appendix B.3.1)
 /// Uses current (x,y) instead of best-response values for stability
 float compute_alternative_value(const InfosetNode* infoset,
                                  const std::vector<float>& currentX,
                                  const std::vector<float>& currentY) {
-    (void)currentX;
-    (void)currentY;
+    if (!infoset)
+        return 0.0f;
 
-    // Simplified implementation: return current value estimate
-    // Full implementation would compute min(evaluate(s), v*) for new states
-    return infoset ? infoset->value : 0.0f;
+    // Alternative value uses Resolve prior
+    std::vector<float> prior = compute_resolve_prior(infoset, currentY);
+    float altValue = 0.0f;
+
+    const size_t actions = infoset->actions.size();
+    for (size_t i = 0; i < actions; ++i) {
+        float childVal = (i < infoset->qValues.size()) ? infoset->qValues[i] : infoset->value;
+        float weight = i < prior.size() ? prior[i] : 0.0f;
+        altValue += weight * childVal;
+    }
+
+    // Blend with current estimate for stability
+    float currentValue = infoset->value;
+    return 0.5f * altValue + 0.5f * currentValue;
 }
 
 /// compute_gift() for Resolve gadget (Appendix B.3.1)
@@ -219,10 +304,34 @@ float compute_gift(const InfosetNode* infoset,
                    const std::vector<float>& currentX,
                    const std::vector<float>& currentY) {
     // Gift is the value opponent forfeits by playing into the subgame
-    // Simplified: return difference between alternative value and current value
     float altValue = compute_alternative_value(infoset, currentX, currentY);
     float currentValue = infoset ? infoset->value : 0.0f;
     return altValue - currentValue;
+}
+
+std::vector<float> compute_resolve_prior(const InfosetNode* infoset,
+                                         const std::vector<float>& opponentStrategy) {
+    if (!infoset)
+        return {};
+
+    size_t n = infoset->actions.size();
+    std::vector<float> prior(n, 0.0f);
+
+    float uniform = n ? 1.0f / static_cast<float>(n) : 0.0f;
+
+    for (size_t i = 0; i < n; ++i) {
+        float opp = (i < opponentStrategy.size()) ? opponentStrategy[i] : 0.0f;
+        prior[i] = 0.5f * uniform + 0.5f * opp;
+    }
+
+    // Renormalize to guard against zero-sum issues
+    float sum = std::accumulate(prior.begin(), prior.end(), 0.0f);
+    if (sum > 0.0f) {
+        for (float& p : prior)
+            p /= sum;
+    }
+
+    return prior;
 }
 
 } // namespace FogOfWar

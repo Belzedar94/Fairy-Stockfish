@@ -89,8 +89,9 @@ void Planner::construct_subgame(const Position& pos) {
 
     // Step 4: Initialize root infoset with legal moves from the position
     Color us = pos.side_to_move();
-    InfosetNode* rootInfoset = subgame->get_infoset(0, us);
+    auto rootInfoset = subgame->get_infoset(0, us);
     if (rootInfoset) {
+        std::lock_guard<std::mutex> guard(rootInfoset->infosetMutex);
         // Generate legal moves and populate actions
         rootInfoset->actions.clear();
         for (const auto& m : MoveList<LEGAL>(pos)) {
@@ -208,9 +209,9 @@ Move Planner::plan_move(Position& pos, const PlannerConfig& cfg) {
 
     // Get root infoset
     Color us = pos.side_to_move();
-    InfosetNode* rootInfoset = subgame->get_infoset(0, us);
+    auto rootInfoset = subgame->get_infoset(0, us);
 
-    Move selectedMove = selector->select_move(rootInfoset, *subgame);
+    Move selectedMove = selector->select_move(rootInfoset.get(), *subgame);
 
     // Print statistics
     std::cout << "info string FoW search: "

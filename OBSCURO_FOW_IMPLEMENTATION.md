@@ -161,99 +161,15 @@ The latest update implements the two previously missing foundation pieces:
 
  
 
-#### 1. Proper KLUSS Order-2 Neighborhood (MEDIUM PRIORITY)
+#### 1. Proper KLUSS Order-2 Neighborhood (DONE)
+
+`Subgame::compute_kluss_region()` now walks the tree and marks nodes within depth 2 as inside the KLUSS region, with infosets inside distance 1 flagged as "unfrozen". Frozen infosets capture and reuse their trunk strategies so CFR only updates regrets for the unfrozen frontier. Sequence IDs are extended per-move, keeping trunk/frozen boundaries aligned with move depth.
 
  
 
-**Current State**: `Subgame::compute_kluss_region()` is a placeholder that marks all nodes as in KLUSS.
+#### 2. Thread Synchronization Improvements (DONE)
 
- 
-
-**What's Needed** (from paper Section 3.2):
-
-- **Order-2 KLUSS**: Include all nodes reachable within 2 moves from any position in the belief state
-
-- **Unfrozen at distance 1**: Nodes at distance 1 from belief state positions are "unfrozen" (strategies can be updated)
-
-- **Frozen beyond**: Nodes at distance 2+ use fixed strategies from the trunk
-
- 
-
-**Algorithm**:
-
-```
-
-For each state s in belief_state:
-
-    For each sequence σ of length ≤ 2:
-
-        Mark node(s, σ) as in_kluss
-
-        If |σ| == 1: mark as unfrozen
-
-```
-
- 
-
-**Implementation Tasks**:
-
-1. Implement `compute_order_k_neighborhood(k=2)`
-
-2. Track "frozen" vs "unfrozen" status for each infoset
-
-3. In CFR solver, only update regrets for unfrozen infosets
-
-4. Use trunk strategies for frozen infosets
-
- 
-
-#### 2. Thread Synchronization Improvements (MEDIUM PRIORITY)
-
- 
-
-**Current State**: Basic synchronization exists but has potential race conditions.
-
- 
-
-**What's Needed**:
-
-1. **Read-write locks for tree access**:
-
-   - Expanders write to tree (add children)
-
-   - CFR solver reads tree
-
-   - Use `shared_mutex` for concurrent read access
-
- 
-
-2. **Atomic infoset updates**:
-
-   - Strategy and regret updates should be atomic or use fine-grained locks
-
-   - Consider lock-free data structures for hot paths
-
- 
-
-3. **Proper shutdown sequence**:
-
-   - Expanders stop first (paper: allows solver to finish with stable tree)
-
-   - Drain work queues before joining threads
-
-   - Handle in-flight expansions gracefully
-
- 
-
-**Implementation Tasks**:
-
-1. Add `std::shared_mutex` to `Subgame` class
-
-2. Wrap tree modifications in write locks, reads in shared locks
-
-3. Add atomic operations for infoset statistics
-
-4. Implement proper thread barrier for shutdown
+Tree access now relies on a `shared_mutex` to separate read and write paths: expanders take shared locks while selecting leaves and upgrade to unique locks during expansion, and counters/strategies are guarded by infoset-level mutexes. The planner already stops expanders before the solver to drain in-flight work, matching the paper's shutdown order.
 
  
 
@@ -261,113 +177,21 @@ For each state s in belief_state:
 
  
 
-#### 3. Action Purification (MEDIUM PRIORITY)
+#### 3. Action Purification (DONE)
+
+`Selection::compute_margins()` now derives margins from CFR regrets (falling back to Q-values) and `purify_strategy()` filters to the top MaxSupport non-negative actions. Resolve gadget play is deterministic, and selection respects the purified distribution when collapsing to a single action.
 
  
 
-**Current State**: `Selection::purify_strategy()` is a placeholder that returns the input strategy unchanged.
+#### 4. Gadget Implementation (DONE)
 
- 
-
-**What's Needed** (Appendix B.3.7):
-
-- **Support-limited strategy**: Reduce strategy support to MaxSupport actions
-
-- **Margin-based filtering**: Only include actions with non-negative margin
-
-- **Deterministic in Resolve**: Use deterministic play when in Resolve gadget
-
- 
-
-**Algorithm**:
-
-```
-
-margins ← compute_margins(infoset)
-
-stable_actions ← {a : margin[a] ≥ 0}
-
-purified ← top_k(stable_actions, MaxSupport, by=strategy_prob)
-
-renormalize(purified)
-
-```
-
- 
-
-**Implementation Tasks**:
-
-1. Implement proper `compute_margins()` using CFR regrets
-
-2. Implement `purify_strategy()` with MaxSupport filtering
-
-3. Handle Resolve gadget determinism
-
-4. Add unit tests for purification edge cases
-
- 
-
-#### 4. Gadget Implementation (MEDIUM PRIORITY)
-
- 
-
-**Current State**: `GadgetType` enum exists but gadget logic is incomplete.
-
- 
-
-**What's Needed** (Appendix B.3.1, B.3.2):
-
- 
-
-**Resolve Gadget**:
-
-- Prior α(J) = 0.5·uniform + 0.5·y(J) where y is opponent's last strategy
-
-- Add v_alt to counterfactual values
-
-- Ensures safety against worst-case opponent
-
- 
-
-**Maxmargin Gadget**:
-
-- Used after Resolve has been "entered" (opponent deviated from prior)
-
-- Maximizes margin over opponent's strategy
-
-- More aggressive exploitation
-
- 
-
-**Implementation Tasks**:
-
-1. Implement `compute_resolve_prior()`
-
-2. Implement `compute_alternative_value()` (partial implementation exists)
-
-3. Add gadget switching logic in CFR solver
-
-4. Track "resolve entered" state properly
+Resolve gadgets now build the paper's prior α(J) via `compute_resolve_prior()` (50/50 uniform/opponent mix) and fold the alternative value back into counterfactuals. Gift computation uses the alternative estimate so switching to Maxmargin preserves the safety guarantee once `resolveEntered` is raised by the solver.
 
  
 
 #### 5. Leaf Evaluation Integration (MEDIUM PRIORITY)
 
- 
-
-**Current State**: `Evaluator.cpp` exists but integration with Stockfish evaluation is incomplete.
-
- 
-
-**What's Needed**:
-
-1. Hook into Stockfish's NNUE evaluation
-
-2. Normalize evaluation to [-1, +1] range
-
-3. Handle FoW-specific evaluation (average over belief state)
-
-4. Use MultiPV for action value initialization
+Depth-1 child evaluation is wired into Stockfish's evaluator and normalized to [-1, +1]; remaining work is focused on FoW-specific averaging over the belief set and caching repeated states.
 
  
 

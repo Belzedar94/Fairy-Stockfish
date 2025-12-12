@@ -34,19 +34,19 @@ std::vector<float> ActionSelection::compute_margins(const InfosetNode* infoset) 
     if (!infoset || infoset->actions.empty())
         return {};
 
-    // If qValues is empty, return zero margins (all actions equally good)
-    if (infoset->qValues.empty()) {
-        return std::vector<float>(infoset->actions.size(), 0.0f);
+    // Prefer CFR regrets when available (Maxmargin)
+    if (!infoset->regrets.empty() && infoset->regrets.size() == infoset->actions.size()) {
+        return infoset->regrets;
     }
 
-    // Simplified implementation: use Q-values as margins
-    // Full implementation would compute actual Maxmargin margins
+    // Fallback to Q-values
+    if (infoset->qValues.empty())
+        return std::vector<float>(infoset->actions.size(), 0.0f);
+
     std::vector<float> margins(infoset->actions.size());
 
-    // Find best Q-value
     float bestQ = *std::max_element(infoset->qValues.begin(), infoset->qValues.end());
 
-    // Margins are differences from best
     for (size_t i = 0; i < infoset->qValues.size(); ++i)
         margins[i] = infoset->qValues[i] - bestQ;
 
@@ -58,6 +58,10 @@ std::vector<float> ActionSelection::purify_strategy(const std::vector<float>& st
                                                       bool inResolve) {
     if (strategy.empty())
         return {};
+
+    std::vector<float> localMargins = margins;
+    if (localMargins.size() != strategy.size())
+        localMargins.assign(strategy.size(), 0.0f);
 
     // If in Resolve, play deterministically (best action)
     if (inResolve) {
@@ -74,8 +78,8 @@ std::vector<float> ActionSelection::purify_strategy(const std::vector<float>& st
     // Create pairs of (index, probability, margin)
     std::vector<std::tuple<size_t, float, float>> actions;
     for (size_t i = 0; i < strategy.size(); ++i) {
-        if (strategy[i] > 0.0f && check_stability(margins[i]))
-            actions.emplace_back(i, strategy[i], margins[i]);
+        if (strategy[i] > 0.0f && check_stability(localMargins[i]))
+            actions.emplace_back(i, strategy[i], localMargins[i]);
     }
 
     // Sort by probability (descending)
@@ -164,8 +168,15 @@ Move ActionSelection::select_move(const InfosetNode* rootInfoset,
     int supportSize = std::count_if(purifiedStrategy.begin(), purifiedStrategy.end(),
                                      [](float p) { return p > 0.0f; });
 
-    if (inResolve || supportSize <= 1)
+    if (inResolve || supportSize <= 1) {
+        // Use purified distribution when available
+        if (!purifiedStrategy.empty()) {
+            size_t bestIdx = std::distance(purifiedStrategy.begin(),
+                                           std::max_element(purifiedStrategy.begin(), purifiedStrategy.end()));
+            return rootInfoset->actions[bestIdx];
+        }
         return select_deterministic(rootInfoset);
+    }
 
     // Otherwise sample from purified strategy
     return select_stochastic(rootInfoset, purifiedStrategy);

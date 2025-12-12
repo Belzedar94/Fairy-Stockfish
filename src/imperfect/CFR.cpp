@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <numeric>
 #include <cmath>
+#include <shared_mutex>
 
 namespace Stockfish {
 namespace FogOfWar {
@@ -64,7 +65,12 @@ std::vector<float> positive_regret_matching_plus(const std::vector<float>& regre
 }
 
 void CFRSolver::compute_strategy(InfosetNode* infoset) {
-    if (!infoset || infoset->regrets.empty())
+    if (!infoset || !infoset->unfrozen)
+        return;
+
+    std::lock_guard<std::mutex> guard(infoset->infosetMutex);
+
+    if (infoset->regrets.empty())
         return;
 
     infoset->strategy = regret_matching(infoset->regrets);
@@ -75,6 +81,11 @@ void CFRSolver::update_regrets(InfosetNode* infoset,
                                 float nodeValue,
                                 float reachProb) {
     if (!infoset || actionValues.size() != infoset->actions.size())
+        return;
+
+    std::lock_guard<std::mutex> guard(infoset->infosetMutex);
+
+    if (!infoset->unfrozen)
         return;
 
     // Update regrets: R(a) += reach_prob * (V(a) - V(node))
@@ -93,13 +104,15 @@ float CFRSolver::compute_cfv(GameTreeNode* node, Subgame& subgame,
     if (!node)
         return 0.0f;
 
+    std::shared_lock<std::shared_mutex> lock(subgame.mutex());
+
     // Terminal node
     if (node->terminal)
         return node->terminalValue;
 
     // If not in KLUSS, return cached value
     if (!node->inKLUSS)
-        return 0.0f; // Placeholder: should use cached value
+        return node->terminalValue;
 
     // If node hasn't been expanded yet, return 0
     if (!node->expanded)
@@ -110,14 +123,21 @@ float CFRSolver::compute_cfv(GameTreeNode* node, Subgame& subgame,
     // For now, alternate by depth (even=WHITE, odd=BLACK)
     Color nodePlayer = (node->depth % 2 == 0) ? WHITE : BLACK;
     SequenceId seqId = nodePlayer == WHITE ? node->ourSequence : node->theirSequence;
-    InfosetNode* infoset = subgame.get_infoset(seqId, nodePlayer);
+    auto infosetPtr = subgame.get_infoset(seqId, nodePlayer);
+    InfosetNode* infoset = infosetPtr.get();
 
     if (!infoset || infoset->actions.empty())
         return 0.0f;
 
     // Compute strategy if needed
-    if (infoset->strategy.empty() || infoset->strategy.size() != infoset->actions.size())
+    if (infoset->unfrozen && (infoset->strategy.empty() || infoset->strategy.size() != infoset->actions.size()))
         compute_strategy(infoset);
+
+    std::lock_guard<std::mutex> guard(infoset->infosetMutex);
+
+    const std::vector<float>& policy = infoset->unfrozen && !infoset->strategy.empty()
+        ? infoset->strategy
+        : (!infoset->trunkStrategy.empty() ? infoset->trunkStrategy : infoset->strategy);
 
     // Compute value of each action
     size_t numActions = infoset->actions.size();
@@ -135,8 +155,8 @@ float CFRSolver::compute_cfv(GameTreeNode* node, Subgame& subgame,
             if (child) {
                 float childValue = compute_cfv(child, subgame, reach_probs, player);
                 actionValues[i] = childValue;
-                if (i < infoset->strategy.size())
-                    nodeValue += infoset->strategy[i] * childValue;
+                if (i < policy.size())
+                    nodeValue += policy[i] * childValue;
             }
         }
     }
@@ -145,6 +165,11 @@ float CFRSolver::compute_cfv(GameTreeNode* node, Subgame& subgame,
     if (nodePlayer == player) {
         float reachProb = reach_probs[player];
         update_regrets(infoset, actionValues, nodeValue, reachProb);
+    }
+
+    // Alternative values for Resolve gadget
+    if (subgame.get_gadget_type() == GadgetType::RESOLVE && !subgame.has_resolve_entered()) {
+        nodeValue = add_alternative_value(nodeValue, infoset, policy, policy);
     }
 
     infoset->value = nodeValue;
@@ -187,8 +212,8 @@ void CFRSolver::run_iteration(Subgame& subgame) {
     compute_cfv(subgame.root(), subgame, reachProbs, BLACK);
 
     // Update all strategies
-    for (auto& [seqId, infoset] : subgame.get_infosets())
-        compute_strategy(&infoset);
+    for (auto& infoset : subgame.snapshot_infosets())
+        compute_strategy(infoset.get());
 
     iterations++;
 }

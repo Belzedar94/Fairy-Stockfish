@@ -23,6 +23,8 @@
 #include <unordered_map>
 #include <memory>
 #include <atomic>
+#include <shared_mutex>
+#include <mutex>
 #include "../types.h"
 #include "../position.h"
 
@@ -58,7 +60,13 @@ struct InfosetNode {
     std::vector<float> qValues;      // Q-values for each action
     std::vector<float> variances;    // Variance estimates
 
-    InfosetNode() : totalVisits(0), value(0.0f), expanded(false) {}
+    std::vector<float> trunkStrategy; // Frozen strategy snapshot (for KLUSS)
+    bool unfrozen;                   // Whether this infoset can be updated
+
+    // Synchronization for multi-threaded access
+    mutable std::mutex infosetMutex;
+
+    InfosetNode() : totalVisits(0), value(0.0f), expanded(false), unfrozen(true) {}
 };
 
 /// GameTreeNode represents a specific state in the game tree
@@ -110,7 +118,7 @@ public:
     GameTreeNode* expand_node(GameTreeNode* leaf, Position& pos);
 
     /// get_infoset() returns or creates an infoset for a sequence
-    InfosetNode* get_infoset(SequenceId seqId, Color player);
+    std::shared_ptr<InfosetNode> get_infoset(SequenceId seqId, Color player);
 
     /// compute_kluss_region() computes the 2-KLUSS (order-2 knowledge region)
     /// Takes FEN strings representing sampled positions
@@ -129,7 +137,10 @@ public:
     GameTreeNode* root() { return rootNode.get(); }
     const GameTreeNode* root() const { return rootNode.get(); }
     size_t num_infosets() const { return infosets.size(); }
-    std::unordered_map<SequenceId, InfosetNode>& get_infosets() { return infosets; }
+    std::unordered_map<SequenceId, std::shared_ptr<InfosetNode>>& get_infosets() { return infosets; }
+    std::vector<std::shared_ptr<InfosetNode>> snapshot_infosets() const;
+    std::shared_mutex& mutex() { return treeMutex; }
+    const std::shared_mutex& mutex() const { return treeMutex; }
 
     /// Statistics
     size_t count_nodes() const;
@@ -137,17 +148,20 @@ public:
 
 private:
     std::unique_ptr<GameTreeNode> rootNode;
-    std::unordered_map<SequenceId, InfosetNode> infosets;
+    std::unordered_map<SequenceId, std::shared_ptr<InfosetNode>> infosets;
     GadgetType currentGadget;
     bool resolveEntered;
     std::atomic<NodeId> nodeIdCounter;
     const Stockfish::Variant* variantPtr;
+    mutable std::shared_mutex treeMutex;
 
     /// Helper: Generate sequence ID from move sequence
     SequenceId compute_sequence_id(const std::vector<Move>& moves);
+    SequenceId extend_sequence_id(SequenceId base, Move move) const;
 
     /// Helper: Build tree from sampled states (FEN strings)
     void build_tree_from_samples(const std::vector<std::string>& sampledStateFens);
+    void mark_frozen_state(GameTreeNode* node);
 };
 
 /// compute_sequence_id() generates a unique ID for a move sequence
@@ -162,6 +176,10 @@ float compute_alternative_value(const InfosetNode* infoset,
 float compute_gift(const InfosetNode* infoset,
                    const std::vector<float>& currentX,
                    const std::vector<float>& currentY);
+
+/// compute_resolve_prior() mixes uniform and opponent strategy (Appendix B.3.2)
+std::vector<float> compute_resolve_prior(const InfosetNode* infoset,
+                                         const std::vector<float>& opponentStrategy);
 
 } // namespace FogOfWar
 } // namespace Stockfish
