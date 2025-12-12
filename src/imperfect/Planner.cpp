@@ -23,6 +23,7 @@
 #include "../uci.h"
 #include <chrono>
 #include <iostream>
+#include <cmath>
 
 namespace Stockfish {
 namespace FogOfWar {
@@ -64,10 +65,12 @@ void Planner::construct_subgame(const Position& pos) {
 
     // Step 1: Rebuild belief state P from observations
     if (config.enableIncrementalBelief && !workingHistory.observations().empty()) {
-        beliefState.update_incrementally(workingHistory.last());
+        beliefState.update_incrementally(workingHistory, pos);
     } else {
         beliefState.rebuild_from_observations(workingHistory, pos);
     }
+
+    beliefState.compress(config.maxBeliefStates);
 
     // Step 2: Sample I ⊂ P (default 256 states)
     std::vector<std::string> sampledStateFens = beliefState.sample_states(
@@ -82,6 +85,7 @@ void Planner::construct_subgame(const Position& pos) {
 
     // Step 3: Construct subgame (2-KLUSS)
     subgame = std::make_unique<Subgame>();
+    subgame->set_node_limit(config.maxNodes);
     subgame->construct(sampledStateFens, config.minInfosetSize);
 
     // Store the variant pointer for use by expanders
@@ -174,26 +178,73 @@ void Planner::update_statistics() {
     stats.totalExpansions = 0;
     for (const auto& exp : expanders)
         stats.totalExpansions += exp->get_expansion_count();
+
+    stats.nodeCountPeak = std::max(stats.nodeCountPeak, stats.numNodes);
+    stats.nodeTimeline.push_back(stats.numNodes);
+
+    // Approximate exploitability via mean positive regret (lower is better)
+    float regretSum = 0.0f;
+    size_t regretCount = 0;
+    if (subgame) {
+        for (auto& infoset : subgame->snapshot_infosets()) {
+            if (!infoset)
+                continue;
+            std::lock_guard<std::mutex> guard(infoset->infosetMutex);
+            float maxPos = 0.0f;
+            for (float r : infoset->regrets)
+                if (r > maxPos)
+                    maxPos = r;
+            if (!infoset->regrets.empty()) {
+                regretSum += maxPos;
+                regretCount++;
+            }
+        }
+    }
+    stats.exploitabilityApprox = regretCount ? regretSum / regretCount : 0.0f;
+
+    // Entropy of root strategy for action diversity
+    stats.actionEntropy = 0.0f;
+    if (subgame && subgame->root()) {
+        Color us = subgame->root()->depth % 2 == 0 ? WHITE : BLACK;
+        auto rootInfoset = subgame->get_infoset(0, us);
+        if (rootInfoset) {
+            std::lock_guard<std::mutex> guard(rootInfoset->infosetMutex);
+            for (float p : rootInfoset->strategy)
+                if (p > 0.0f)
+                    stats.actionEntropy -= p * std::log2(p);
+        }
+    }
 }
 
 Move Planner::plan_move(Position& pos, const PlannerConfig& cfg) {
     config = cfg;
+    stats = {};
     auto startTime = std::chrono::steady_clock::now();
 
     // Step 1: Update observation history (Figure 8, line 6)
     update_observation_history(pos);
 
     // Step 2: Construct subgame (Figure 8, line 7; Figure 9)
+    auto constructStart = std::chrono::steady_clock::now();
     construct_subgame(pos);
+    auto constructEnd = std::chrono::steady_clock::now();
+    stats.constructTimeMs = std::chrono::duration_cast<std::chrono::milliseconds>(constructEnd - constructStart).count();
+    stats.nodeTimeline.clear();
+    stats.nodeCountPeak = 0;
+    if (subgame)
+        stats.nodeTimeline.push_back(subgame->count_nodes());
 
     // Step 3: Launch threads (Figure 8, lines 8-10)
     launch_threads();
 
     // Step 4: Run until time limit
+    auto searchStart = std::chrono::steady_clock::now();
     std::this_thread::sleep_for(std::chrono::milliseconds(config.maxTimeMs));
 
     // Step 5: Stop threads (expanders first, then solver)
     stop_threads();
+    auto searchEnd = std::chrono::steady_clock::now();
+    stats.searchTimeMs = std::chrono::duration_cast<std::chrono::milliseconds>(searchEnd - searchStart).count();
 
     // Step 6: Collect statistics
     auto endTime = std::chrono::steady_clock::now();
@@ -211,7 +262,10 @@ Move Planner::plan_move(Position& pos, const PlannerConfig& cfg) {
     Color us = pos.side_to_move();
     auto rootInfoset = subgame->get_infoset(0, us);
 
+    auto selectionStart = std::chrono::steady_clock::now();
     Move selectedMove = selector->select_move(rootInfoset.get(), *subgame);
+    auto selectionEnd = std::chrono::steady_clock::now();
+    stats.selectionTimeMs = std::chrono::duration_cast<std::chrono::milliseconds>(selectionEnd - selectionStart).count();
 
     // Print statistics
     std::cout << "info string FoW search: "
@@ -221,7 +275,12 @@ Move Planner::plan_move(Position& pos, const PlannerConfig& cfg) {
               << "avg_depth " << stats.averageDepth << " "
               << "cfr_iters " << stats.cfrIterations << " "
               << "expansions " << stats.totalExpansions << " "
-              << "time_ms " << stats.timeUsedMs
+              << "time_ms " << stats.timeUsedMs << " "
+              << "exploitability " << stats.exploitabilityApprox << " "
+              << "entropy " << stats.actionEntropy << " "
+              << "construct_ms " << stats.constructTimeMs << " "
+              << "search_ms " << stats.searchTimeMs << " "
+              << "select_ms " << stats.selectionTimeMs
               << std::endl;
 
     return selectedMove;

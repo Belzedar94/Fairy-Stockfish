@@ -71,11 +71,15 @@ public:
                                     const Position& truePos);
 
     /// update_incrementally() attempts incremental update; falls back to rebuild if needed
-    void update_incrementally(const Observation& newObs);
+    void update_incrementally(const ObservationHistory& obsHist, const Position& truePos);
 
     /// Sample a subset of states for building the subgame
     /// Returns FEN strings of sampled positions
     std::vector<std::string> sample_states(size_t n, uint64_t seed = 0) const;
+
+    /// Compress the belief set to a maximum number of states while preserving
+    /// deterministic ordering and removing stale capacity
+    void compress(size_t maxStates);
 
     /// Accessors
     size_t size() const { return stateFens.size(); }

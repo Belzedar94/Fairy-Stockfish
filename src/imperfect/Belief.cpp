@@ -371,10 +371,27 @@ void BeliefState::rebuild_from_observations(const ObservationHistory& obsHist,
     // TODO: Implement full consistency checking with FEN parsing
 }
 
-void BeliefState::update_incrementally(const Observation& newObs) {
-    if (!variant)
-        return;
+void BeliefState::update_incrementally(const ObservationHistory& obsHist, const Position& truePos) {
+    if (!variant) {
+        variant = truePos.variant();
+        isChess960 = truePos.is_chess960();
+        owningThread = truePos.this_thread();
+    }
 
+    if (obsHist.empty()) {
+        stateFens.clear();
+        stateKeys.clear();
+        return;
+    }
+
+    const Observation& newObs = obsHist.last();
+
+    if (stateFens.empty()) {
+        rebuild_from_observations(obsHist, truePos);
+        return;
+    }
+
+    size_t beforeSize = stateFens.size();
     auto it = stateFens.begin();
     while (it != stateFens.end()) {
         StateInfo st;
@@ -390,6 +407,16 @@ void BeliefState::update_incrementally(const Observation& newObs) {
         } else {
             ++it;
         }
+    }
+
+    bool observationExpanded = obsHist.size() >= 2
+        && (   obsHist.last().visible != obsHist.observations()[obsHist.size() - 2].visible
+            || obsHist.last().seenOpponentPieces != obsHist.observations()[obsHist.size() - 2].seenOpponentPieces
+            || obsHist.last().epSquares != obsHist.observations()[obsHist.size() - 2].epSquares
+            || obsHist.last().castlingRights != obsHist.observations()[obsHist.size() - 2].castlingRights);
+
+    if (stateFens.empty() || observationExpanded || stateFens.size() < beforeSize / 4) {
+        rebuild_from_observations(obsHist, truePos);
     }
 }
 
@@ -412,6 +439,28 @@ std::vector<std::string> BeliefState::sample_states(size_t n, uint64_t seed) con
         sampled.push_back(stateFens[indices[i]]);
 
     return sampled;
+}
+
+void BeliefState::compress(size_t maxStates) {
+    if (!maxStates || stateFens.size() <= maxStates)
+        return;
+
+    stateFens.resize(maxStates);
+    stateKeys.clear();
+
+    if (!variant) {
+        stateFens.shrink_to_fit();
+        return;
+    }
+
+    for (const auto& fen : stateFens) {
+        Position pos;
+        StateInfo st;
+        if (set_position_from_fen(pos, st, fen))
+            stateKeys.insert(pos.key());
+    }
+
+    stateFens.shrink_to_fit();
 }
 
 } // namespace FogOfWar

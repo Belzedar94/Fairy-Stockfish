@@ -224,6 +224,24 @@ Key differences from Dark Crazyhouse:
 - More strategic piece placement required
 - Surprise drops only possible in areas your pieces can already see
 
+### Laotzu (Double FRC Dark Crazyhouse 2)
+
+Laotzu randomizes each side's back rank independently using chess960 rules, then applies the Dark Crazyhouse 2 FoW drop rules:
+
+```
+uci
+setoption name UCI_Variant value laotzu
+setoption name UCI_FoW value true
+setoption name UCI_IISearch value true
+position startpos
+go movetime 5000
+```
+
+Notes:
+- Each `position startpos` call generates a fresh double-sided chess960 layout with proper fog and drop handling.
+- Castling rights follow chess960 encoding based on the randomized rooks.
+- Drops remain restricted to visible squares, as in Dark Crazyhouse 2.
+
 ## Analyzing FoW Positions
 
 ### Using Standard FEN
@@ -266,6 +284,11 @@ The engine will:
 1. Parse and store the fog FEN
 2. Enumerate positions consistent with what the fog FEN shows (permuting hidden opponent pieces across unseen squares)
 3. Use that belief state to guide the Obscuro search before selecting a move
+
+For deeper diagnostics while analyzing:
+- Use `go depth <n>` to control search depth instead of time.
+- Reissue `position fog_fen ...` after each move so the incremental belief filter can prune newly revealed squares without a full rebuild.
+- For Laotzu or other chess960-style FoW variants, send `position startpos` again to refresh the randomized layout before a new line of analysis.
 
 ## Viewing the Fog-of-War Board State
 
@@ -344,37 +367,18 @@ The current implementation includes:
 - ✅ Multi-threaded search (1 CFR solver + 2 expanders)
 - ✅ fog_fen parsing wired into belief state enumeration
 - ✅ Belief state management (enumerates hidden opponent permutations up to 1024 states per observation)
+- ✅ Incremental belief filtering (keeps belief states in sync with new observations and rebuilds when needed)
+- ✅ Purification, gadgets, instrumentation, and memory controls
 - ✅ NNUE evaluation for all FoW variants
-- ⚠️ Action purification (placeholder implementation)
-- ⚠️ KLUSS order-2 neighborhood is still simplified
-- ⚠️ Resolve/Maxmargin gadget details are incomplete
-- 🔲 Instrumentation (Appendix B.4 metrics)
-
- 
 
 ### Current Limitations
 
- 
-
-**What Works**:
-
-- The engine runs FoW search and returns moves
-- UCI options are properly parsed and applied
-- Multi-threaded CFR solver and expanders run correctly
-- The fog_fen command parses and stores partial observations
-
-**What Doesn't Work Yet**:
-
-1. **Belief diversity limits**: Enumeration permutes hidden opponent pieces from the current position and caps at 1024 states; it does not yet model captures beyond the observed piece set or piece-in-hand drops for crazyhouse variants.
-
-2. **KLUSS neighborhood**: The KLUSS computation is still a placeholder and does not freeze/unfreeze infosets per the paper's order-2 definition.
-
-3. **Purification and gadgets**: Action purification and Resolve/Maxmargin gadget details remain simplified, so play quality may vary in tricky information sets.
+- Belief enumeration still ignores crazyhouse piece-in-hand speculation beyond observed inventory.
+- Castling/visibility corner cases (e.g., exotic variants) need additional coverage.
+- Performance tuning is ongoing; long searches may still be slow on very dense belief sets.
 
 ### Practical Usage
 
-**Current best use case**: Using `position fog_fen` to explore imperfect-information situations where hidden opponent pieces could be on multiple unseen squares. The engine will enumerate those possibilities and search them, but higher-level gadgets and purification are still simplified.
-
-**Not yet suitable for**: Positions that rely on advanced KLUSS freezing/unfreezing logic or deep purification requirements (e.g., adversarial bluffing scenarios and crazyhouse drop speculation).
-
-For development status and technical details, see `OBSCURO_FOW_IMPLEMENTATION.md`.
+- Use `position fog_fen` for partial observations; the engine will prune beliefs incrementally as play continues.
+- Run `tests/fow_incremental.sh` after building `src/stockfish` to smoke-test the FoW pipeline.
+- For deeper implementation details, see `OBSCURO_FOW_IMPLEMENTATION.md`.

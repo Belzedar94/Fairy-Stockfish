@@ -21,6 +21,7 @@
 #include <algorithm>
 #include <numeric>
 #include <stack>
+#include <tuple>
 
 namespace Stockfish {
 namespace FogOfWar {
@@ -50,6 +51,34 @@ SequenceId Subgame::extend_sequence_id(SequenceId base, Move move) const {
     return hash;
 }
 
+std::unique_ptr<GameTreeNode> Subgame::acquire_node() {
+    std::unique_ptr<GameTreeNode> node;
+    if (!nodePool.empty()) {
+        node = std::move(nodePool.back());
+        nodePool.pop_back();
+        *node = GameTreeNode();
+    } else {
+        node = std::make_unique<GameTreeNode>();
+    }
+
+    ++liveNodeCount;
+    return node;
+}
+
+void Subgame::release_subtree(std::unique_ptr<GameTreeNode>& node) {
+    if (!node)
+        return;
+
+    for (auto& child : node->children)
+        release_subtree(child);
+
+    node->children.clear();
+    nodePool.push_back(std::move(node));
+    node = nullptr;
+    if (liveNodeCount > 0)
+        --liveNodeCount;
+}
+
 std::shared_ptr<InfosetNode> Subgame::get_infoset(SequenceId seqId, Color player) {
     auto it = infosets.find(seqId);
     if (it != infosets.end())
@@ -67,10 +96,14 @@ void Subgame::construct(const std::vector<std::string>& sampledStateFens,
     (void)minInfosetSize; // Parameter currently unused
 
     // Clear existing tree
-    rootNode = std::make_unique<GameTreeNode>();
+    if (rootNode)
+        release_subtree(rootNode);
+
+    rootNode = acquire_node();
     infosets.clear();
     nodeIdCounter = 0;
     resolveEntered = false;
+    liveNodeCount = rootNode ? 1 : 0;
 
     // Build tree from sampled states
     build_tree_from_samples(sampledStateFens);
@@ -109,6 +142,8 @@ void Subgame::build_tree_from_samples(const std::vector<std::string>& sampledSta
         rootInfoset->qValues.clear();
         rootInfoset->variances.clear();
     }
+
+    prune_outside_kluss();
 }
 
 void Subgame::compute_kluss_region(const std::vector<std::string>& sampledStateFens) {
@@ -170,7 +205,7 @@ GameTreeNode* Subgame::expand_node(GameTreeNode* leaf, Position& pos) {
 
     // Create child nodes
     for (Move m : legalMoves) {
-        auto child = std::make_unique<GameTreeNode>();
+        auto child = acquire_node();
         child->nodeId = nodeIdCounter++;
         child->parent = leaf;
         child->depth = leaf->depth + 1;
@@ -276,6 +311,87 @@ void Subgame::mark_frozen_state(GameTreeNode* node) {
             infoset->trunkStrategy = infoset->strategy;
         else if (!infoset->actions.empty())
             infoset->trunkStrategy.assign(infoset->actions.size(), 1.0f / infoset->actions.size());
+    }
+}
+
+void Subgame::prune_outside_kluss() {
+    if (!rootNode)
+        return;
+
+    std::unique_lock<std::shared_mutex> lock(treeMutex);
+    std::vector<GameTreeNode*> stack = {rootNode.get()};
+
+    while (!stack.empty()) {
+        GameTreeNode* node = stack.back();
+        stack.pop_back();
+
+        for (size_t i = 0; i < node->children.size();) {
+            if (!node->children[i]->inKLUSS) {
+                auto pruned = std::move(node->children[i]);
+                node->children.erase(node->children.begin() + i);
+                release_subtree(pruned);
+                continue;
+            }
+
+            stack.push_back(node->children[i].get());
+            ++i;
+        }
+    }
+}
+
+void Subgame::enforce_node_limit() {
+    if (!rootNode)
+        return;
+
+    std::unique_lock<std::shared_mutex> lock(treeMutex);
+
+    auto select_prunable_leaf = [this](GameTreeNode* root) {
+        GameTreeNode* target = nullptr;
+        GameTreeNode* targetParent = nullptr;
+        size_t targetIndex = 0;
+        int bestDepth = -1;
+        bool preferOutside = false;
+
+        std::vector<GameTreeNode*> stack = {root};
+
+        while (!stack.empty()) {
+            GameTreeNode* node = stack.back();
+            stack.pop_back();
+
+            for (size_t idx = 0; idx < node->children.size(); ++idx) {
+                GameTreeNode* child = node->children[idx].get();
+                if (!child)
+                    continue;
+
+                bool isLeaf = child->children.empty();
+                bool outside = !child->inKLUSS || child->depth > 2;
+
+                if (isLeaf && (!target || outside > preferOutside ||
+                               (outside == preferOutside && child->depth > bestDepth))) {
+                    target = child;
+                    targetParent = node;
+                    targetIndex = idx;
+                    bestDepth = child->depth;
+                    preferOutside = outside;
+                }
+
+                if (!isLeaf)
+                    stack.push_back(child);
+            }
+        }
+
+        return std::tuple<GameTreeNode*, GameTreeNode*, size_t, bool>(target, targetParent, targetIndex, preferOutside);
+    };
+
+    while (liveNodeCount > nodeLimit) {
+        auto [leaf, parent, index, found] = select_prunable_leaf(rootNode.get());
+        if (!leaf || !parent)
+            break;
+
+        (void)found;
+        auto removed = std::move(parent->children[index]);
+        parent->children.erase(parent->children.begin() + index);
+        release_subtree(removed);
     }
 }
 
