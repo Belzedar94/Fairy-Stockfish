@@ -226,7 +226,9 @@ Key differences from Dark Crazyhouse:
 
 ## Analyzing FoW Positions
 
-To analyze a specific FoW position, use the `position fen` command with a FoW FEN string:
+### Using Standard FEN
+
+To analyze a specific position where you know the full board state, use the `position fen` command:
 
 ```
 uci
@@ -240,6 +242,32 @@ To stop the search:
 ```
 stop
 ```
+
+### Using Fog FEN (Partial Observation)
+
+When you only know what you can see (your observation), use `position fog_fen` to specify the partial observation. This is useful for analyzing positions from the perspective of a player who has incomplete information:
+
+```
+uci
+setoption name UCI_Variant value darkcrazyhouse2
+setoption name UCI_FoW value true
+setoption name UCI_IISearch value true
+setoption name UCI_FoW_TimeMs value 10000
+position fog_fen ????????/??????pp/1?????1P/?1??p1?1/8/1P2P3/PB1P1PP1/NQ1NRBKR b KQk - 0 8
+go infinite
+```
+
+In a fog FEN:
+- `?` represents unknown/fogged squares
+- Visible pieces are shown normally (e.g., `p`, `P`, `N`, etc.)
+- Empty visible squares are shown as part of the rank count (e.g., `8`, `1`)
+
+The engine will:
+1. Parse and store the fog FEN
+2. Use it to initialize the belief state (set of possible positions consistent with observations)
+3. Search over the belief state to find the best move
+
+**Note**: The fog_fen feature is currently a basic implementation. The engine stores the fog FEN and reports it, but full integration with belief state enumeration requires additional development.
 
 ## Viewing the Fog-of-War Board State
 
@@ -314,12 +342,43 @@ From the Obscuro paper (Appendix A), the key fog-of-war rules are:
 The current implementation includes:
 - ✅ Core Obscuro algorithm (CFR, KLUSS, GT-CFR)
 - ✅ FoW visibility computation (Appendix A rules)
-- ✅ Belief state management
 - ✅ UCI integration and options
-- ✅ Multi-threaded search
-- ⚠️ Belief enumeration (simplified - currently stores true position only)
+- ✅ Multi-threaded search (1 CFR solver + 2 expanders)
+- ✅ Basic fog_fen parsing and storage
+- ✅ NNUE evaluation for all FoW variants
+- ⚠️ Belief state management (simplified - stores true position only)
 - ⚠️ Action purification (placeholder implementation)
+- ⚠️ fog_fen integration with belief state (parses but doesn't enumerate)
+- 🔲 Full belief enumeration (enumerate positions consistent with observation)
 - 🔲 Full KLUSS order-2 neighborhood computation
+- 🔲 Complete gadget implementation (Resolve/Maxmargin)
 - 🔲 Instrumentation (Appendix B.4 metrics)
+
+ 
+
+### Current Limitations
+
+ 
+
+**What Works**:
+
+- The engine runs FoW search and returns moves
+- UCI options are properly parsed and applied
+- Multi-threaded CFR solver and expanders run correctly
+- The fog_fen command parses and stores partial observations
+
+**What Doesn't Work Yet**:
+
+1. **Belief enumeration**: The engine doesn't enumerate possible positions consistent with what you see. It only uses the true position, meaning it plays as if it has perfect information about hidden pieces.
+ 
+2. **fog_fen analysis**: While you can specify a partial observation with `position fog_fen`, the engine doesn't use it to build a proper belief state. It starts from the variant's starting position.
+
+3. **True imperfect information play**: Without belief enumeration, the engine essentially plays perfect information chess with FoW move restrictions, rather than reasoning about what might be hidden.
+
+### Practical Usage
+
+**Current best use case**: Using the standard FoW search to explore how the engine handles the FoW visibility rules and move generation. The search infrastructure is in place for future belief state enumeration.
+
+**Not yet suitable for**: Analyzing positions where you want the engine to reason about hidden pieces based on partial observations.
 
 For development status and technical details, see `OBSCURO_FOW_IMPLEMENTATION.md`.
