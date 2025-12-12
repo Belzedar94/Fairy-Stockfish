@@ -41,15 +41,14 @@ Variant const* chess_variant() {
     return variants.find("chess")->second;
 }
 
-Position make_position(const std::string& fen) {
-    Position pos;
-    StateInfo st;
+void set_position(Position& pos, StateInfo& st, const std::string& fen) {
     pos.set(chess_variant(), fen, false, &st, nullptr);
-    return pos;
 }
 
 TestCase visibility_castling_and_ep() {
-    Position pos = make_position("r3k2r/8/8/8/8/8/8/R3K2R w KQkq d6 0 1");
+    StateInfo st;
+    Position pos;
+    set_position(pos, st, "r3k2r/8/8/8/8/8/8/R3K2R w KQkq d6 0 1");
     VisibilityInfo vi = compute_visibility(pos);
 
     const bool epVisible = is_visible(pos, SQ_D6, vi);
@@ -60,7 +59,9 @@ TestCase visibility_castling_and_ep() {
 }
 
 TestCase visibility_pawn_masking() {
-    Position pos = make_position("8/8/8/8/8/3pP3/8/8 w - - 0 10");
+    StateInfo st;
+    Position pos;
+    set_position(pos, st, "8/8/8/8/8/3pP3/8/8 w - - 0 10");
     VisibilityInfo vi = compute_visibility(pos);
 
     const bool blockerHidden = !(vi.visible & SQ_D6) && (vi.visible & SQ_E6);
@@ -82,7 +83,9 @@ ObservationHistory seed_observation_history(const Position& pos) {
 }
 
 TestCase belief_enumeration_cap() {
-    Position pos = make_position("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQkq - 0 1");
+    StateInfo st;
+    Position pos;
+    set_position(pos, st, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQkq - 0 1");
     BeliefState belief;
     ObservationHistory history = seed_observation_history(pos);
     belief.rebuild_from_observations(history, pos);
@@ -95,7 +98,9 @@ TestCase belief_enumeration_cap() {
 }
 
 TestCase belief_incremental_filter() {
-    Position pos = make_position("8/2k5/8/8/8/8/2K5/8 w - - 0 1");
+    StateInfo st;
+    Position pos;
+    set_position(pos, st, "8/2k5/8/8/8/8/2K5/8 w - - 0 1");
     BeliefState belief;
     ObservationHistory history = seed_observation_history(pos);
     belief.rebuild_from_observations(history, pos);
@@ -196,7 +201,9 @@ TestSuiteResult run_cfr_suite() {
 TestSuiteResult run_benchmark_suite() {
     TestSuiteResult suite{"benchmarks"};
 
-    Position pos = make_position("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+    StateInfo st;
+    Position pos;
+    set_position(pos, st, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
     ObservationHistory history = seed_observation_history(pos);
     BeliefState belief;
     belief.rebuild_from_observations(history, pos);
@@ -213,7 +220,9 @@ TestSuiteResult run_sanitizer_suite() {
     TestSuiteResult suite{"sanitizers"};
     // Minimal construction/destruction loops to flag leaks/races in ASan/TSan runs
     for (int i = 0; i < 3; ++i) {
-        Position pos = make_position("8/8/8/8/8/8/8/8 w - - 0 1");
+        StateInfo st;
+        Position pos;
+        set_position(pos, st, "8/8/8/8/8/8/8/8 w - - 0 1");
         ObservationHistory hist = seed_observation_history(pos);
         BeliefState belief;
         belief.rebuild_from_observations(hist, pos);
