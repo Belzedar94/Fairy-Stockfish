@@ -342,12 +342,43 @@ From the Obscuro paper (Appendix A), the key fog-of-war rules are:
 The current implementation includes:
 - ✅ Core Obscuro algorithm (CFR, KLUSS, GT-CFR)
 - ✅ FoW visibility computation (Appendix A rules)
-- ✅ Belief state management
 - ✅ UCI integration and options
-- ✅ Multi-threaded search
-- ⚠️ Belief enumeration (simplified - currently stores true position only)
+- ✅ Multi-threaded search (1 CFR solver + 2 expanders)
+- ✅ Basic fog_fen parsing and storage
+- ✅ NNUE evaluation for all FoW variants
+- ⚠️ Belief state management (simplified - stores true position only)
 - ⚠️ Action purification (placeholder implementation)
+- ⚠️ fog_fen integration with belief state (parses but doesn't enumerate)
+- 🔲 Full belief enumeration (enumerate positions consistent with observation)
 - 🔲 Full KLUSS order-2 neighborhood computation
+- 🔲 Complete gadget implementation (Resolve/Maxmargin)
 - 🔲 Instrumentation (Appendix B.4 metrics)
+
+ 
+
+### Current Limitations
+
+ 
+
+**What Works**:
+
+- The engine runs FoW search and returns moves
+- UCI options are properly parsed and applied
+- Multi-threaded CFR solver and expanders run correctly
+- The fog_fen command parses and stores partial observations
+
+**What Doesn't Work Yet**:
+
+1. **Belief enumeration**: The engine doesn't enumerate possible positions consistent with what you see. It only uses the true position, meaning it plays as if it has perfect information about hidden pieces.
+ 
+2. **fog_fen analysis**: While you can specify a partial observation with `position fog_fen`, the engine doesn't use it to build a proper belief state. It starts from the variant's starting position.
+
+3. **True imperfect information play**: Without belief enumeration, the engine essentially plays perfect information chess with FoW move restrictions, rather than reasoning about what might be hidden.
+
+### Practical Usage
+
+**Current best use case**: Using the standard FoW search to explore how the engine handles the FoW visibility rules and move generation. The search infrastructure is in place for future belief state enumeration.
+
+**Not yet suitable for**: Analyzing positions where you want the engine to reason about hidden pieces based on partial observations.
 
 For development status and technical details, see `OBSCURO_FOW_IMPLEMENTATION.md`.
