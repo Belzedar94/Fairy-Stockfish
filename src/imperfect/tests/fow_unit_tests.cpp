@@ -19,7 +19,6 @@
 #include "../../movegen.h"
 #include "../../position.h"
 #include "../../thread.h"
-#include "../../ucioption.h"
 #include "../../variant.h"
 
 namespace Stockfish {
