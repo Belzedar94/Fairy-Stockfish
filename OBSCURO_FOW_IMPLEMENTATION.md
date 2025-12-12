@@ -223,48 +223,45 @@ Depth-1 child evaluation now uses a shallow Stockfish search (depth = 1) with te
 
  
 
-### Testing Requirements
+### Testing Status
 
- 
+#### Implemented FoW Test Coverage
 
-#### Unit Tests Needed
+- `tests/fow_suite.sh` – lightweight suite that now covers:
+  - Castling-rights visibility in FoW positions
+  - En-passant target visibility
+  - Crazyhouse pockets (piece-in-hand) rendering for Dark Crazyhouse
+  - End-to-end FoW search seeded via `fog_fen` with IISearch enabled
+- `tests/fow_api_checks.sh` – targeted API/visibility validator that confirms castling
+  rights, en-passant markers, and darkcrazyhouse pockets remain exposed when positions
+  are supplied via `fog_fen`.
+- `tests/fow_incremental.sh` – smoke/integration run for fog_fen parsing, incremental
+  belief filtering, and the FoW planner pipeline end-to-end.
+- `tests/fow_stress.sh` – short multi-cycle regression loop that alternates FoW and
+  non-FoW searches to exercise teardown/initialization paths and catch stability
+  regressions.
+- `tests/fow_compare.sh` – baseline vs FoW comparison harness to validate that standard
+  chess searches and FoW searches both produce bestmoves and share a stable setup path.
+- `tests/fow_leakcheck.sh` – optional valgrind-driven sanity pass that runs short FoW and
+  baseline searches to flag obvious leaks in initialization/teardown.
+- `tests/fow_logic.sh` – focused integration checks for belief enumeration on heavy
+  fog_fen inputs, KLUSS frontier stability at small infoset sizes, deterministic
+  purification, and repeated CFR invocations in a single session.
+- `tests/fow_units.sh` – C++ unit suites linked into the engine via `--fow-unittests`
+  (visibility, belief enumeration/sampling caps, CFR lifecycle, purification/selection,
+  and KLUSS sequence hashing).
+- `tests/fow_sanitizers.sh` – ASan/TSan-backed initialization and teardown loops that
+  reuse the unit suites under sanitizer builds.
+- `tests/fow_benchmarks.sh` – baseline vs FoW micro-benchmark harness that exercises the
+  evaluator parity checks alongside a short chess bench.
 
-1. `Visibility_test.cpp` - Test all visibility rules from Appendix A
+#### Remaining Gaps
 
-2. `Belief_test.cpp` - Test belief enumeration and sampling
-
-3. `CFR_test.cpp` - Test regret matching and strategy updates
-
-4. `Selection_test.cpp` - Test purification with various strategies
-
-5. `Subgame_test.cpp` - Test KLUSS region computation
-
- 
-
-#### Integration Tests Needed
-
-1. **End-to-end FoW search**: Full pipeline from `position` to `bestmove`
-
-2. **fog_fen analysis**: Parse partial observation and search
-
-3. **Multi-threaded stress test**: Race condition detection
-
-4. **Memory leak detection**: Run extended searches
-
-Implemented smoke coverage:
-
-- `tests/fow_incremental.sh` exercises fog_fen parsing, incremental belief filtering,
-  and the FoW planner pipeline end-to-end.
-
- 
-
-#### Comparison Tests
-
-1. Compare move quality against baseline (random play)
-
-2. Compare against simplified FoW search (no belief state)
-
-3. Self-play tournament to verify improvement
+- The new C++ suites are intentionally lightweight; expand with deeper fixture coverage
+  (edge-case fog_fen parsing, larger KLUSS frontiers, deeper CFR run loops) as time
+  permits.
+- Stress loops remain short to keep CI reasonable; add overnight-duration runs locally
+  when changing allocation, threading, or belief management paths.
 
  
 
@@ -314,11 +311,9 @@ Implemented smoke coverage:
 
 #### Remaining API Issues
 
-1. Need to verify castling rights handling in visibility computation
-
-2. En-passant visibility edge cases may need testing
-
-3. Crazyhouse piece-in-hand visibility needs verification
+- Primary API visibility checks have been automated via `tests/fow_api_checks.sh`.
+  Continue to watch for edge cases in complex `fog_fen` setups and add targeted C++
+  unit cases as the harness matures.
 
  
 
