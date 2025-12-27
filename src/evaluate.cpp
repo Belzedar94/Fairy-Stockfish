@@ -1621,9 +1621,11 @@ Value Eval::evaluate(const Position& pos) {
                      + 32 * pos.non_pawn_material() / 1024;
 
          // Cap scale to prevent eval inflation in variants with unusual piece values
-         // or extinction rules (e.g., battlekings) where large material can cause runaway RL
+         // or extinction rules (e.g., battlekings) where large material can cause runaway RL.
+         // Use a lower cap (700) to deflate eval and prevent hitting the TB_WIN clamp ceiling,
+         // which would cause eval to get stuck at 15147cp in winning positions.
          if (pos.extinction_first_capture())
-             scale = std::min(scale, 1024);
+             scale = std::min(scale, 700);
 
          Value nnue = NNUE::evaluate(pos, true) * scale / 1024;
 
