@@ -928,11 +928,12 @@ Bitboard Position::attackers_to(Square s, Bitboard occupied, Color c, Bitboard j
   // Use a faster version for variants with moderate rule variations
   if (var->fastAttacks)
   {
-      return  (pawn_attacks_bb(~c, s)          & pieces(c, PAWN))
-            | (attacks_bb<KNIGHT>(s)           & pieces(c, KNIGHT, ARCHBISHOP, CHANCELLOR))
-            | (attacks_bb<  ROOK>(s, occupied) & pieces(c, ROOK, QUEEN, CHANCELLOR))
-            | (attacks_bb<BISHOP>(s, occupied) & pieces(c, BISHOP, QUEEN, ARCHBISHOP))
-            | (attacks_bb<KING>(s)             & pieces(c, KING, COMMONER));
+      const Bitboard piecesC = pieces(c);
+      return  (pawn_attacks_bb(~c, s)          & (piecesC & pieces(PAWN)))
+            | (attacks_bb<KNIGHT>(s)           & (piecesC & (pieces(KNIGHT) | pieces(ARCHBISHOP) | pieces(CHANCELLOR))))
+            | (attacks_bb<  ROOK>(s, occupied) & (piecesC & (pieces(ROOK) | pieces(QUEEN) | pieces(CHANCELLOR))))
+            | (attacks_bb<BISHOP>(s, occupied) & (piecesC & (pieces(BISHOP) | pieces(QUEEN) | pieces(ARCHBISHOP))))
+            | (attacks_bb<KING>(s)             & (piecesC & (pieces(KING) | pieces(COMMONER))));
   }
 
   // Use a faster version for selected fairy pieces
