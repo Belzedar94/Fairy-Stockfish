@@ -1048,8 +1048,9 @@ bool Position::legal(Move m) const {
   Color us = sideToMove;
   Square from = from_sq(m);
   Square to = to_sq(m);
+  const Piece pc = moved_piece(m);
 
-  assert(color_of(moved_piece(m)) == us);
+  assert(color_of(pc) == us);
   assert(!count<KING>(us) || piece_on(square<KING>(us)) == make_piece(us, KING));
   assert(board_bb() & to);
 
