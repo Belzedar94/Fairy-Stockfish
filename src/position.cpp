@@ -1043,18 +1043,20 @@ Bitboard Position::checked_pseudo_royals(Color c) const {
 bool Position::legal(Move m) const {
 
   assert(is_ok(m));
-  assert(type_of(m) != DROP || piece_drops());
+  const MoveType mt = type_of(m);
+  assert(mt != DROP || piece_drops());
 
   Color us = sideToMove;
   Square from = from_sq(m);
   Square to = to_sq(m);
+  const PieceType pt = type_of(moved_piece(m));
 
   assert(color_of(moved_piece(m)) == us);
   assert(!count<KING>(us) || piece_on(square<KING>(us)) == make_piece(us, KING));
   assert(board_bb() & to);
 
   // Illegal checks
-  if ((!checking_permitted() || (sittuyin_promotion() && type_of(m) == PROMOTION) || (!drop_checks() && type_of(m) == DROP)) && gives_check(m))
+  if ((!checking_permitted() || (sittuyin_promotion() && mt == PROMOTION) || (!drop_checks() && mt == DROP)) && gives_check(m))
       return false;
 
   // Illegal quiet moves
@@ -1064,7 +1066,7 @@ bool Position::legal(Move m) const {
   // Illegal non-drop moves
   if (must_drop() && count_in_hand(us, var->mustDropType) > 0)
   {
-      if (type_of(m) == DROP)
+      if (mt == DROP)
       {
           if (var->mustDropType != ALL_PIECES && var->mustDropType != in_hand_piece_type(m))
               return false;
@@ -1084,9 +1086,9 @@ bool Position::legal(Move m) const {
   }
 
   // Illegal drop move
-  if (drop_opposite_colored_bishop() && type_of(m) == DROP)
+  if (drop_opposite_colored_bishop() && mt == DROP)
   {
-      if (type_of(moved_piece(m)) != BISHOP)
+      if (pt != BISHOP)
       {
           Bitboard remaining = drop_region(us, BISHOP) & ~pieces() & ~square_bb(to);
           // Are enough squares available to drop bishops on opposite colors?
@@ -1101,7 +1103,7 @@ bool Position::legal(Move m) const {
   }
 
   // No legal moves from target square
-  if (immobility_illegal() && (type_of(m) == DROP || type_of(m) == NORMAL) && !(PseudoMoves[0][us][type_of(moved_piece(m))][to] & board_bb()))
+  if (immobility_illegal() && (mt == DROP || mt == NORMAL) && !(PseudoMoves[0][us][pt][to] & board_bb()))
       return false;
 
   // Illegal king passing move
@@ -1116,12 +1118,12 @@ bool Position::legal(Move m) const {
   if (var->extinctionPseudoRoyal)
   {
       Square kto = to;
-      Bitboard occupied = (type_of(m) != DROP ? pieces() ^ from : pieces());
+      Bitboard occupied = (mt != DROP ? pieces() ^ from : pieces());
       if (walling_rule() == DUCK)
           occupied ^= st->wallSquares;
       if (walling() || is_gating(m))
           occupied |= gating_square(m);
-      if (type_of(m) == CASTLING)
+      if (mt == CASTLING)
       {
           // After castling, the rook and king final positions are the same in
           // Chess960 as they would be in standard chess.
@@ -1140,21 +1142,21 @@ bool Position::legal(Move m) const {
           occupied ^= to | rto;
       }
       occupied |= kto;
-      if (type_of(m) == EN_PASSANT)
+      if (mt == EN_PASSANT)
           occupied &= ~square_bb(capture_square(kto));
       if (capture(m) && blast_on_capture())
           occupied &= ~((attacks_bb<KING>(kto) & ((pieces(WHITE) | pieces(BLACK)) ^ pieces(PAWN))) | kto);
       // Petrifying a pseudo-royal piece is illegal
-      if (capture(m) && (var->petrifyOnCaptureTypes & type_of(moved_piece(m))) && (st->pseudoRoyals & from))
+      if (capture(m) && (var->petrifyOnCaptureTypes & pt) && (st->pseudoRoyals & from))
           return false;
       Bitboard pseudoRoyals = st->pseudoRoyals & pieces(sideToMove);
       // Add dropped pseudo-royal
-      if (type_of(m) == DROP && (extinction_piece_types() & type_of(moved_piece(m))))
+      if (mt == DROP && (extinction_piece_types() & pt))
           pseudoRoyals |= square_bb(to);
       Bitboard pseudoRoyalsTheirs = st->pseudoRoyals & pieces(~sideToMove);
       if (is_ok(from) && (pseudoRoyals & from))
           pseudoRoyals ^= square_bb(from) ^ kto;
-      if (type_of(m) == PROMOTION && (extinction_piece_types() & promotion_type(m)))
+      if (mt == PROMOTION && (extinction_piece_types() & promotion_type(m)))
       {
           if (count(sideToMove, promotion_type(m)) > extinction_piece_count())
               // increase in count leads to loss of pseudo-royalty
@@ -1186,7 +1188,7 @@ bool Position::legal(Move m) const {
           Bitboard pseudoRoyalCandidates = st->pseudoRoyalCandidates & pieces(sideToMove);
           if (is_ok(from) && (pseudoRoyalCandidates & from))
               pseudoRoyalCandidates ^= square_bb(from) ^ kto;
-          if (type_of(m) == PROMOTION && (extinction_piece_types() & promotion_type(m)))
+          if (mt == PROMOTION && (extinction_piece_types() & promotion_type(m)))
               pseudoRoyalCandidates |= kto;
           bool allCheck = bool(pseudoRoyalCandidates);
           while (allCheck && pseudoRoyalCandidates)
@@ -1205,15 +1207,15 @@ bool Position::legal(Move m) const {
   // mutuallyImmuneTypes (diplomacy in Atomar)-- In no-check Atomic, kings can be beside each other, but in Atomar, this prevents them from actually taking.
   // Generalized to allow a custom set of pieces that can't capture a piece of the same type.
   if (capture(m) &&
-      (mutually_immune_types() & type_of(moved_piece(m))) &&
-      (type_of(moved_piece(m)) == type_of(piece_on(to)))
+      (mutually_immune_types() & pt) &&
+      (pt == type_of(piece_on(to)))
   )
   return false;
 
   // En passant captures are a tricky special case. Because they are rather
   // uncommon, we do it simply by testing whether the king is attacked after
   // the move is made.
-  if (type_of(m) == EN_PASSANT && count<KING>(us))
+  if (mt == EN_PASSANT && count<KING>(us))
   {
       Square ksq = square<KING>(us);
       Square capsq = capture_square(to);
@@ -1227,7 +1229,7 @@ bool Position::legal(Move m) const {
 
   // Castling moves generation does not check if the castling path is clear of
   // enemy attacks, it is delayed at a later time: now!
-  if (type_of(m) == CASTLING)
+  if (mt == CASTLING)
   {
       // After castling, the rook and king final positions are the same in
       // Chess960 as they would be in standard chess.
@@ -1253,7 +1255,7 @@ bool Position::legal(Move m) const {
       return !attackers_to(to, pieces() ^ to_sq(m), ~us);
   }
 
-  Bitboard occupied = (type_of(m) != DROP ? pieces() ^ from : pieces()) | to;
+  Bitboard occupied = (mt != DROP ? pieces() ^ from : pieces()) | to;
 
   // Flying general rule and bikjang
   // In case of bikjang passing is always allowed, even when in check
@@ -1261,18 +1263,18 @@ bool Position::legal(Move m) const {
       return true;
   if ((var->flyingGeneral && count<KING>(us)) || st->bikjang)
   {
-      Square s = type_of(moved_piece(m)) == KING ? to : square<KING>(us);
+      Square s = pt == KING ? to : square<KING>(us);
       if (attacks_bb(~us, ROOK, s, occupied) & pieces(~us, KING) & ~square_bb(to))
           return false;
   }
 
   // Makpong rule
-  if (var->makpongRule && checkers() && type_of(moved_piece(m)) == KING && (checkers() ^ to))
+  if (var->makpongRule && checkers() && pt == KING && (checkers() ^ to))
       return false;
 
   // If the moving piece is a king, check whether the destination square is
   // attacked by the opponent.
-  if (type_of(moved_piece(m)) == KING)
+  if (pt == KING)
       return !attackers_to(to, occupied, ~us);
 
   // Return early when without king
@@ -1280,8 +1282,8 @@ bool Position::legal(Move m) const {
       return true;
 
   Bitboard janggiCannons = pieces(JANGGI_CANNON);
-  if (type_of(moved_piece(m)) == JANGGI_CANNON)
-      janggiCannons = (type_of(m) == DROP ? janggiCannons : janggiCannons ^ from) | to;
+  if (pt == JANGGI_CANNON)
+      janggiCannons = (mt == DROP ? janggiCannons : janggiCannons ^ from) | to;
   else if (janggiCannons & to)
       janggiCannons ^= to;
 
@@ -1434,8 +1436,8 @@ bool Position::gives_check(Move m) const {
 
   Bitboard occupied = (type_of(m) != DROP ? pieces() ^ from : pieces()) | to;
   Bitboard janggiCannons = pieces(JANGGI_CANNON);
-  if (type_of(moved_piece(m)) == JANGGI_CANNON)
-      janggiCannons = (type_of(m) == DROP ? janggiCannons : janggiCannons ^ from) | to;
+  if (pt == JANGGI_CANNON)
+      janggiCannons = (mt == DROP ? janggiCannons : janggiCannons ^ from) | to;
   else if (janggiCannons & to)
       janggiCannons ^= to;
 
