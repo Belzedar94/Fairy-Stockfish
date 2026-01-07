@@ -147,9 +147,11 @@ namespace {
     const Bitboard doubleStepRegion = pos.double_step_region(Us);
     const Bitboard tripleStepRegion = pos.triple_step_region(Us);
 
+    const Bitboard occupied  = pos.pieces();
+    const Bitboard pawnBoard = pos.board_bb(Us, PAWN);
     const Bitboard pawns      = pos.pieces(Us, PAWN);
-    const Bitboard movable    = pos.board_bb(Us, PAWN) & ~pos.pieces();
-    const Bitboard capturable = pos.board_bb(Us, PAWN) &  pos.pieces(Them);
+    const Bitboard movable    = pawnBoard & ~occupied;
+    const Bitboard capturable = pawnBoard &  pos.pieces(Them);
 
     target = Type == EVASIONS ? target : AllSquares;
 
@@ -238,11 +240,11 @@ namespace {
                 PieceType pt = pop_msb(ps);
                 if (pos.promotion_limit(pt) && pos.promotion_limit(pt) <= pos.count(Us, pt))
                     continue;
-                Bitboard b = ((pos.attacks_from(Us, pt, from) & ~pos.pieces()) | from) & target;
+                Bitboard b = ((pos.attacks_from(Us, pt, from) & ~occupied) | from) & target;
                 while (b)
                 {
                     Square to = pop_lsb(b);
-                    if (!(attacks_bb(Us, pt, to, pos.pieces() ^ from) & pos.pieces(Them)))
+                    if (!(attacks_bb(Us, pt, to, occupied ^ from) & pos.pieces(Them)))
                         *moveList++ = make<PROMOTION>(from, to, pt);
                 }
             }
@@ -264,7 +266,7 @@ namespace {
             moveList = make_move_and_gating<NORMAL>(pos, moveList, Us, to - UpLeft, to);
         }
 
-        for (Bitboard epSquares = pos.ep_squares() & ~pos.pieces(); epSquares; )
+        for (Bitboard epSquares = pos.ep_squares() & ~occupied; epSquares; )
         {
             Square epSquare = pop_lsb(epSquares);
 
