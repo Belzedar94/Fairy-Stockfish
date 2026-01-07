@@ -25,8 +25,14 @@ namespace Stockfish {
 
 namespace {
 
-  template<MoveType T>
+  template<MoveType T, bool UseGating>
   ExtMove* make_move_and_gating(const Position& pos, ExtMove* moveList, Color us, Square from, Square to, PieceType pt = NO_PIECE_TYPE) {
+
+    if constexpr (!UseGating)
+    {
+        *moveList++ = make<T>(from, to, pt);
+        return moveList;
+    }
 
     // Wall placing moves
     //if it's "wall or move", and they chose non-null move, skip even generating wall move
@@ -85,7 +91,7 @@ namespace {
     return moveList;
   }
 
-  template<Color c, GenType Type, Direction D>
+  template<Color c, GenType Type, Direction D, bool UseGating>
   ExtMove* make_promotions(const Position& pos, ExtMove* moveList, Square to) {
 
     if (Type == CAPTURES || Type == EVASIONS || Type == NON_EVASIONS)
@@ -94,11 +100,11 @@ namespace {
         {
             PieceType pt = pop_msb(promotions);
             if (!pos.promotion_limit(pt) || pos.promotion_limit(pt) > pos.count(c, pt))
-                moveList = make_move_and_gating<PROMOTION>(pos, moveList, pos.side_to_move(), to - D, to, pt);
+                moveList = make_move_and_gating<PROMOTION, UseGating>(pos, moveList, pos.side_to_move(), to - D, to, pt);
         }
         PieceType pt = pos.promoted_piece_type(PAWN);
         if (pt && !(pos.piece_promotion_on_capture() && pos.empty(to)))
-            moveList = make_move_and_gating<PIECE_PROMOTION>(pos, moveList, pos.side_to_move(), to - D, to);
+            moveList = make_move_and_gating<PIECE_PROMOTION, UseGating>(pos, moveList, pos.side_to_move(), to - D, to);
     }
 
     return moveList;
@@ -131,7 +137,7 @@ namespace {
     return moveList;
   }
 
-  template<Color Us, GenType Type>
+  template<Color Us, GenType Type, bool UseGating>
   ExtMove* generate_pawn_moves(const Position& pos, ExtMove* moveList, Bitboard target) {
 
     if (!pos.pieces(Us, PAWN))
@@ -193,37 +199,37 @@ namespace {
         while (b1)
         {
             Square to = pop_lsb(b1);
-            moveList = make_move_and_gating<NORMAL>(pos, moveList, Us, to - Up, to);
+            moveList = make_move_and_gating<NORMAL, UseGating>(pos, moveList, Us, to - Up, to);
         }
 
         while (b2)
         {
             Square to = pop_lsb(b2);
-            moveList = make_move_and_gating<NORMAL>(pos, moveList, Us, to - Up - Up, to);
+            moveList = make_move_and_gating<NORMAL, UseGating>(pos, moveList, Us, to - Up - Up, to);
         }
 
         while (b3)
         {
             Square to = pop_lsb(b3);
-            moveList = make_move_and_gating<NORMAL>(pos, moveList, Us, to - Up - Up - Up, to);
+            moveList = make_move_and_gating<NORMAL, UseGating>(pos, moveList, Us, to - Up - Up - Up, to);
         }
     }
 
     // Promotions and underpromotions
     while (brcp)
-        moveList = make_promotions<Us, Type, UpRight>(pos, moveList, pop_lsb(brcp));
+        moveList = make_promotions<Us, Type, UpRight, UseGating>(pos, moveList, pop_lsb(brcp));
 
     while (blcp)
-        moveList = make_promotions<Us, Type, UpLeft >(pos, moveList, pop_lsb(blcp));
+        moveList = make_promotions<Us, Type, UpLeft , UseGating>(pos, moveList, pop_lsb(blcp));
 
     while (b1p)
-        moveList = make_promotions<Us, Type, Up     >(pos, moveList, pop_lsb(b1p));
+        moveList = make_promotions<Us, Type, Up     , UseGating>(pos, moveList, pop_lsb(b1p));
 
     while (b2p)
-        moveList = make_promotions<Us, Type, Up+Up  >(pos, moveList, pop_lsb(b2p));
+        moveList = make_promotions<Us, Type, Up+Up  , UseGating>(pos, moveList, pop_lsb(b2p));
 
     while (b3p)
-        moveList = make_promotions<Us, Type, Up+Up+Up>(pos, moveList, pop_lsb(b3p));
+        moveList = make_promotions<Us, Type, Up+Up+Up, UseGating>(pos, moveList, pop_lsb(b3p));
 
     // Sittuyin promotions
     if (pos.sittuyin_promotion() && (Type == CAPTURES || Type == EVASIONS || Type == NON_EVASIONS))
@@ -255,13 +261,13 @@ namespace {
         while (brc)
         {
             Square to = pop_lsb(brc);
-            moveList = make_move_and_gating<NORMAL>(pos, moveList, Us, to - UpRight, to);
+            moveList = make_move_and_gating<NORMAL, UseGating>(pos, moveList, Us, to - UpRight, to);
         }
 
         while (blc)
         {
             Square to = pop_lsb(blc);
-            moveList = make_move_and_gating<NORMAL>(pos, moveList, Us, to - UpLeft, to);
+            moveList = make_move_and_gating<NORMAL, UseGating>(pos, moveList, Us, to - UpLeft, to);
         }
 
         for (Bitboard epSquares = pos.ep_squares() & ~pos.pieces(); epSquares; )
@@ -278,7 +284,7 @@ namespace {
             assert(b || !pos.fast_attacks());
 
             while (b)
-                moveList = make_move_and_gating<EN_PASSANT>(pos, moveList, Us, pop_lsb(b), epSquare);
+                moveList = make_move_and_gating<EN_PASSANT, UseGating>(pos, moveList, Us, pop_lsb(b), epSquare);
         }
     }
 
@@ -286,7 +292,7 @@ namespace {
   }
 
 
-  template<Color Us, GenType Type>
+  template<Color Us, GenType Type, bool UseGating>
   ExtMove* generate_moves(const Position& pos, ExtMove* moveList, PieceType Pt, Bitboard target) {
 
     assert(Pt != KING && Pt != PAWN);
@@ -342,7 +348,7 @@ namespace {
         }
 
         while (b1)
-            moveList = make_move_and_gating<NORMAL>(pos, moveList, Us, from, pop_lsb(b1));
+            moveList = make_move_and_gating<NORMAL, UseGating>(pos, moveList, Us, from, pop_lsb(b1));
 
         // Shogi-style piece promotions
         while (b2)
@@ -359,20 +365,20 @@ namespace {
                 PieceType ptP = pop_msb(ps);
                 if (!pos.promotion_limit(ptP) || pos.promotion_limit(ptP) > pos.count(Us, ptP))
                     for (Bitboard promotions = pawnPromotions; promotions; )
-                        moveList = make_move_and_gating<PROMOTION>(pos, moveList, pos.side_to_move(), from, pop_lsb(promotions), ptP);
+                        moveList = make_move_and_gating<PROMOTION, UseGating>(pos, moveList, pos.side_to_move(), from, pop_lsb(promotions), ptP);
             }
 
         // En passant captures
         if (Type == CAPTURES || Type == EVASIONS || Type == NON_EVASIONS)
             while (epSquares)
-                moveList = make_move_and_gating<EN_PASSANT>(pos, moveList, Us, from, pop_lsb(epSquares));
+                moveList = make_move_and_gating<EN_PASSANT, UseGating>(pos, moveList, Us, from, pop_lsb(epSquares));
     }
 
     return moveList;
   }
 
 
-  template<Color Us, GenType Type>
+  template<Color Us, GenType Type, bool UseGating>
   ExtMove* generate_all(const Position& pos, ExtMove* moveList) {
 
     static_assert(Type != LEGAL, "Unsupported type in generate_all()");
@@ -402,9 +408,9 @@ namespace {
         // Remove inaccessible squares (outside board + wall squares)
         target &= pos.board_bb();
 
-        moveList = generate_pawn_moves<Us, Type>(pos, moveList, target);
+        moveList = generate_pawn_moves<Us, Type, UseGating>(pos, moveList, target);
         for (PieceSet ps = pos.piece_types() & ~(piece_set(PAWN) | KING); ps;)
-            moveList = generate_moves<Us, Type>(pos, moveList, pop_lsb(ps), target);
+            moveList = generate_moves<Us, Type, UseGating>(pos, moveList, pop_lsb(ps), target);
         // generate drops
         if (pos.piece_drops() && Type != CAPTURES && (pos.can_drop(Us, ALL_PIECES) || pos.two_boards()))
             for (PieceSet ps = pos.piece_types(); ps;)
@@ -416,7 +422,7 @@ namespace {
             Square from = pos.castling_king_square(Us);
             for(CastlingRights cr : { Us & KING_SIDE, Us & QUEEN_SIDE } )
                 if (!pos.castling_impeded(cr) && pos.can_castle(cr))
-                    moveList = make_move_and_gating<CASTLING>(pos, moveList, Us, from, pos.castling_rook_square(cr));
+                    moveList = make_move_and_gating<CASTLING, UseGating>(pos, moveList, Us, from, pos.castling_rook_square(cr));
         }
 
         // Special moves
@@ -428,7 +434,7 @@ namespace {
                 Bitboard b = PseudoAttacks[WHITE][KNIGHT][from] & rank_bb(rank_of(from + (Us == WHITE ? NORTH : SOUTH)))
                     & target & ~pos.pieces();
                 while (b)
-                    moveList = make_move_and_gating<SPECIAL>(pos, moveList, Us, from, pop_lsb(b));
+                    moveList = make_move_and_gating<SPECIAL, UseGating>(pos, moveList, Us, from, pop_lsb(b));
             }
 
             Bitboard b = pos.pieces(Us, FERS) & pos.gates(Us);
@@ -437,7 +443,7 @@ namespace {
                 Square from = pop_lsb(b);
                 Square to = from + 2 * (Us == WHITE ? NORTH : SOUTH);
                 if (is_ok(to) && (target & to & ~pos.pieces()))
-                    moveList = make_move_and_gating<SPECIAL>(pos, moveList, Us, from, to);
+                    moveList = make_move_and_gating<SPECIAL, UseGating>(pos, moveList, Us, from, to);
             }
         }
 
@@ -448,7 +454,7 @@ namespace {
         //if "wall or move", generate walling action with null move
         if (pos.wall_or_move())
         {
-            moveList = make_move_and_gating<SPECIAL>(pos, moveList, Us, lsb(pos.pieces(Us)), lsb(pos.pieces(Us)));
+            moveList = make_move_and_gating<SPECIAL, UseGating>(pos, moveList, Us, lsb(pos.pieces(Us)), lsb(pos.pieces(Us)));
         }
     }
 
@@ -458,7 +464,7 @@ namespace {
         Bitboard b = (  (pos.attacks_from(Us, KING, ksq) & pos.pieces())
                       | (pos.moves_from(Us, KING, ksq) & ~pos.pieces())) & (Type == EVASIONS ? ~pos.pieces(Us) : target);
         while (b)
-            moveList = make_move_and_gating<NORMAL>(pos, moveList, Us, ksq, pop_lsb(b));
+            moveList = make_move_and_gating<NORMAL, UseGating>(pos, moveList, Us, ksq, pop_lsb(b));
 
         // Passing move by king
         if (pos.pass(Us))
@@ -467,7 +473,7 @@ namespace {
         if ((Type == QUIETS || Type == NON_EVASIONS) && pos.can_castle(Us & ANY_CASTLING))
             for (CastlingRights cr : { Us & KING_SIDE, Us & QUEEN_SIDE } )
                 if (!pos.castling_impeded(cr) && pos.can_castle(cr))
-                    moveList = make_move_and_gating<CASTLING>(pos, moveList, Us,ksq, pos.castling_rook_square(cr));
+                    moveList = make_move_and_gating<CASTLING, UseGating>(pos, moveList, Us,ksq, pos.castling_rook_square(cr));
     }
 
     return moveList;
@@ -491,9 +497,14 @@ ExtMove* generate(const Position& pos, ExtMove* moveList) {
   assert((Type == EVASIONS) == (bool)pos.checkers());
 
   Color us = pos.side_to_move();
+  const bool useGating = pos.walling() || pos.seirawan_gating();
 
-  return us == WHITE ? generate_all<WHITE, Type>(pos, moveList)
-                     : generate_all<BLACK, Type>(pos, moveList);
+  if (us == WHITE)
+      return useGating ? generate_all<WHITE, Type, true>(pos, moveList)
+                       : generate_all<WHITE, Type, false>(pos, moveList);
+  else
+      return useGating ? generate_all<BLACK, Type, true>(pos, moveList)
+                       : generate_all<BLACK, Type, false>(pos, moveList);
 }
 
 // Explicit template instantiations
