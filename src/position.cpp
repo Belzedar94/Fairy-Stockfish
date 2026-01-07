@@ -616,6 +616,7 @@ void Position::set_check_info(StateInfo* si) const {
 void Position::set_state(StateInfo* si) const {
 
   si->key = si->materialKey = 0;
+  si->boardBB = board_size_bb(var->maxFile, var->maxRank) & ~si->wallSquares;
   si->pawnKey = Zobrist::noPawns;
   si->nonPawnMaterial[WHITE] = si->nonPawnMaterial[BLACK] = VALUE_ZERO;
   si->checkersBB = count<KING>(sideToMove) ? attackers_to(square<KING>(sideToMove), ~sideToMove) : Bitboard(0);
@@ -2080,6 +2081,8 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
       byTypeBB[ALL_PIECES] |= gating_square(m);
       k ^= Zobrist::wall[gating_square(m)];
   }
+
+  st->boardBB = board_size_bb(var->maxFile, var->maxRank) & ~st->wallSquares;
 
   // Update the key with the final value
   st->key = k;

@@ -59,6 +59,7 @@ struct StateInfo {
 
   // Not copied when making a move (will be recomputed anyhow)
   Key        key;
+  Bitboard   boardBB;
   Bitboard   checkersBB;
   Piece      unpromotedCapturedPiece;
   Piece      unpromotedBycatch[SQUARE_NB];
@@ -424,7 +425,7 @@ inline bool Position::two_boards() const {
 
 inline Bitboard Position::board_bb() const {
   assert(var != nullptr);
-  return board_size_bb(var->maxFile, var->maxRank) & ~st->wallSquares;
+  return st->boardBB;
 }
 
 inline Bitboard Position::board_bb(Color c, PieceType pt) const {
