@@ -2006,11 +2006,13 @@ Variant* Variant::conclude() {
     }
     // We can not use popcount here yet, as the lookup tables are initialized after the variants
     int nnueSquares = (maxRank + 1) * (maxFile + 1);
-    nnueUsePockets = (pieceDrops && (capturesToHand || (!mustDrop && std::bitset<64>(pieceTypes).count() != 1))) || seirawanGating;
-    int nnuePockets = nnueUsePockets ? 2 * int(maxFile + 1) : 0;
-    int nnueNonDropPieceIndices = (2 * std::bitset<64>(pieceTypes).count() - (nnueKing != NO_PIECE_TYPE)) * nnueSquares;
-    int nnuePieceIndices = nnueNonDropPieceIndices + 2 * (std::bitset<64>(pieceTypes).count() - (nnueKing != NO_PIECE_TYPE)) * nnuePockets;
-    int i = 0;
+      nnueUsePockets = (pieceDrops && (capturesToHand || (!mustDrop && std::bitset<64>(pieceTypes).count() != 1))) || seirawanGating;
+      int nnuePockets = nnueUsePockets ? 2 * int(maxFile + 1) : 0;
+      int nnueNonDropPieceIndices = (2 * std::bitset<64>(pieceTypes).count() - (nnueKing != NO_PIECE_TYPE)) * nnueSquares;
+      int nnuePieceIndices = nnueNonDropPieceIndices + 2 * (std::bitset<64>(pieceTypes).count() - (nnueKing != NO_PIECE_TYPE)) * nnuePockets;
+      nnueWallIndexBase = nnuePieceIndices;
+      nnuePieceIndices += nnueSquares;
+      int i = 0;
     for (PieceSet ps = pieceTypes; ps;)
     {
         // Make sure that the nnueKing type gets the last index, since the NNUE architecture relies on that

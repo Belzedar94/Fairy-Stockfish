@@ -166,10 +166,11 @@ struct Variant {
   // Derived properties
   bool fastAttacks = true;
   bool fastAttacks2 = true;
-  std::string nnueAlias = "";
-  PieceType nnueKing = KING;
-  int nnueDimensions;
-  bool nnueUsePockets;
+    std::string nnueAlias = "";
+    PieceType nnueKing = KING;
+    int nnueDimensions;
+    int nnueWallIndexBase;
+    bool nnueUsePockets;
   int pieceSquareIndex[COLOR_NB][PIECE_NB];
   int pieceHandIndex[COLOR_NB][PIECE_NB];
   int kingSquareIndex[SQUARE_NB];
