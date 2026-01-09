@@ -55,7 +55,14 @@ namespace Stockfish::Eval::NNUE::Features {
     static constexpr const char* Name = "HalfKAv2(Friend)";
 
     // Hash value embedded in the evaluation file
-    static constexpr std::uint32_t HashValue = 0x9e5a2c13u;
+    static constexpr std::uint32_t HashValueNoWalls = 0x5f234cb8u;
+    static constexpr std::uint32_t HashValueWithWalls = 0x9e5a2c13u;
+
+    static std::uint32_t get_hash_value() {
+      return currentNnueVariant && currentNnueVariant->nnueWallIndexBase >= 0
+             ? HashValueWithWalls
+             : HashValueNoWalls;
+    }
 
     // Number of feature dimensions
     static constexpr IndexType Dimensions = static_cast<IndexType>(SQUARE_NB) * static_cast<IndexType>(SQUARE_NB) * 20;
