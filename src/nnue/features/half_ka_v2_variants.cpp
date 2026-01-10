@@ -125,7 +125,7 @@ namespace Stockfish::Eval::NNUE::Features {
   int HalfKAv2Variants::update_cost(StateInfo* st) {
     if (!currentNnueVariant || currentNnueVariant->nnueWallIndexBase < 0)
       return st->dirtyPiece.dirty_num;
-    Bitboard diff = st->previous ? st->wallSquares ^ st->previous->wallSquares : Bitboard(0);
+    Bitboard diff = st->previous ? st->wallSquares ^ st->previous->wallSquares : st->wallSquares;
     return st->dirtyPiece.dirty_num + popcount(diff);
   }
 
