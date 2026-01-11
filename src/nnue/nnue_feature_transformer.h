@@ -190,8 +190,8 @@ namespace Stockfish::Eval::NNUE {
         OutputDimensions * sizeof(OutputType);
 
     // Hash value embedded in the evaluation file
-    static constexpr std::uint32_t get_hash_value() {
-      return FeatureSet::HashValue ^ OutputDimensions;
+    static std::uint32_t get_hash_value() {
+      return FeatureSet::get_hash_value() ^ OutputDimensions;
     }
 
     // Read network parameters

@@ -46,6 +46,10 @@ namespace Stockfish::Eval::NNUE::Features {
     return IndexType(handCount + pos.nnue_piece_hand_index(perspective, pc) + pos.nnue_king_square_index(ksq));
   }
 
+  inline IndexType HalfKAv2Variants::make_wall_index(Color perspective, Square s, Square ksq, const Position& pos) {
+    return IndexType(orient(perspective, s, pos) + pos.nnue_wall_index_base() + pos.nnue_king_square_index(ksq));
+  }
+
   // Get a list of indices for active features
   void HalfKAv2Variants::append_active_indices(
     const Position& pos,
@@ -58,6 +62,16 @@ namespace Stockfish::Eval::NNUE::Features {
     {
       Square s = pop_lsb(bb);
       active.push_back(make_index(perspective, s, pos.piece_on(s), oriented_ksq, pos));
+    }
+
+    if (pos.nnue_wall_index_base() >= 0)
+    {
+      Bitboard walls = pos.state()->wallSquares;
+      while (walls)
+      {
+        Square s = pop_lsb(walls);
+        active.push_back(make_wall_index(perspective, s, oriented_ksq, pos));
+      }
     }
 
     // Indices for pieces in hand
@@ -95,14 +109,31 @@ namespace Stockfish::Eval::NNUE::Features {
       else if (dp.handPiece[i] != NO_PIECE)
         added.push_back(make_index(perspective, dp.handCount[i] - 1, dp.handPiece[i], oriented_ksq, pos));
     }
+
+    if (pos.nnue_wall_index_base() >= 0)
+    {
+      Bitboard prevWalls = st->previous ? st->previous->wallSquares : Bitboard(0);
+      Bitboard removedWalls = prevWalls & ~st->wallSquares;
+      Bitboard addedWalls = st->wallSquares & ~prevWalls;
+      while (removedWalls)
+        removed.push_back(make_wall_index(perspective, pop_lsb(removedWalls), oriented_ksq, pos));
+      while (addedWalls)
+        added.push_back(make_wall_index(perspective, pop_lsb(addedWalls), oriented_ksq, pos));
+    }
   }
 
   int HalfKAv2Variants::update_cost(StateInfo* st) {
-    return st->dirtyPiece.dirty_num;
+    if (!currentNnueVariant || currentNnueVariant->nnueWallIndexBase < 0)
+      return st->dirtyPiece.dirty_num;
+    Bitboard diff = st->previous ? st->wallSquares ^ st->previous->wallSquares : st->wallSquares;
+    return st->dirtyPiece.dirty_num + popcount(diff);
   }
 
   int HalfKAv2Variants::refresh_cost(const Position& pos) {
-    return pos.count<ALL_PIECES>();
+    int cost = pos.count<ALL_PIECES>();
+    if (pos.nnue_wall_index_base() >= 0)
+      cost += popcount(pos.state()->wallSquares);
+    return cost;
   }
 
   bool HalfKAv2Variants::requires_refresh(StateInfo* st, Color perspective, const Position& pos) {

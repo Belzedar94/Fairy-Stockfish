@@ -47,22 +47,32 @@ namespace Stockfish::Eval::NNUE::Features {
     // Index of a feature for a given king position and another piece in hand
     static IndexType make_index(Color perspective, int handCount, Piece pc, Square ksq, const Position& pos);
 
+    // Index of a feature for a given king position and a wall square
+    static IndexType make_wall_index(Color perspective, Square s, Square ksq, const Position& pos);
+
    public:
     // Feature name
     static constexpr const char* Name = "HalfKAv2(Friend)";
 
     // Hash value embedded in the evaluation file
-    static constexpr std::uint32_t HashValue = 0x5f234cb8u;
+    static constexpr std::uint32_t HashValueNoWalls = 0x5f234cb8u;
+    static constexpr std::uint32_t HashValueWithWalls = 0x9e5a2c13u;
+
+    static std::uint32_t get_hash_value() {
+      return currentNnueVariant && currentNnueVariant->nnueWallIndexBase >= 0
+             ? HashValueWithWalls
+             : HashValueNoWalls;
+    }
 
     // Number of feature dimensions
-    static constexpr IndexType Dimensions = static_cast<IndexType>(SQUARE_NB) * static_cast<IndexType>(SQUARE_NB) * 19;
+    static constexpr IndexType Dimensions = static_cast<IndexType>(SQUARE_NB) * static_cast<IndexType>(SQUARE_NB) * 20;
 
     static IndexType get_dimensions() {
       return currentNnueVariant->nnueDimensions;
     }
 
     // Maximum number of simultaneously active features.
-    static constexpr IndexType MaxActiveDimensions = 128;
+    static constexpr IndexType MaxActiveDimensions = 2 * static_cast<IndexType>(SQUARE_NB);
 
     // Get a list of indices for active features
     static void append_active_indices(
