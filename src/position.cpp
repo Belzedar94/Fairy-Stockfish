@@ -1048,8 +1048,9 @@ bool Position::legal(Move m) const {
   Color us = sideToMove;
   Square from = from_sq(m);
   Square to = to_sq(m);
+  const Piece pc = moved_piece(m);
 
-  assert(color_of(moved_piece(m)) == us);
+  assert(color_of(pc) == us);
   assert(!count<KING>(us) || piece_on(square<KING>(us)) == make_piece(us, KING));
   assert(board_bb() & to);
 
@@ -1086,7 +1087,7 @@ bool Position::legal(Move m) const {
   // Illegal drop move
   if (drop_opposite_colored_bishop() && type_of(m) == DROP)
   {
-      if (type_of(moved_piece(m)) != BISHOP)
+      if (type_of(pc) != BISHOP)
       {
           Bitboard remaining = drop_region(us, BISHOP) & ~pieces() & ~square_bb(to);
           // Are enough squares available to drop bishops on opposite colors?
@@ -1101,7 +1102,7 @@ bool Position::legal(Move m) const {
   }
 
   // No legal moves from target square
-  if (immobility_illegal() && (type_of(m) == DROP || type_of(m) == NORMAL) && !(PseudoMoves[0][us][type_of(moved_piece(m))][to] & board_bb()))
+  if (immobility_illegal() && (type_of(m) == DROP || type_of(m) == NORMAL) && !(PseudoMoves[0][us][type_of(pc)][to] & board_bb()))
       return false;
 
   // Illegal king passing move
@@ -1145,11 +1146,11 @@ bool Position::legal(Move m) const {
       if (capture(m) && blast_on_capture())
           occupied &= ~((attacks_bb<KING>(kto) & ((pieces(WHITE) | pieces(BLACK)) ^ pieces(PAWN))) | kto);
       // Petrifying a pseudo-royal piece is illegal
-      if (capture(m) && (var->petrifyOnCaptureTypes & type_of(moved_piece(m))) && (st->pseudoRoyals & from))
+      if (capture(m) && (var->petrifyOnCaptureTypes & type_of(pc)) && (st->pseudoRoyals & from))
           return false;
       Bitboard pseudoRoyals = st->pseudoRoyals & pieces(sideToMove);
       // Add dropped pseudo-royal
-      if (type_of(m) == DROP && (extinction_piece_types() & type_of(moved_piece(m))))
+      if (type_of(m) == DROP && (extinction_piece_types() & type_of(pc)))
           pseudoRoyals |= square_bb(to);
       Bitboard pseudoRoyalsTheirs = st->pseudoRoyals & pieces(~sideToMove);
       if (is_ok(from) && (pseudoRoyals & from))
@@ -1205,8 +1206,8 @@ bool Position::legal(Move m) const {
   // mutuallyImmuneTypes (diplomacy in Atomar)-- In no-check Atomic, kings can be beside each other, but in Atomar, this prevents them from actually taking.
   // Generalized to allow a custom set of pieces that can't capture a piece of the same type.
   if (capture(m) &&
-      (mutually_immune_types() & type_of(moved_piece(m))) &&
-      (type_of(moved_piece(m)) == type_of(piece_on(to)))
+      (mutually_immune_types() & type_of(pc)) &&
+      (type_of(pc) == type_of(piece_on(to)))
   )
   return false;
 
@@ -1261,18 +1262,18 @@ bool Position::legal(Move m) const {
       return true;
   if ((var->flyingGeneral && count<KING>(us)) || st->bikjang)
   {
-      Square s = type_of(moved_piece(m)) == KING ? to : square<KING>(us);
+      Square s = type_of(pc) == KING ? to : square<KING>(us);
       if (attacks_bb(~us, ROOK, s, occupied) & pieces(~us, KING) & ~square_bb(to))
           return false;
   }
 
   // Makpong rule
-  if (var->makpongRule && checkers() && type_of(moved_piece(m)) == KING && (checkers() ^ to))
+  if (var->makpongRule && checkers() && type_of(pc) == KING && (checkers() ^ to))
       return false;
 
   // If the moving piece is a king, check whether the destination square is
   // attacked by the opponent.
-  if (type_of(moved_piece(m)) == KING)
+  if (type_of(pc) == KING)
       return !attackers_to(to, occupied, ~us);
 
   // Return early when without king
@@ -1280,7 +1281,7 @@ bool Position::legal(Move m) const {
       return true;
 
   Bitboard janggiCannons = pieces(JANGGI_CANNON);
-  if (type_of(moved_piece(m)) == JANGGI_CANNON)
+  if (type_of(pc) == JANGGI_CANNON)
       janggiCannons = (type_of(m) == DROP ? janggiCannons : janggiCannons ^ from) | to;
   else if (janggiCannons & to)
       janggiCannons ^= to;
