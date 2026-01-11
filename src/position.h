@@ -1445,13 +1445,15 @@ inline bool Position::is_chess960() const {
 
 inline bool Position::capture_or_promotion(Move m) const {
   assert(is_ok(m));
-  return type_of(m) == PROMOTION || type_of(m) == EN_PASSANT || (type_of(m) != CASTLING && !empty(to_sq(m)));
+  const MoveType mt = type_of(m);
+  return mt == PROMOTION || mt == EN_PASSANT || (mt != CASTLING && !empty(to_sq(m)));
 }
 
 inline bool Position::capture(Move m) const {
   assert(is_ok(m));
   // Castling is encoded as "king captures rook"
-  return (!empty(to_sq(m)) && type_of(m) != CASTLING && from_sq(m) != to_sq(m)) || type_of(m) == EN_PASSANT;
+  const MoveType mt = type_of(m);
+  return (!empty(to_sq(m)) && mt != CASTLING && from_sq(m) != to_sq(m)) || mt == EN_PASSANT;
 }
 
 inline Square Position::capture_square(Square to) const {
