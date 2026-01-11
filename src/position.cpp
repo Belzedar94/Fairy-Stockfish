@@ -848,6 +848,10 @@ Bitboard Position::slider_blockers(Bitboard sliders, Square s, Bitboard& pinners
   if (s == SQ_NONE || !sliders)
       return blockers;
 
+  const Bitboard piecesAll = pieces();
+  const Bitboard pinnedColor = pieces(color_of(piece_on(s)));
+  const Bitboard janggiCannons = pieces(JANGGI_CANNON);
+
   // Snipers are sliders that attack 's' when a piece and other snipers are removed
   Bitboard snipers = 0;
   Bitboard slidingSnipers = 0;
@@ -898,21 +902,22 @@ Bitboard Position::slider_blockers(Bitboard sliders, Square s, Bitboard& pinners
           }
       }
   }
-  Bitboard occupancy = pieces() ^ slidingSnipers;
+  Bitboard occupancy = piecesAll ^ slidingSnipers;
 
   while (snipers)
   {
     Square sniperSq = pop_lsb(snipers);
-    bool isHopper = AttackRiderTypes[type_of(piece_on(sniperSq))] & HOPPING_RIDERS;
-    Bitboard b = between_bb(s, sniperSq, type_of(piece_on(sniperSq))) & (isHopper ? (pieces() ^ sniperSq) : occupancy);
+    PieceType sniperPt = type_of(piece_on(sniperSq));
+    bool isHopper = AttackRiderTypes[sniperPt] & HOPPING_RIDERS;
+    Bitboard b = between_bb(s, sniperSq, sniperPt) & (isHopper ? (piecesAll ^ sniperSq) : occupancy);
 
     if (b && (!more_than_one(b) || (isHopper && popcount(b) == 2)))
     {
         // Janggi cannons block each other
-        if ((pieces(JANGGI_CANNON) & sniperSq) && (pieces(JANGGI_CANNON) & b))
-            b &= pieces(JANGGI_CANNON);
+        if ((janggiCannons & sniperSq) && (janggiCannons & b))
+            b &= janggiCannons;
         blockers |= b;
-        if (b & pieces(color_of(piece_on(s))))
+        if (b & pinnedColor)
             pinners |= sniperSq;
     }
   }
