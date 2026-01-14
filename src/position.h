@@ -56,6 +56,8 @@ struct StateInfo {
   Square castlingKingSquare[COLOR_NB];
   Bitboard wallSquares;
   Bitboard gatesBB[COLOR_NB];
+  Bitboard potionZones[COLOR_NB][Variant::POTION_TYPE_NB];
+  int potionCooldown[COLOR_NB][Variant::POTION_TYPE_NB];
 
   // Not copied when making a move (will be recomputed anyhow)
   Key        key;
@@ -163,6 +165,10 @@ public:
   int nnue_piece_hand_index(Color perspective, Piece pc) const;
   int nnue_king_square_index(Square ksq) const;
   bool free_drops() const;
+  void set_spell_context(Bitboard freezeExtra, Bitboard jumpRemoved) const;
+  void clear_spell_context() const;
+  Bitboard spell_jump_removed() const;
+  bool spell_context_active() const;
   bool fast_attacks() const;
   bool fast_attacks2() const;
   bool checking_permitted() const;
@@ -186,6 +192,15 @@ public:
   PieceSet promotion_pawn_types(Color c) const;
   PieceSet en_passant_types(Color c) const;
   bool immobility_illegal() const;
+  bool potions_enabled() const;
+  PieceType potion_piece(Variant::PotionType type) const;
+  bool can_cast_potion(Color c, Variant::PotionType type) const;
+  Bitboard potion_zone(Color c, Variant::PotionType type) const;
+  int potion_cooldown(Color c, Variant::PotionType type) const;
+  Bitboard freeze_squares() const;
+  Bitboard freeze_squares(Color c) const;
+  Bitboard jump_squares(Color c) const;
+  Bitboard freeze_zone_from_square(Square s) const;
   bool gating() const;
   bool walling() const;
   WallingRule walling_rule() const;
@@ -385,6 +400,9 @@ private:
   int pieceCountInHand[COLOR_NB][PIECE_TYPE_NB];
   int virtualPieces;
   Bitboard promotedPieces;
+  mutable Bitboard spellExtraFrozen;
+  mutable Bitboard spellJumpRemoved;
+  mutable bool spellContextActive;
   void add_to_hand(Piece pc);
   void remove_from_hand(Piece pc);
   void drop_piece(Piece pc_hand, Piece pc_drop, Square s);
@@ -629,6 +647,26 @@ inline bool Position::free_drops() const {
   return var->freeDrops;
 }
 
+inline void Position::set_spell_context(Bitboard freezeExtra, Bitboard jumpRemoved) const {
+  spellExtraFrozen = freezeExtra;
+  spellJumpRemoved = jumpRemoved;
+  spellContextActive = (freezeExtra | jumpRemoved);
+}
+
+inline void Position::clear_spell_context() const {
+  spellExtraFrozen = 0;
+  spellJumpRemoved = 0;
+  spellContextActive = false;
+}
+
+inline Bitboard Position::spell_jump_removed() const {
+  return spellContextActive ? spellJumpRemoved : Bitboard(0);
+}
+
+inline bool Position::spell_context_active() const {
+  return spellContextActive;
+}
+
 inline bool Position::fast_attacks() const {
   assert(var != nullptr);
   return var->fastAttacks;
@@ -846,6 +884,53 @@ inline PieceSet Position::en_passant_types(Color c) const {
 inline bool Position::immobility_illegal() const {
   assert(var != nullptr);
   return var->immobilityIllegal;
+}
+
+inline bool Position::potions_enabled() const {
+  assert(var != nullptr);
+  return var->potions;
+}
+
+inline PieceType Position::potion_piece(Variant::PotionType type) const {
+  return var->potionPiece[type];
+}
+
+inline Bitboard Position::potion_zone(Color c, Variant::PotionType type) const {
+  return st->potionZones[c][type];
+}
+
+inline int Position::potion_cooldown(Color c, Variant::PotionType type) const {
+  return st->potionCooldown[c][type];
+}
+
+inline bool Position::can_cast_potion(Color c, Variant::PotionType type) const {
+  if (!potions_enabled() || potion_piece(type) == NO_PIECE_TYPE)
+      return false;
+  if (potion_cooldown(c, type) > 0)
+      return false;
+  return count_in_hand(c, potion_piece(type)) > 0;
+}
+
+inline Bitboard Position::freeze_squares(Color c) const {
+  Bitboard mask = st->potionZones[c][Variant::POTION_FREEZE];
+  if (spellContextActive)
+      mask |= spellExtraFrozen;
+  return mask;
+}
+
+inline Bitboard Position::freeze_squares() const {
+  return freeze_squares(WHITE) | freeze_squares(BLACK);
+}
+
+inline Bitboard Position::jump_squares(Color c) const {
+  Bitboard mask = st->potionZones[c][Variant::POTION_JUMP];
+  if (spellContextActive && c == sideToMove)
+      mask |= spellJumpRemoved;
+  return mask;
+}
+
+inline Bitboard Position::freeze_zone_from_square(Square s) const {
+  return (PseudoAttacks[WHITE][KING][s] | square_bb(s)) & board_bb();
 }
 
 inline bool Position::gating() const {
@@ -1292,11 +1377,15 @@ inline Square Position::castling_rook_square(CastlingRights cr) const {
 }
 
 inline Bitboard Position::attacks_from(Color c, PieceType pt, Square s) const {
+  Bitboard occupancy = byTypeBB[ALL_PIECES];
+  if (spellContextActive && c == sideToMove)
+      occupancy &= ~spellJumpRemoved;
+
   if (var->fastAttacks || var->fastAttacks2)
-      return attacks_bb(c, pt, s, byTypeBB[ALL_PIECES]) & board_bb();
+      return attacks_bb(c, pt, s, occupancy) & board_bb();
 
   PieceType movePt = pt == KING ? king_type() : pt;
-  Bitboard b = attacks_bb(c, movePt, s, byTypeBB[ALL_PIECES]);
+  Bitboard b = attacks_bb(c, movePt, s, occupancy);
   // Xiangqi soldier
   if (pt == SOLDIER && !(promoted_soldiers(c) & s))
       b &= file_bb(file_of(s));
@@ -1304,17 +1393,17 @@ inline Bitboard Position::attacks_from(Color c, PieceType pt, Square s) const {
   if (pt == JANGGI_CANNON)
   {
       b &= ~pieces(pt);
-      b &= attacks_bb(c, pt, s, pieces() ^ pieces(pt));
+      b &= attacks_bb(c, pt, s, (occupancy ^ pieces(pt)));
   }
   // Janggi palace moves
   if (diagonal_lines() & s)
   {
       PieceType diagType = movePt == WAZIR ? FERS : movePt == SOLDIER ? PAWN : movePt == ROOK ? BISHOP : NO_PIECE_TYPE;
       if (diagType)
-          b |= attacks_bb(c, diagType, s, pieces()) & diagonal_lines();
+          b |= attacks_bb(c, diagType, s, occupancy) & diagonal_lines();
       else if (movePt == JANGGI_CANNON)
-          b |=  rider_attacks_bb<RIDER_CANNON_DIAG>(s, pieces())
-              & rider_attacks_bb<RIDER_CANNON_DIAG>(s, pieces() ^ pieces(pt))
+          b |=  rider_attacks_bb<RIDER_CANNON_DIAG>(s, occupancy)
+              & rider_attacks_bb<RIDER_CANNON_DIAG>(s, (occupancy ^ pieces(pt)))
               & ~pieces(pt)
               & diagonal_lines();
   }
@@ -1322,14 +1411,18 @@ inline Bitboard Position::attacks_from(Color c, PieceType pt, Square s) const {
 }
 
 inline Bitboard Position::moves_from(Color c, PieceType pt, Square s) const {
+  Bitboard occupancy = byTypeBB[ALL_PIECES];
+  if (spellContextActive && c == sideToMove)
+      occupancy &= ~spellJumpRemoved;
+
   if (var->fastAttacks || var->fastAttacks2)
-      return moves_bb(c, pt, s, byTypeBB[ALL_PIECES]) & board_bb();
+      return moves_bb(c, pt, s, occupancy) & board_bb();
 
   PieceType movePt = pt == KING ? king_type() : pt;
-  Bitboard b = moves_bb(c, movePt, s, byTypeBB[ALL_PIECES]);
+  Bitboard b = moves_bb(c, movePt, s, occupancy);
   // Add initial moves
   if (double_step_region(c) & s)
-      b |= moves_bb<true>(c, movePt, s, byTypeBB[ALL_PIECES]);
+      b |= moves_bb<true>(c, movePt, s, occupancy);
   // Xiangqi soldier
   if (pt == SOLDIER && !(promoted_soldiers(c) & s))
       b &= file_bb(file_of(s));
@@ -1337,17 +1430,17 @@ inline Bitboard Position::moves_from(Color c, PieceType pt, Square s) const {
   if (pt == JANGGI_CANNON)
   {
       b &= ~pieces(pt);
-      b &= attacks_bb(c, pt, s, pieces() ^ pieces(pt));
+      b &= attacks_bb(c, pt, s, (occupancy ^ pieces(pt)));
   }
   // Janggi palace moves
   if (diagonal_lines() & s)
   {
       PieceType diagType = movePt == WAZIR ? FERS : movePt == SOLDIER ? PAWN : movePt == ROOK ? BISHOP : NO_PIECE_TYPE;
       if (diagType)
-          b |= attacks_bb(c, diagType, s, pieces()) & diagonal_lines();
+          b |= attacks_bb(c, diagType, s, occupancy) & diagonal_lines();
       else if (movePt == JANGGI_CANNON)
-          b |=  rider_attacks_bb<RIDER_CANNON_DIAG>(s, pieces())
-              & rider_attacks_bb<RIDER_CANNON_DIAG>(s, pieces() ^ pieces(pt))
+          b |=  rider_attacks_bb<RIDER_CANNON_DIAG>(s, occupancy)
+              & rider_attacks_bb<RIDER_CANNON_DIAG>(s, (occupancy ^ pieces(pt)))
               & ~pieces(pt)
               & diagonal_lines();
   }
