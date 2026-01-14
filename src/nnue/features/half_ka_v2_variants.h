@@ -63,7 +63,7 @@ namespace Stockfish::Eval::NNUE::Features {
 
     // Hash value embedded in the evaluation file
     static constexpr std::uint32_t HashValueNoPotions = 0x5f234cb8u;
-    static constexpr std::uint32_t HashValueWithPotions = 0x7c2d4f9eu;
+    static constexpr std::uint32_t HashValueWithPotions = 0x6a8f3c12u;
 
     static std::uint32_t get_hash_value() {
       return currentNnueVariant && currentNnueVariant->nnuePotionZoneIndexBase >= 0

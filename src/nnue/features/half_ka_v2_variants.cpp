@@ -49,8 +49,9 @@ namespace Stockfish::Eval::NNUE::Features {
   inline IndexType HalfKAv2Variants::make_potion_zone_index(Color perspective, Color potionColor,
                                                             Variant::PotionType potion, Square s,
                                                             Square ksq, const Position& pos) {
+    const int relativeColor = static_cast<int>(potionColor != perspective);
     const int potionIndex = static_cast<int>(potion)
-                            + Variant::POTION_TYPE_NB * static_cast<int>(potionColor);
+                            + Variant::POTION_TYPE_NB * relativeColor;
     return IndexType(orient(perspective, s, pos)
                      + pos.nnue_potion_zone_index_base()
                      + potionIndex * (pos.max_file() + 1) * (pos.max_rank() + 1)
@@ -60,9 +61,9 @@ namespace Stockfish::Eval::NNUE::Features {
   inline IndexType HalfKAv2Variants::make_potion_cooldown_index(Color perspective, Color potionColor,
                                                                 Variant::PotionType potion, int bit,
                                                                 Square ksq, const Position& pos) {
-    (void)perspective;
+    const int relativeColor = static_cast<int>(potionColor != perspective);
     const int potionIndex = static_cast<int>(potion)
-                            + Variant::POTION_TYPE_NB * static_cast<int>(potionColor);
+                            + Variant::POTION_TYPE_NB * relativeColor;
     return IndexType(bit
                      + pos.nnue_potion_cooldown_index_base()
                      + potionIndex * POTION_COOLDOWN_BITS
