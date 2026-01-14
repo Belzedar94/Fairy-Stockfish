@@ -159,11 +159,13 @@ public:
   PieceType king_type() const;
   PieceType nnue_king() const;
   Square nnue_king_square(Color c) const;
-  bool nnue_use_pockets() const;
-  bool nnue_applicable() const;
-  int nnue_piece_square_index(Color perspective, Piece pc) const;
-  int nnue_piece_hand_index(Color perspective, Piece pc) const;
-  int nnue_king_square_index(Square ksq) const;
+    bool nnue_use_pockets() const;
+    bool nnue_applicable() const;
+    int nnue_piece_square_index(Color perspective, Piece pc) const;
+    int nnue_piece_hand_index(Color perspective, Piece pc) const;
+    int nnue_king_square_index(Square ksq) const;
+    int nnue_potion_zone_index_base() const;
+    int nnue_potion_cooldown_index_base() const;
   bool free_drops() const;
   void set_spell_context(Bitboard freezeExtra, Bitboard jumpRemoved) const;
   void clear_spell_context() const;
@@ -632,10 +634,20 @@ inline int Position::nnue_piece_hand_index(Color perspective, Piece pc) const {
   return var->pieceHandIndex[perspective][pc];
 }
 
-inline int Position::nnue_king_square_index(Square ksq) const {
-  assert(var != nullptr);
-  return var->kingSquareIndex[ksq];
-}
+  inline int Position::nnue_king_square_index(Square ksq) const {
+    assert(var != nullptr);
+    return var->kingSquareIndex[ksq];
+  }
+
+  inline int Position::nnue_potion_zone_index_base() const {
+    assert(var != nullptr);
+    return var->nnuePotionZoneIndexBase;
+  }
+
+  inline int Position::nnue_potion_cooldown_index_base() const {
+    assert(var != nullptr);
+    return var->nnuePotionCooldownIndexBase;
+  }
 
 inline bool Position::checking_permitted() const {
   assert(var != nullptr);

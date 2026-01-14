@@ -2050,10 +2050,19 @@ Variant* Variant::conclude() {
     }
     // We can not use popcount here yet, as the lookup tables are initialized after the variants
     int nnueSquares = (maxRank + 1) * (maxFile + 1);
-    nnueUsePockets = (pieceDrops && (capturesToHand || (!mustDrop && std::bitset<64>(pieceTypes).count() != 1))) || seirawanGating;
+    nnueUsePockets = (pieceDrops && (capturesToHand || (!mustDrop && std::bitset<64>(pieceTypes).count() != 1)))
+                     || seirawanGating
+                     || potions;
     int nnuePockets = nnueUsePockets ? 2 * int(maxFile + 1) : 0;
     int nnueNonDropPieceIndices = (2 * std::bitset<64>(pieceTypes).count() - (nnueKing != NO_PIECE_TYPE)) * nnueSquares;
     int nnuePieceIndices = nnueNonDropPieceIndices + 2 * (std::bitset<64>(pieceTypes).count() - (nnueKing != NO_PIECE_TYPE)) * nnuePockets;
+    bool nnueHasPotions = potions;
+    nnuePotionZoneIndexBase = nnueHasPotions ? nnuePieceIndices : -1;
+    if (nnueHasPotions)
+        nnuePieceIndices += nnueSquares * COLOR_NB * Variant::POTION_TYPE_NB;
+    nnuePotionCooldownIndexBase = nnueHasPotions ? nnuePieceIndices : -1;
+    if (nnueHasPotions)
+        nnuePieceIndices += COLOR_NB * Variant::POTION_TYPE_NB * POTION_COOLDOWN_BITS;
     int i = 0;
     for (PieceSet ps = pieceTypes; ps;)
     {
