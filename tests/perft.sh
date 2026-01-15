@@ -156,6 +156,7 @@ if [[ $1 == "all" || $1 == "variant" ]]; then
   expect perft.exp atomic "fen 1R4kr/4K3/8/8/8/8/8/8 b k - 0 1" 4 17915 true > /dev/null
   expect perft.exp extinction "fen rnbqb1kr/pppppppp/8/8/8/8/PPPPPPPP/RNBQB1KR w AHah - 0 1" 4 195286 true > /dev/null
   expect perft.exp seirawan "fen qbbrnkrn/pppppppp/8/8/8/8/PPPPPPPP/QBBRNKRN[HEhe] w ABCDEFGHabcdefgh - 0 1" 3 21170 true > /dev/null
+  expect perft.exp spell-chess "fen 4k3/p7/8/8/8/8/8/4K2R[f] b K - 0 1 moves f@h1,a7a6" 1 5 > /dev/null
 fi
 
 # large-board variants

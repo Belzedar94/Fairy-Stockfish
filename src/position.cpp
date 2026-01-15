@@ -1347,7 +1347,9 @@ bool Position::legal(Move m) const {
 
       // Will the gate be blocked by king or rook?
       Square rto = to + (to_sq(m) > from_sq(m) ? WEST : EAST);
-      if (is_gating(m) && (gating_square(m) == to || gating_square(m) == rto))
+      if (is_gating(m) && (gating_square(m) == to || gating_square(m) == rto))  
+          return false;
+      if (freeze_squares() & to_sq(m))
           return false;
 
       // Non-royal pieces can not be impeded from castling
