@@ -2008,6 +2008,20 @@ Variant* Variant::conclude() {
     if (!doubleStepRegion[WHITE] && !doubleStepRegion[BLACK])
         doubleStep = false;
 
+    PieceSet originalPieceTypes = pieceTypes;
+    PieceSet potionPieces = NO_PIECE_SET;
+    if (potions)
+        for (int idx = 0; idx < Variant::POTION_TYPE_NB; ++idx)
+        {
+            PieceType potion = potionPiece[idx];
+            if (potion != NO_PIECE_TYPE)
+            {
+                pieceTypes |= piece_set(potion);
+                if (!(originalPieceTypes & piece_set(potion)))
+                    potionPieces |= piece_set(potion);
+            }
+        }
+
     // Determine optimizations
     bool restrictedMobility = false;
     for (PieceSet ps = pieceTypes; !restrictedMobility && ps;)
@@ -2016,12 +2030,14 @@ Variant* Variant::conclude() {
         if (mobilityRegion[WHITE][pt] || mobilityRegion[BLACK][pt])
           restrictedMobility = true;
     }
-    fastAttacks =  !(pieceTypes & ~(CHESS_PIECES | COMMON_FAIRY_PIECES))
+    PieceSet boardPieceTypes = pieceTypes & ~potionPieces;
+
+    fastAttacks =  !(boardPieceTypes & ~(CHESS_PIECES | COMMON_FAIRY_PIECES))
                   && kingType == KING
                   && !restrictedMobility
                   && !cambodianMoves
                   && !diagonalLines;
-    fastAttacks2 =  !(pieceTypes & ~(SHOGI_PIECES | COMMON_STEP_PIECES))
+    fastAttacks2 =  !(boardPieceTypes & ~(SHOGI_PIECES | COMMON_STEP_PIECES))
                   && kingType == KING
                   && !restrictedMobility
                   && !cambodianMoves
