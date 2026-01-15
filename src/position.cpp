@@ -1647,13 +1647,13 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
       if (oldClamped != newClamped)
           k ^= Zobrist::points[scorer][oldClamped] ^ Zobrist::points[scorer][newClamped];
   };
-  auto scored_capture_piece = [&](Piece pc, Square sq) {
+  auto scored_capture_piece = [&](Piece capturedPiece, Square sq) {
       if (!captures_to_hand() || drop_loop() || !is_promoted(sq))
-          return pc;
+          return capturedPiece;
       Piece unpromotedCaptured = unpromoted_piece_on(sq);
       return unpromotedCaptured != NO_PIECE
              ? unpromotedCaptured
-             : make_piece(color_of(pc), main_promotion_pawn_type(color_of(pc)));
+             : make_piece(color_of(capturedPiece), main_promotion_pawn_type(color_of(capturedPiece)));
   };
 
   if (check_counting() && givesCheck)
