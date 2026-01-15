@@ -16,6 +16,7 @@
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#include <algorithm>
 #include <string>
 #include <sstream>
 
@@ -325,6 +326,34 @@ Variant* VariantParser<DoCheck>::parse(Variant* v) {
         }
     }
 
+    auto parse_points_values = [&](const std::string& optionName, int values[PIECE_TYPE_NB], bool& setFlag) {
+        const auto& pv = config.find(optionName);
+        if (pv == config.end())
+            return false;
+        char token;
+        size_t idx = 0;
+        std::stringstream ss(pv->second);
+        while (!ss.eof() && ss >> token && (idx = v->pieceToChar.find(toupper(token))) != std::string::npos
+                         && ss >> token && ss >> values[idx]) {}
+        if (DoCheck && idx == std::string::npos)
+            std::cerr << optionName << " - Invalid piece type: " << token << std::endl;
+        else if (DoCheck && !ss.eof())
+            std::cerr << optionName << " - Invalid piece value for type: " << v->pieceToChar[idx] << std::endl;
+        setFlag = true;
+        v->pointsConfigured = true;
+        return true;
+    };
+
+    int pointsValues[PIECE_TYPE_NB] = {};
+    if (parse_points_values("pointsValue", pointsValues, v->pointsPresentValueSet))
+    {
+        std::copy(std::begin(pointsValues), std::end(pointsValues), v->pointsPresentValue);
+        std::copy(std::begin(pointsValues), std::end(pointsValues), v->pointsCaptureValue);
+        v->pointsCaptureValueSet = true;
+    }
+    parse_points_values("pointsPresentValue", v->pointsPresentValue, v->pointsPresentValueSet);
+    parse_points_values("pointsCaptureValue", v->pointsCaptureValue, v->pointsCaptureValueSet);
+
     // Parse deprecate values for backwards compatibility
     Rank promotionRank = RANK_8;
     if (parse_attribute<false>("promotionRank", promotionRank))
@@ -532,6 +561,15 @@ Variant* VariantParser<DoCheck>::parse(Variant* v) {
     parse_attribute("flagMove", v->flagMove);
     parse_attribute("flagPieceSafe", v->flagPieceSafe);
     parse_attribute("checkCounting", v->checkCounting);
+    v->pointsConfigured |= parse_attribute("pointsWin", v->pointsWin);
+    v->pointsConfigured |= parse_attribute("pointsCountCaptures", v->pointsCountCaptures);
+    v->pointsConfigured |= parse_attribute("pointsCountPresent", v->pointsCountPresent);
+    v->pointsConfigured |= parse_attribute("pointsIncludeHand", v->pointsIncludeHand);
+    v->pointsConfigured |= parse_attribute("pointsCheckValue", v->pointsCheckValue);
+    v->pointsConfigured |= parse_attribute("pointsAdjudicateDraw", v->pointsAdjudicateDraw);
+    v->pointsConfigured |= parse_attribute("pointsTieValue", v->pointsTieValue);
+    v->pointsConfigured |= parse_attribute("pointsOffsetWhite", v->pointsOffset[WHITE]);
+    v->pointsConfigured |= parse_attribute("pointsOffsetBlack", v->pointsOffset[BLACK]);
     parse_attribute("connectN", v->connectN);
     parse_attribute("connectPieceTypes", v->connectPieceTypes, v->pieceToChar);
     parse_attribute("connectHorizontal", v->connectHorizontal);

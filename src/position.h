@@ -19,6 +19,7 @@
 #ifndef POSITION_H_INCLUDED
 #define POSITION_H_INCLUDED
 
+#include <algorithm>
 #include <cassert>
 #include <deque>
 #include <memory> // For std::unique_ptr
@@ -52,6 +53,7 @@ struct StateInfo {
   int    countingPly;
   int    countingLimit;
   CheckCount checksRemaining[COLOR_NB];
+  int    pointsScore[COLOR_NB];
   Bitboard epSquares;
   Square castlingKingSquare[COLOR_NB];
   Bitboard wallSquares;
@@ -161,6 +163,9 @@ public:
   int nnue_piece_square_index(Color perspective, Piece pc) const;
   int nnue_piece_hand_index(Color perspective, Piece pc) const;
   int nnue_king_square_index(Square ksq) const;
+  int nnue_points_index_base() const;
+  int nnue_points_score_planes() const;
+  int nnue_points_check_planes() const;
   bool free_drops() const;
   bool fast_attacks() const;
   bool fast_attacks2() const;
@@ -214,6 +219,15 @@ public:
   bool flag_move() const;
   bool flag_reached(Color c) const;
   bool check_counting() const;
+  bool points_enabled() const;
+  bool points_score_enabled() const;
+  bool points_present_enabled() const;
+  bool points_adjudicate_draw() const;
+  int points_score(Color c) const;
+  int points_score_clamped(Color c) const;
+  int points_present(Color c) const;
+  int points_total(Color c) const;
+  Value points_counting_result() const;
   int connect_n() const;
   PieceSet connect_piece_types() const;
   bool connect_horizontal() const;
@@ -614,6 +628,21 @@ inline int Position::nnue_king_square_index(Square ksq) const {
   return var->kingSquareIndex[ksq];
 }
 
+inline int Position::nnue_points_index_base() const {
+  assert(var != nullptr);
+  return var->nnuePointsIndexBase;
+}
+
+inline int Position::nnue_points_score_planes() const {
+  assert(var != nullptr);
+  return var->nnuePointsScorePlanes;
+}
+
+inline int Position::nnue_points_check_planes() const {
+  assert(var != nullptr);
+  return var->nnuePointsCheckPlanes;
+}
+
 inline bool Position::checking_permitted() const {
   assert(var != nullptr);
   return var->checking;
@@ -951,9 +980,9 @@ inline Value Position::stalemate_value(int ply) const {
       int c = count<ALL_PIECES>(sideToMove) - count<ALL_PIECES>(~sideToMove);
       result = c == 0 ? VALUE_DRAW : c < 0 ? var->stalemateValue : -var->stalemateValue;
   }
-  // Apply material counting
-  if (result == VALUE_DRAW && var->materialCounting)
-      result = material_counting_result();
+  // Apply points-based draw adjudication
+  if (result == VALUE_DRAW && points_adjudicate_draw())
+      result = points_counting_result();
   return convert_mate_value(result, ply);
 }
 
@@ -1099,6 +1128,62 @@ inline bool Position::flag_reached(Color c) const {
 inline bool Position::check_counting() const {
   assert(var != nullptr);
   return var->checkCounting;
+}
+
+inline bool Position::points_enabled() const {
+  assert(var != nullptr);
+  return var->pointsEnabled;
+}
+
+inline bool Position::points_score_enabled() const {
+  assert(var != nullptr);
+  return var->pointsScoreEnabled;
+}
+
+inline bool Position::points_present_enabled() const {
+  assert(var != nullptr);
+  return var->pointsCountPresent;
+}
+
+inline bool Position::points_adjudicate_draw() const {
+  assert(var != nullptr);
+  return var->pointsAdjudicateDraw;
+}
+
+inline int Position::points_score(Color c) const {
+  return st->pointsScore[c];
+}
+
+inline int Position::points_score_clamped(Color c) const {
+  return std::max(0, std::min(points_score(c), POINTS_SCORE_MAX));
+}
+
+inline int Position::points_present(Color c) const {
+  int total = 0;
+  for (PieceSet ps = piece_types(); ps; )
+  {
+      PieceType pt = pop_lsb(ps);
+      int present_count = points_present_enabled()
+                          ? (var->pointsIncludeHand ? count_with_hand(c, pt) : count(c, pt))
+                          : 0;
+      total += var->pointsPresentValue[pt] * present_count;
+  }
+  return total;
+}
+
+inline int Position::points_total(Color c) const {
+  int total = var->pointsOffset[c];
+  if (points_score_enabled())
+      total += points_score(c);
+  if (points_present_enabled())
+      total += points_present(c);
+  return total;
+}
+
+inline Value Position::points_counting_result() const {
+  int diff = points_total(WHITE) - points_total(BLACK);
+  Value result = diff > 0 ? VALUE_MATE : diff < 0 ? -VALUE_MATE : var->pointsTieValue;
+  return sideToMove == WHITE ? result : -result;
 }
 
 inline int Position::connect_n() const {
@@ -1593,6 +1678,8 @@ inline bool Position::allow_virtual_drop(Color c, PieceType pt) const {
 }
 
 inline Value Position::material_counting_result() const {
+  if (points_adjudicate_draw())
+      return points_counting_result();
   auto weight_count = [this](PieceType pt, int v){ return v * (count(WHITE, pt) - count(BLACK, pt)); };
   int materialCount;
   Value result;

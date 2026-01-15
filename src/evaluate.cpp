@@ -1369,7 +1369,7 @@ namespace {
     if (   pos.extinction_value() == VALUE_NONE
         && !pos.captures_to_hand()
         && !pos.connect_n()
-        && !pos.material_counting()
+        && !pos.points_enabled()
         && !(pos.flag_region(WHITE) || pos.flag_region(BLACK)))
     {
     int outflanking = !pos.count<KING>(WHITE) || !pos.count<KING>(BLACK) ? 0
@@ -1416,7 +1416,7 @@ namespace {
     int sf = me->scale_factor(pos, strongSide);
 
     // If scale factor is not already specific, scale up/down via general heuristics
-    if (sf == SCALE_FACTOR_NORMAL && !pos.captures_to_hand() && !pos.material_counting())
+    if (sf == SCALE_FACTOR_NORMAL && !pos.captures_to_hand() && !pos.points_enabled())
     {
         if (pos.opposite_bishops())
         {
@@ -1650,8 +1650,8 @@ Value Eval::evaluate(const Position& pos) {
   if (pos.n_move_rule())
   {
       v = v * (2 * pos.n_move_rule() - pos.rule50_count()) / (2 * pos.n_move_rule());
-      if (pos.material_counting())
-          v += pos.material_counting_result() / (10 * std::max(2 * pos.n_move_rule() - pos.rule50_count(), 1));
+      if (pos.points_adjudicate_draw())
+          v += pos.points_counting_result() / (10 * std::max(2 * pos.n_move_rule() - pos.rule50_count(), 1));
   }
 
   // Guarantee evaluation does not hit the virtual win/loss range

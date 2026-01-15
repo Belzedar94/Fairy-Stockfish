@@ -46,6 +46,11 @@ namespace Stockfish::Eval::NNUE::Features {
     return IndexType(handCount + pos.nnue_piece_hand_index(perspective, pc) + pos.nnue_king_square_index(ksq));
   }
 
+  inline IndexType HalfKAv2Variants::make_points_index(Color perspective, int plane, Square ksq, const Position& pos) {
+    (void)perspective;
+    return IndexType(plane + pos.nnue_points_index_base() + pos.nnue_king_square_index(ksq));
+  }
+
   // Get a list of indices for active features
   void HalfKAv2Variants::append_active_indices(
     const Position& pos,
@@ -69,6 +74,38 @@ namespace Stockfish::Eval::NNUE::Features {
               for (int i = 0; i < pos.count_in_hand(c, pt); i++)
                   active.push_back(make_index(perspective, i, make_piece(c, pt), oriented_ksq, pos));
           }
+
+    if (pos.nnue_points_index_base() >= 0)
+    {
+      int planeOffset = 0;
+      if (pos.nnue_points_score_planes())
+      {
+        int usScore = pos.points_score_clamped(perspective);
+        int themScore = pos.points_score_clamped(~perspective);
+        for (int bit = 0; bit < POINTS_SCORE_BITS; ++bit)
+        {
+          int mask = 1 << bit;
+          if (usScore & mask)
+            active.push_back(make_points_index(perspective, planeOffset + bit, oriented_ksq, pos));
+          if (themScore & mask)
+            active.push_back(make_points_index(perspective, planeOffset + POINTS_SCORE_BITS + bit, oriented_ksq, pos));
+        }
+        planeOffset += pos.nnue_points_score_planes();
+      }
+      if (pos.nnue_points_check_planes())
+      {
+        int usChecks = std::min<int>(std::max(0, int(pos.checks_remaining(perspective))), CHECKS_MAX);
+        int themChecks = std::min<int>(std::max(0, int(pos.checks_remaining(~perspective))), CHECKS_MAX);
+        for (int bit = 0; bit < CHECKS_BITS; ++bit)
+        {
+          int mask = 1 << bit;
+          if (usChecks & mask)
+            active.push_back(make_points_index(perspective, planeOffset + bit, oriented_ksq, pos));
+          if (themChecks & mask)
+            active.push_back(make_points_index(perspective, planeOffset + CHECKS_BITS + bit, oriented_ksq, pos));
+        }
+      }
+    }
 
   }
 
@@ -95,14 +132,98 @@ namespace Stockfish::Eval::NNUE::Features {
       else if (dp.handPiece[i] != NO_PIECE)
         added.push_back(make_index(perspective, dp.handCount[i] - 1, dp.handPiece[i], oriented_ksq, pos));
     }
+
+    if (pos.nnue_points_index_base() >= 0)
+    {
+      auto clamp_points = [](int value) {
+        return std::max(0, std::min(value, POINTS_SCORE_MAX));
+      };
+      auto clamp_checks = [](int value) {
+        return std::max(0, std::min(value, CHECKS_MAX));
+      };
+      auto add_changed_bits = [&](int oldValue, int newValue, int baseOffset, int bits) {
+        for (int bit = 0; bit < bits; ++bit)
+        {
+          int mask = 1 << bit;
+          if ((oldValue ^ newValue) & mask)
+          {
+            if (oldValue & mask)
+              removed.push_back(make_points_index(perspective, baseOffset + bit, oriented_ksq, pos));
+            else
+              added.push_back(make_points_index(perspective, baseOffset + bit, oriented_ksq, pos));
+          }
+        }
+      };
+
+      int planeOffset = 0;
+      if (pos.nnue_points_score_planes())
+      {
+        int oldUs = st->previous ? clamp_points(st->previous->pointsScore[perspective]) : 0;
+        int newUs = clamp_points(st->pointsScore[perspective]);
+        int oldThem = st->previous ? clamp_points(st->previous->pointsScore[~perspective]) : 0;
+        int newThem = clamp_points(st->pointsScore[~perspective]);
+        add_changed_bits(oldUs, newUs, planeOffset, POINTS_SCORE_BITS);
+        add_changed_bits(oldThem, newThem, planeOffset + POINTS_SCORE_BITS, POINTS_SCORE_BITS);
+        planeOffset += pos.nnue_points_score_planes();
+      }
+      if (pos.nnue_points_check_planes())
+      {
+        int oldUs = st->previous ? clamp_checks(st->previous->checksRemaining[perspective]) : 0;
+        int newUs = clamp_checks(st->checksRemaining[perspective]);
+        int oldThem = st->previous ? clamp_checks(st->previous->checksRemaining[~perspective]) : 0;
+        int newThem = clamp_checks(st->checksRemaining[~perspective]);
+        add_changed_bits(oldUs, newUs, planeOffset, CHECKS_BITS);
+        add_changed_bits(oldThem, newThem, planeOffset + CHECKS_BITS, CHECKS_BITS);
+      }
+    }
   }
 
   int HalfKAv2Variants::update_cost(StateInfo* st) {
-    return st->dirtyPiece.dirty_num;
+    int cost = st->dirtyPiece.dirty_num;
+    if (!currentNnueVariant || currentNnueVariant->nnuePointsIndexBase < 0)
+      return cost;
+
+    auto clamp_points = [](int value) {
+      return std::max(0, std::min(value, POINTS_SCORE_MAX));
+    };
+    auto clamp_checks = [](int value) {
+      return std::max(0, std::min(value, CHECKS_MAX));
+    };
+    auto prev = st->previous;
+    if (currentNnueVariant->nnuePointsScorePlanes)
+    {
+      int oldW = prev ? clamp_points(prev->pointsScore[WHITE]) : 0;
+      int newW = clamp_points(st->pointsScore[WHITE]);
+      int oldB = prev ? clamp_points(prev->pointsScore[BLACK]) : 0;
+      int newB = clamp_points(st->pointsScore[BLACK]);
+      cost += popcount(Bitboard(oldW ^ newW)) + popcount(Bitboard(oldB ^ newB));
+    }
+    if (currentNnueVariant->nnuePointsCheckPlanes)
+    {
+      int oldW = prev ? clamp_checks(prev->checksRemaining[WHITE]) : 0;
+      int newW = clamp_checks(st->checksRemaining[WHITE]);
+      int oldB = prev ? clamp_checks(prev->checksRemaining[BLACK]) : 0;
+      int newB = clamp_checks(st->checksRemaining[BLACK]);
+      cost += popcount(Bitboard(oldW ^ newW)) + popcount(Bitboard(oldB ^ newB));
+    }
+    return cost;
   }
 
   int HalfKAv2Variants::refresh_cost(const Position& pos) {
-    return pos.count<ALL_PIECES>();
+    int cost = pos.count<ALL_PIECES>();
+    if (pos.nnue_points_index_base() >= 0)
+    {
+      if (pos.nnue_points_score_planes())
+        cost += popcount(Bitboard(pos.points_score_clamped(WHITE)))
+             + popcount(Bitboard(pos.points_score_clamped(BLACK)));
+      if (pos.nnue_points_check_planes())
+      {
+        int checksW = std::min<int>(std::max(0, int(pos.checks_remaining(WHITE))), CHECKS_MAX);
+        int checksB = std::min<int>(std::max(0, int(pos.checks_remaining(BLACK))), CHECKS_MAX);
+        cost += popcount(Bitboard(checksW)) + popcount(Bitboard(checksB));
+      }
+    }
+    return cost;
   }
 
   bool HalfKAv2Variants::requires_refresh(StateInfo* st, Color perspective, const Position& pos) {

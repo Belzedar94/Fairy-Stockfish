@@ -489,6 +489,16 @@ namespace {
         v->extinctionPieceTypes = piece_set(COMMONER);
         v->extinctionPseudoRoyal = true;
         v->petrifyOnCaptureTypes = piece_set(COMMONER) | QUEEN | ROOK | BISHOP | KNIGHT;
+        v->pointsConfigured = true;
+        v->pointsCountCaptures = true;
+        v->pointsCaptureValue[COMMONER] = 20;
+        v->pointsCaptureValue[QUEEN] = 9;
+        v->pointsCaptureValue[ROOK] = 5;
+        v->pointsCaptureValue[BISHOP] = 5;
+        v->pointsCaptureValue[KNIGHT] = 3;
+        v->pointsCaptureValue[PAWN] = 1;
+        v->pointsCaptureValue[CUSTOM_PIECE_1] = 1;
+        v->pointsCaptureValueSet = true;
         return v;
     }
     // Atomic chess without checks (ICC rules)
@@ -1983,6 +1993,51 @@ Variant* Variant::conclude() {
                   && !cambodianMoves
                   && !diagonalLines;
 
+    // Configure points-based scoring, defaulting from legacy materialCounting.
+    if (!pointsConfigured && materialCounting != NO_MATERIAL_COUNTING)
+    {
+        pointsAdjudicateDraw = true;
+        pointsTieValue = materialCounting == WHITE_DRAW_ODDS ? VALUE_MATE
+                       : materialCounting == BLACK_DRAW_ODDS ? -VALUE_MATE
+                                                           : VALUE_DRAW;
+        if (materialCounting == UNWEIGHTED_MATERIAL)
+        {
+            pointsCountPresent = true;
+            for (int pt = NO_PIECE_TYPE; pt < PIECE_TYPE_NB; ++pt)
+                pointsPresentValue[pt] = 1;
+            pointsPresentValueSet = true;
+        }
+        else if (materialCounting == JANGGI_MATERIAL)
+        {
+            pointsCountPresent = true;
+            pointsPresentValue[ROOK] = 13;
+            pointsPresentValue[JANGGI_CANNON] = 7;
+            pointsPresentValue[HORSE] = 5;
+            pointsPresentValue[JANGGI_ELEPHANT] = 3;
+            pointsPresentValue[WAZIR] = 3;
+            pointsPresentValue[SOLDIER] = 2;
+            pointsPresentValueSet = true;
+            pointsOffset[WHITE] -= 1;
+        }
+    }
+
+    if (pointsCountPresent && !pointsPresentValueSet)
+    {
+        for (int pt = NO_PIECE_TYPE; pt < PIECE_TYPE_NB; ++pt)
+            pointsPresentValue[pt] = pieceValue[MG][pt];
+        pointsPresentValueSet = true;
+    }
+
+    if (pointsCountCaptures && !pointsCaptureValueSet)
+    {
+        for (int pt = NO_PIECE_TYPE; pt < PIECE_TYPE_NB; ++pt)
+            pointsCaptureValue[pt] = pieceValue[MG][pt];
+        pointsCaptureValueSet = true;
+    }
+
+    pointsScoreEnabled = pointsCountCaptures || pointsCheckValue;
+    pointsEnabled = pointsScoreEnabled || pointsCountPresent || pointsWin || pointsAdjudicateDraw;
+
     // Initialize calculated NNUE properties
     nnueKing =  pieceTypes & KING ? KING
               : extinctionPieceCount == 0 && (extinctionPieceTypes & COMMONER) ? COMMONER
@@ -2010,6 +2065,10 @@ Variant* Variant::conclude() {
     int nnuePockets = nnueUsePockets ? 2 * int(maxFile + 1) : 0;
     int nnueNonDropPieceIndices = (2 * std::bitset<64>(pieceTypes).count() - (nnueKing != NO_PIECE_TYPE)) * nnueSquares;
     int nnuePieceIndices = nnueNonDropPieceIndices + 2 * (std::bitset<64>(pieceTypes).count() - (nnueKing != NO_PIECE_TYPE)) * nnuePockets;
+    nnuePointsScorePlanes = pointsScoreEnabled ? 2 * POINTS_SCORE_BITS : 0;
+    nnuePointsCheckPlanes = checkCounting ? 2 * CHECKS_BITS : 0;
+    nnuePointsIndexBase = (nnuePointsScorePlanes || nnuePointsCheckPlanes) ? nnuePieceIndices : -1;
+    nnuePieceIndices += nnuePointsScorePlanes + nnuePointsCheckPlanes;
     int i = 0;
     for (PieceSet ps = pieceTypes; ps;)
     {
@@ -2071,6 +2130,7 @@ Variant* Variant::conclude() {
                     && checkmateValue == -VALUE_MATE
                     && stalemateValue == VALUE_DRAW
                     && !materialCounting
+                    && !pointsEnabled
                     && !(flagRegion[WHITE] || flagRegion[BLACK])
                     && !mustCapture
                     && !checkCounting

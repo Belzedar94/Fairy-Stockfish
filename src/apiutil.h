@@ -943,6 +943,11 @@ inline Validation check_check_count(const std::string& checkCountInfo) {
         std::cerr << "Invalid check count '" << checkCountInfo << "'. Expects 1st character to be a digit." << std::endl;
         return NOK;
     }
+    if (checkCountInfo[1] != '+')
+    {
+        std::cerr << "Invalid check count '" << checkCountInfo << "'. Expects 2nd character to be '+'." << std::endl;
+        return NOK;
+    }
     if (!isdigit(checkCountInfo[2])) {
         std::cerr << "Invalid check count '" << checkCountInfo << "'. Expects 3rd character to be a digit." << std::endl;
         return NOK;
@@ -961,10 +966,36 @@ inline Validation check_lichess_check_count(const std::string& checkCountInfo) {
         std::cerr << "Invalid check count '" << checkCountInfo << "'. Expects 2nd character to be a digit up to 3." << std::endl;
         return NOK;
     }
+    if (checkCountInfo[0] != '+' || checkCountInfo[2] != '+')
+    {
+        std::cerr << "Invalid check count '" << checkCountInfo << "'. Expects '+' separators." << std::endl;
+        return NOK;
+    }
     if (!isdigit(checkCountInfo[3]) || checkCountInfo[3] - '0' > 3) {
         std::cerr << "Invalid check count '" << checkCountInfo << "'. Expects 4th character to be a digit up to 3." << std::endl;
         return NOK;
     }
+    return OK;
+}
+
+inline Validation check_points_score(const std::string& pointsInfo) {
+    size_t plusPos = pointsInfo.find('+');
+    if (plusPos == std::string::npos || plusPos == 0 || plusPos + 1 >= pointsInfo.size())
+    {
+        std::cerr << "Invalid points score '" << pointsInfo << "'. Expects <digits>+<digits>." << std::endl;
+        return NOK;
+    }
+    if (pointsInfo.find('+', plusPos + 1) != std::string::npos)
+    {
+        std::cerr << "Invalid points score '" << pointsInfo << "'. Expects a single '+' separator." << std::endl;
+        return NOK;
+    }
+    for (size_t i = 0; i < pointsInfo.size(); ++i)
+        if (i != plusPos && !isdigit(pointsInfo[i]))
+        {
+            std::cerr << "Invalid points score '" << pointsInfo << "'. Expects digits around '+'." << std::endl;
+            return NOK;
+        }
     return OK;
 }
 
@@ -1004,7 +1035,7 @@ inline FenValidation validate_fen(const std::string& fen, const Variant* v, bool
     std::vector<std::string> startFenParts = get_fen_parts(v->startFen, ' ');
 
     // check for number of parts
-    const unsigned int maxNumberFenParts = 6 + v->checkCounting;
+    const unsigned int maxNumberFenParts = 6 + v->checkCounting + v->pointsScoreEnabled;
     if (fenParts.size() < 1 || fenParts.size() > maxNumberFenParts)
     {
         std::cerr << "Invalid number of fen parts. Expected: >= 1 and <= " << maxNumberFenParts
@@ -1125,18 +1156,32 @@ inline FenValidation validate_fen(const std::string& fen, const Variant* v, bool
     // check check count
     unsigned int optionalInbetweenFields = 2 * !skipCastlingAndEp;
     unsigned int optionalTrailingFields = 0;
-    if (fenParts.size() >= 3 + optionalInbetweenFields && v->checkCounting && fenParts.size() % 2)
+    bool hasCheckCount = false;
+    unsigned int inbetweenIndex = 2 + optionalInbetweenFields;
+    if (v->checkCounting && fenParts.size() > inbetweenIndex)
     {
-        if (check_check_count(fenParts[2 + optionalInbetweenFields]) == NOK)
+        if (check_check_count(fenParts[inbetweenIndex]) == OK)
         {
-            // allow valid lichess style check as alternative
-            if (fenParts.size() < 5 + optionalInbetweenFields || check_lichess_check_count(fenParts[fenParts.size() - 1]) == NOK)
-                return FEN_INVALID_CHECK_COUNT;
-            else
-                optionalTrailingFields++;
-        }
-        else
+            hasCheckCount = true;
             optionalInbetweenFields++;
+            inbetweenIndex++;
+        }
+    }
+    if (v->pointsScoreEnabled && fenParts.size() > inbetweenIndex)
+    {
+        if (check_points_score(fenParts[inbetweenIndex]) == OK)
+        {
+            optionalInbetweenFields++;
+            inbetweenIndex++;
+        }
+    }
+    if (v->checkCounting && !hasCheckCount)
+    {
+        // allow valid lichess style check as alternative
+        if (fenParts.size() >= 5 + optionalInbetweenFields && check_lichess_check_count(fenParts[fenParts.size() - 1]) == OK)
+            optionalTrailingFields++;
+        else if (fenParts.size() >= 3 + optionalInbetweenFields && fenParts[inbetweenIndex].find('+') != std::string::npos)
+            return FEN_INVALID_CHECK_COUNT;
     }
 
     // 6) Part
