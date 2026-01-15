@@ -330,6 +330,9 @@ Variant* VariantParser<DoCheck>::parse(Variant* v) {
         const auto& pv = config.find(optionName);
         if (pv == config.end())
             return false;
+        if (!setFlag)
+            for (int pt = NO_PIECE_TYPE; pt < PIECE_TYPE_NB; ++pt)
+                values[pt] = v->pieceValue[MG][pt];
         char token;
         size_t idx = 0;
         std::stringstream ss(pv->second);
@@ -345,10 +348,12 @@ Variant* VariantParser<DoCheck>::parse(Variant* v) {
     };
 
     int pointsValues[PIECE_TYPE_NB] = {};
-    if (parse_points_values("pointsValue", pointsValues, v->pointsPresentValueSet))
+    bool pointsValuesSet = false;
+    if (parse_points_values("pointsValue", pointsValues, pointsValuesSet))
     {
         std::copy(std::begin(pointsValues), std::end(pointsValues), v->pointsPresentValue);
         std::copy(std::begin(pointsValues), std::end(pointsValues), v->pointsCaptureValue);
+        v->pointsPresentValueSet = true;
         v->pointsCaptureValueSet = true;
     }
     parse_points_values("pointsPresentValue", v->pointsPresentValue, v->pointsPresentValueSet);

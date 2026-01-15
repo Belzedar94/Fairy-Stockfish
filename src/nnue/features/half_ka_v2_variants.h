@@ -57,11 +57,18 @@ namespace Stockfish::Eval::NNUE::Features {
     // Hash value embedded in the evaluation file
     static constexpr std::uint32_t HashValueNoPoints = 0x5f234cb8u;
     static constexpr std::uint32_t HashValueWithPoints = 0x8f3f9d5au;
+    static constexpr int DefaultPointsScoreBits = 8;
+    static constexpr int DefaultChecksBits = 4;
 
     static std::uint32_t get_hash_value() {
-      return currentNnueVariant && currentNnueVariant->nnuePointsIndexBase >= 0
-             ? HashValueWithPoints
-             : HashValueNoPoints;
+      if (!currentNnueVariant || currentNnueVariant->nnuePointsIndexBase < 0)
+          return HashValueNoPoints;
+      std::uint32_t hash = HashValueWithPoints;
+      if (currentNnueVariant->nnuePointsScorePlanes > 0 && POINTS_SCORE_BITS != DefaultPointsScoreBits)
+          hash ^= (std::uint32_t(POINTS_SCORE_BITS) & 0xFFu) << 8;
+      if (currentNnueVariant->nnuePointsCheckPlanes > 0 && CHECKS_BITS != DefaultChecksBits)
+          hash ^= (std::uint32_t(CHECKS_BITS) & 0xFFu);
+      return hash;
     }
 
     // Number of feature dimensions
