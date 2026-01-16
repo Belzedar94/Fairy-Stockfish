@@ -1,0 +1,2 @@
+perft testing started
+perft testing OK

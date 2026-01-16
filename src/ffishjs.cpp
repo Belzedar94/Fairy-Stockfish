@@ -382,7 +382,7 @@ public:
     for (PieceType pt = KING; pt >= PAWN; --pt) {
       for (int i = 0; i < pos.count_in_hand(c, pt); ++i) {
         // only create BLACK pieces in order to convert to lower case
-        pocket += std::string(1, pos.piece_to_char()[make_piece(BLACK, pt)]);
+        pocket += pos.piece_symbol(make_piece(BLACK, pt));
       }
     }
     return pocket;
@@ -400,7 +400,7 @@ public:
           stringBoard += '.';
           break;
         default:
-          stringBoard += pos.piece_to_char()[p];
+          stringBoard += pos.piece_symbol(p);
         }
       }
       if (r != RANK_1)

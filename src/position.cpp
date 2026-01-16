@@ -64,9 +64,12 @@ std::ostream& operator<<(std::ostream& os, const Position& pos) {
           if (pos.state()->wallSquares & make_square(f, r))
               os << " | *";
           else if (pos.unpromoted_piece_on(make_square(f, r)))
-              os << " |+" << pos.piece_to_char()[pos.unpromoted_piece_on(make_square(f, r))];
+              os << " |+" << pos.piece_symbol(pos.unpromoted_piece_on(make_square(f, r)));
           else
-              os << " | " << pos.piece_to_char()[pos.piece_on(make_square(f, r))];
+          {
+              const std::string& symbol = pos.piece_symbol(pos.piece_on(make_square(f, r)));
+              os << " | " << (symbol.empty() ? " " : symbol);
+          }
 
       os << " |" << (1 + r);
       if (r == pos.max_rank() || r == RANK_1)
@@ -80,7 +83,8 @@ std::ostream& operator<<(std::ostream& os, const Position& pos) {
           {
               os << " [";
               for (PieceType pt = KING; pt >= PAWN; --pt)
-                  os << std::string(pos.count_in_hand(c, pt), pos.piece_to_char()[make_piece(c, pt)]);
+                  for (int i = 0; i < pos.count_in_hand(c, pt); ++i)
+                      os << pos.piece_symbol(make_piece(c, pt));
               os << "]";
           }
       }
@@ -129,7 +133,10 @@ std::ostream& operator<<(std::ostream& os, const Position& pos) {
 // https://marcelk.net/2013-04-06/paper/upcoming-rep-v2.pdf
 
 // First and second hash functions for indexing the cuckoo tables
-#ifdef LARGEBOARDS
+#if defined(VERY_LARGE_BOARDS)
+inline int H1(Key h) { return h & 0xffff; }
+inline int H2(Key h) { return (h >> 16) & 0xffff; }
+#elif defined(LARGEBOARDS)
 inline int H1(Key h) { return h & 0x7fff; }
 inline int H2(Key h) { return (h >> 16) & 0x7fff; }
 #else
@@ -274,6 +281,16 @@ Position& Position::set(const Variant* v, const string& fenStr, bool isChess960,
 
   Rank r = max_rank();
   Square sq = SQ_A1 + r * NORTH;
+  auto read_symbol = [&](char first) {
+      std::string symbol(1, first);
+      if (Variant::is_piece_id_suffix(ss.peek()))
+      {
+          char suffix;
+          ss >> suffix;
+          symbol.push_back(suffix);
+      }
+      return symbol;
+  };
 
   // 1. Piece placement
   while ((ss >> token) && !isspace(token))
@@ -313,20 +330,37 @@ Position& Position::set(const Variant* v, const string& fenStr, bool isChess960,
           ++sq;
       }
 
-      else if ((idx = piece_to_char().find(token)) != string::npos || (idx = piece_to_char_synonyms().find(token)) != string::npos)
+      else if (Variant::is_piece_id_start(token))
       {
-          if (ss.peek() == '~')
-              ss >> token;
-          put_piece(Piece(idx), sq, token == '~');
-          ++sq;
+          std::string symbol = read_symbol(token);
+          Piece pc = piece_from_symbol(symbol);
+          if (pc != NO_PIECE)
+          {
+              bool promoted = false;
+              if (ss.peek() == '~')
+              {
+                  ss >> token;
+                  promoted = true;
+              }
+              put_piece(pc, sq, promoted);
+              ++sq;
+          }
       }
 
       // Promoted shogi pieces
-      else if (token == '+' && (idx = piece_to_char().find(ss.peek())) != string::npos && promoted_piece_type(type_of(Piece(idx))))
+      else if (token == '+')
       {
-          ss >> token;
-          put_piece(make_piece(color_of(Piece(idx)), promoted_piece_type(type_of(Piece(idx)))), sq, true, Piece(idx));
-          ++sq;
+          if (Variant::is_piece_id_start(ss.peek()))
+          {
+              ss >> token;
+              std::string symbol = read_symbol(token);
+              Piece pc = piece_from_symbol(symbol);
+              if (pc != NO_PIECE && promoted_piece_type(type_of(pc)))
+              {
+                  put_piece(make_piece(color_of(pc), promoted_piece_type(type_of(pc))), sq, true, pc);
+                  ++sq;
+              }
+          }
       }
   }
   // Pieces in hand
@@ -335,8 +369,13 @@ Position& Position::set(const Variant* v, const string& fenStr, bool isChess960,
       {
           if (token == ']')
               continue;
-          else if ((idx = piece_to_char().find(token)) != string::npos)
-              add_to_hand(Piece(idx));
+          else if (Variant::is_piece_id_start(token))
+          {
+              std::string symbol = read_symbol(token);
+              Piece pc = piece_from_symbol(symbol);
+              if (pc != NO_PIECE)
+                  add_to_hand(pc);
+          }
       }
 
   // 2. Active color
@@ -495,10 +534,13 @@ Position& Position::set(const Variant* v, const string& fenStr, bool isChess960,
               while (isdigit(ss.peek()) && ss >> token)
                   handCount = 10 * handCount + (token - '0');
           }
-          else if ((idx = piece_to_char().find(token)) != string::npos)
+          else if (Variant::is_piece_id_start(token))
           {
-              for (int i = 0; i < handCount; i++)
-                  add_to_hand(Piece(idx));
+              std::string symbol = read_symbol(token);
+              Piece pc = piece_from_symbol(symbol);
+              if (pc != NO_PIECE)
+                  for (int i = 0; i < handCount; i++)
+                      add_to_hand(pc);
               handCount = 1;
           }
       }
@@ -693,6 +735,11 @@ string Position::fen(bool sfen, bool showPromoted, int countStarted, std::string
 
   int emptyCnt;
   std::ostringstream ss;
+  auto append_piece_symbols = [&](Piece pc, int count) {
+      const std::string& symbol = piece_symbol(pc);
+      for (int i = 0; i < count; ++i)
+          ss << symbol;
+  };
 
   for (Rank r = max_rank(); r >= RANK_1; --r)
   {
@@ -711,10 +758,10 @@ string Position::fen(bool sfen, bool showPromoted, int countStarted, std::string
                   ss << "*";
               else if (unpromoted_piece_on(make_square(f, r)))
                   // Promoted shogi pieces, e.g., +r for dragon
-                  ss << "+" << piece_to_char()[unpromoted_piece_on(make_square(f, r))];
+                  ss << "+" << piece_symbol(unpromoted_piece_on(make_square(f, r)));
               else
               {
-                  ss << piece_to_char()[piece_on(make_square(f, r))];
+                  ss << piece_symbol(piece_on(make_square(f, r)));
 
                   // Set promoted pieces
                   if (((captures_to_hand() && !drop_loop()) || two_boards() ||  showPromoted) && is_promoted(make_square(f, r)))
@@ -737,7 +784,7 @@ string Position::fen(bool sfen, bool showPromoted, int countStarted, std::string
               {
                   if (pieceCountInHand[c][pt] > 1)
                       ss << pieceCountInHand[c][pt];
-                  ss << piece_to_char()[make_piece(c, pt)];
+                  ss << piece_symbol(make_piece(c, pt));
               }
       if (count_in_hand(ALL_PIECES) == 0)
           ss << '-';
@@ -756,7 +803,7 @@ string Position::fen(bool sfen, bool showPromoted, int countStarted, std::string
               for (PieceType pt = KING; pt >= PAWN; --pt)
               {
                   assert(pieceCountInHand[c][pt] >= 0);
-                  ss << std::string(pieceCountInHand[c][pt], piece_to_char()[make_piece(c, pt)]);
+                  append_piece_symbols(make_piece(c, pt), pieceCountInHand[c][pt]);
               }
       ss << ']';
   }
@@ -1120,7 +1167,7 @@ bool Position::legal(Move m) const {
       if (walling_rule() == DUCK)
           occupied ^= st->wallSquares;
       if (walling() || is_gating(m))
-          occupied |= gating_square(m);
+          occupied |= gate_square(m);
       if (type_of(m) == CASTLING)
       {
           // After castling, the rook and king final positions are the same in
@@ -1236,7 +1283,7 @@ bool Position::legal(Move m) const {
 
       // Will the gate be blocked by king or rook?
       Square rto = to + (to_sq(m) > from_sq(m) ? WEST : EAST);
-      if (is_gating(m) && (gating_square(m) == to || gating_square(m) == rto))
+      if (is_gating(m) && (gate_square(m) == to || gate_square(m) == rto))
           return false;
 
       // Non-royal pieces can not be impeded from castling
@@ -1327,14 +1374,14 @@ bool Position::pseudo_legal(const Move m) const {
       Bitboard wallsquares = st->wallSquares;
 
       // Illegal wall square placement
-      if (!((board_bb() & ~((pieces() ^ from) | to)) & gating_square(m)))
+      if (!((board_bb() & ~((pieces() ^ from) | to)) & gate_square(m)))
           return false;
-      if (!(var->wallingRegion[us] & gating_square(m)) || //putting a wall on disallowed square
-          wallsquares & gating_square(m)) //or square already with a wall
+      if (!(var->wallingRegion[us] & gate_square(m)) || //putting a wall on disallowed square
+          wallsquares & gate_square(m)) //or square already with a wall
           return false;
-      if (walling_rule() == ARROW && !(moves_bb(us, type_of(pc), to, pieces() ^ from) & gating_square(m)))
+      if (walling_rule() == ARROW && !(moves_bb(us, type_of(pc), to, pieces() ^ from) & gate_square(m)))
           return false;
-      if (walling_rule() == PAST && (from != gating_square(m)))
+      if (walling_rule() == PAST && (from != gate_square(m)))
           return false;
       if (walling_rule() == EDGE)
       {
@@ -1342,7 +1389,7 @@ bool Position::pseudo_legal(const Move m) const {
                   ((FileABB | file_bb(max_file()) | Rank1BB | rank_bb(max_rank())) |
                   ( shift<NORTH     >(wallsquares) | shift<SOUTH     >(wallsquares)
                   | shift<EAST      >(wallsquares) | shift<WEST      >(wallsquares)));
-          if (!(validsquares & gating_square(m))) return false;
+          if (!(validsquares & gate_square(m))) return false;
       };
   }
 
@@ -1465,7 +1512,7 @@ bool Position::gives_check(Move m) const {
 
   // Is there a check by gated pieces?
   if (    is_gating(m)
-      && attacks_bb(sideToMove, gating_type(m), gating_square(m), (pieces() ^ from) | to) & square<KING>(~sideToMove))
+      && attacks_bb(sideToMove, gating_type(m), gate_square(m), (pieces() ^ from) | to) & square<KING>(~sideToMove))
       return true;
 
   // Petrified piece can't give check
@@ -1851,7 +1898,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
       {
           if (   (var->enPassantRegion[them] & (to - pawn_push(us)))
               && ((pawn_attacks_bb(us, to - pawn_push(us)) & pieces(them, PAWN)) || var->enPassantTypes[them] & ~piece_set(PAWN))
-              && !(walling() && gating_square(m) == to - pawn_push(us)))
+              && !(walling() && gate_square(m) == to - pawn_push(us)))
           {
               st->epSquares |= to - pawn_push(us);
               k ^= Zobrist::enpassant[file_of(to)];
@@ -1859,7 +1906,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
           if (   std::abs(int(to) - int(from)) == 3 * NORTH
               && (var->enPassantRegion[them] & (to - 2 * pawn_push(us)))
               && ((pawn_attacks_bb(us, to - 2 * pawn_push(us)) & pieces(them, PAWN)) || var->enPassantTypes[them] & ~piece_set(PAWN))
-              && !(walling() && gating_square(m) == to - 2 * pawn_push(us)))
+              && !(walling() && gate_square(m) == to - 2 * pawn_push(us)))
           {
               st->epSquares |= to - 2 * pawn_push(us);
               k ^= Zobrist::enpassant[file_of(to)];
@@ -1940,7 +1987,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
   // Add gating piece
   if (is_gating(m))
   {
-      Square gate = gating_square(m);
+      Square gate = gate_square(m);
       Piece gating_piece = make_piece(us, gating_type(m));
 
       if (Eval::useNNUE)
@@ -2076,9 +2123,9 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
               k ^= Zobrist::wall[pop_lsb(b)];
           st->wallSquares = 0;
       }
-      st->wallSquares |= gating_square(m);
-      byTypeBB[ALL_PIECES] |= gating_square(m);
-      k ^= Zobrist::wall[gating_square(m)];
+      st->wallSquares |= gate_square(m);
+      byTypeBB[ALL_PIECES] |= gate_square(m);
+      k ^= Zobrist::wall[gate_square(m)];
   }
 
   // Update the key with the final value
@@ -2181,10 +2228,10 @@ void Position::undo_move(Move m) {
   if (is_gating(m))
   {
       Piece gating_piece = make_piece(us, gating_type(m));
-      remove_piece(gating_square(m));
-      board[gating_square(m)] = NO_PIECE;
+      remove_piece(gate_square(m));
+      board[gate_square(m)] = NO_PIECE;
       add_to_hand(gating_piece);
-      st->gatesBB[us] |= gating_square(m);
+      st->gatesBB[us] |= gate_square(m);
   }
 
   if (type_of(m) == PROMOTION)

@@ -78,7 +78,7 @@
 #  include <xmmintrin.h> // Intel and Microsoft header for _mm_prefetch()
 #endif
 
-#if defined(USE_PEXT)
+#if defined(USE_PEXT) && !defined(VERY_LARGE_BOARDS)
 #  include <immintrin.h> // Header for _pext_u64() intrinsic
 #  ifdef LARGEBOARDS
 #    define pext(b, m) (_pext_u64(b, m) ^ (_pext_u64(b >> 64, m >> 64) << popcount((m << 64) >> 64)))
@@ -97,7 +97,7 @@ constexpr bool HasPopCnt = true;
 constexpr bool HasPopCnt = false;
 #endif
 
-#ifdef USE_PEXT
+#if defined(USE_PEXT) && !defined(VERY_LARGE_BOARDS)
 constexpr bool HasPext = true;
 #else
 constexpr bool HasPext = false;
@@ -110,41 +110,89 @@ constexpr bool Is64Bit = false;
 #endif
 
 typedef uint64_t Key;
-#ifdef LARGEBOARDS
-#if defined(__GNUC__) && defined(IS_64BIT)
-typedef unsigned __int128 Bitboard;
-#else
-struct Bitboard {
-    uint64_t b64[2];
 
-    constexpr Bitboard() : b64 {0, 0} {}
-    constexpr Bitboard(uint64_t i) : b64 {0, i} {}
-    constexpr Bitboard(uint64_t hi, uint64_t lo) : b64 {hi, lo} {};
+#if defined(VERY_LARGE_BOARDS) && !defined(LARGEBOARDS)
+#  define LARGEBOARDS
+#endif
+
+#ifdef VERY_LARGE_BOARDS
+struct Bitboard {
+    uint64_t b64[4];
+
+    constexpr Bitboard() : b64 {0, 0, 0, 0} {}
+    constexpr Bitboard(uint64_t i) : b64 {0, 0, 0, i} {}
+    constexpr Bitboard(uint64_t b3, uint64_t b2, uint64_t b1, uint64_t b0) : b64 {b3, b2, b1, b0} {}
 
     constexpr operator bool() const {
-        return b64[0] || b64[1];
+        return b64[0] || b64[1] || b64[2] || b64[3];
     }
 
     constexpr operator long long unsigned () const {
-        return b64[1];
+        return b64[3];
     }
 
     constexpr operator unsigned() const {
-        return b64[1];
+        return b64[3];
     }
 
     constexpr Bitboard operator << (const unsigned int bits) const {
-        return Bitboard(  bits >= 64 ? b64[1] << (bits - 64)
-                        : bits == 0  ? b64[0]
-                        : ((b64[0] << bits) | (b64[1] >> (64 - bits))),
-                        bits >= 64 ? 0 : b64[1] << bits);
+        if (bits == 0)
+            return *this;
+        if (bits >= 256)
+            return Bitboard();
+        if (bits >= 192)
+            return Bitboard(b64[3] << (bits - 192), 0, 0, 0);
+        if (bits >= 128)
+        {
+            const unsigned shift = bits - 128;
+            return Bitboard(  (b64[2] << shift) | (shift ? (b64[3] >> (64 - shift)) : 0),
+                              b64[3] << shift,
+                              0, 0);
+        }
+        if (bits >= 64)
+        {
+            const unsigned shift = bits - 64;
+            return Bitboard(  (b64[1] << shift) | (shift ? (b64[2] >> (64 - shift)) : 0),
+                              (b64[2] << shift) | (shift ? (b64[3] >> (64 - shift)) : 0),
+                              b64[3] << shift,
+                              0);
+        }
+        return Bitboard(  (b64[0] << bits) | (b64[1] >> (64 - bits)),
+                          (b64[1] << bits) | (b64[2] >> (64 - bits)),
+                          (b64[2] << bits) | (b64[3] >> (64 - bits)),
+                          b64[3] << bits);
     }
 
     constexpr Bitboard operator >> (const unsigned int bits) const {
-        return Bitboard(bits >= 64 ? 0 : b64[0] >> bits,
-                          bits >= 64 ? b64[0] >> (bits - 64)
-                        : bits == 0  ? b64[1]
-                        : ((b64[1] >> bits) | (b64[0] << (64 - bits))));
+        if (bits == 0)
+            return *this;
+        if (bits >= 256)
+            return Bitboard();
+        if (bits >= 192)
+            return Bitboard(0, 0, 0, b64[0] >> (bits - 192));
+        if (bits >= 128)
+        {
+            const unsigned shift = bits - 128;
+            if (shift == 0)
+                return Bitboard(0, 0, b64[0], b64[1]);
+            return Bitboard(0, 0,
+                            b64[0] >> shift,
+                            (b64[0] << (64 - shift)) | (b64[1] >> shift));
+        }
+        if (bits >= 64)
+        {
+            const unsigned shift = bits - 64;
+            if (shift == 0)
+                return Bitboard(0, b64[0], b64[1], b64[2]);
+            return Bitboard(0,
+                            b64[0] >> shift,
+                            (b64[0] << (64 - shift)) | (b64[1] >> shift),
+                            (b64[1] << (64 - shift)) | (b64[2] >> shift));
+        }
+        return Bitboard(  b64[0] >> bits,
+                          (b64[0] << (64 - bits)) | (b64[1] >> bits),
+                          (b64[1] << (64 - bits)) | (b64[2] >> bits),
+                          (b64[2] << (64 - bits)) | (b64[3] >> bits));
     }
 
     constexpr Bitboard operator << (const int bits) const {
@@ -166,41 +214,61 @@ struct Bitboard {
     inline Bitboard& operator |=(const Bitboard x) {
         b64[0] |= x.b64[0];
         b64[1] |= x.b64[1];
+        b64[2] |= x.b64[2];
+        b64[3] |= x.b64[3];
         return *this;
     }
     inline Bitboard& operator &=(const Bitboard x) {
         b64[0] &= x.b64[0];
         b64[1] &= x.b64[1];
+        b64[2] &= x.b64[2];
+        b64[3] &= x.b64[3];
         return *this;
     }
     inline Bitboard& operator ^=(const Bitboard x) {
         b64[0] ^= x.b64[0];
         b64[1] ^= x.b64[1];
+        b64[2] ^= x.b64[2];
+        b64[3] ^= x.b64[3];
         return *this;
     }
 
     constexpr Bitboard operator ~ () const {
-        return Bitboard(~b64[0], ~b64[1]);
+        return Bitboard(~b64[0], ~b64[1], ~b64[2], ~b64[3]);
     }
 
     constexpr Bitboard operator - () const {
-        return Bitboard(-b64[0] - (b64[1] > 0), -b64[1]);
+        uint64_t n3 = 0ULL - b64[3];
+        uint64_t borrow = b64[3] != 0;
+        uint64_t n2 = 0ULL - b64[2] - borrow;
+        borrow = (b64[2] != 0) || borrow;
+        uint64_t n1 = 0ULL - b64[1] - borrow;
+        borrow = (b64[1] != 0) || borrow;
+        uint64_t n0 = 0ULL - b64[0] - borrow;
+        return Bitboard(n0, n1, n2, n3);
     }
 
     constexpr Bitboard operator | (const Bitboard x) const {
-        return Bitboard(b64[0] | x.b64[0], b64[1] | x.b64[1]);
+        return Bitboard(b64[0] | x.b64[0], b64[1] | x.b64[1], b64[2] | x.b64[2], b64[3] | x.b64[3]);
     }
 
     constexpr Bitboard operator & (const Bitboard x) const {
-        return Bitboard(b64[0] & x.b64[0], b64[1] & x.b64[1]);
+        return Bitboard(b64[0] & x.b64[0], b64[1] & x.b64[1], b64[2] & x.b64[2], b64[3] & x.b64[3]);
     }
 
     constexpr Bitboard operator ^ (const Bitboard x) const {
-        return Bitboard(b64[0] ^ x.b64[0], b64[1] ^ x.b64[1]);
+        return Bitboard(b64[0] ^ x.b64[0], b64[1] ^ x.b64[1], b64[2] ^ x.b64[2], b64[3] ^ x.b64[3]);
     }
 
     constexpr Bitboard operator - (const Bitboard x) const {
-        return Bitboard(b64[0] - x.b64[0] - (b64[1] < x.b64[1]), b64[1] - x.b64[1]);
+        uint64_t r3 = b64[3] - x.b64[3];
+        uint64_t borrow = b64[3] < x.b64[3];
+        uint64_t r2 = b64[2] - x.b64[2] - borrow;
+        borrow = (b64[2] < x.b64[2]) || (borrow && b64[2] == x.b64[2]);
+        uint64_t r1 = b64[1] - x.b64[1] - borrow;
+        borrow = (b64[1] < x.b64[1]) || (borrow && b64[1] == x.b64[1]);
+        uint64_t r0 = b64[0] - x.b64[0] - borrow;
+        return Bitboard(r0, r1, r2, r3);
     }
 
     constexpr Bitboard operator - (const int x) const {
@@ -208,17 +276,44 @@ struct Bitboard {
     }
 
     inline Bitboard operator * (const Bitboard x) const {
-        uint64_t a_lo = (uint32_t)b64[1];
-        uint64_t a_hi = b64[1] >> 32;
-        uint64_t b_lo = (uint32_t)x.b64[1];
-        uint64_t b_hi = x.b64[1] >> 32;
+#if defined(__GNUC__) || defined(__clang__)
+        uint64_t r[4] = {0, 0, 0, 0};
+        const uint64_t a[4] = { b64[3], b64[2], b64[1], b64[0] };
+        const uint64_t b[4] = { x.b64[3], x.b64[2], x.b64[1], x.b64[0] };
 
-        uint64_t t1 = (a_hi * b_lo) + ((a_lo * b_lo) >> 32);
-        uint64_t t2 = (a_lo * b_hi) + (t1 & 0xFFFFFFFF);
-
-        return Bitboard(b64[0] * x.b64[1] + b64[1] * x.b64[0] + (a_hi * b_hi) + (t1 >> 32) + (t2 >> 32),
-                        (t2 << 32) + (a_lo * b_lo & 0xFFFFFFFF));
+        for (int i = 0; i < 4; ++i)
+        {
+            unsigned __int128 carry = 0;
+            for (int j = 0; j + i < 4; ++j)
+            {
+                unsigned __int128 t = (unsigned __int128)a[i] * b[j];
+                t += r[i + j];
+                t += carry;
+                r[i + j] = uint64_t(t);
+                carry = t >> 64;
+            }
+        }
+        return Bitboard(r[3], r[2], r[1], r[0]);
+#else
+        Bitboard result;
+        for (int i = 0; i < 256; ++i)
+            if (((*this >> i) & Bitboard(1)))
+                result |= x << i;
+        return result;
+#endif
    }
+};
+constexpr int SQUARE_BITS = 8;
+#elif defined(LARGEBOARDS)
+#if defined(__GNUC__) && defined(IS_64BIT)
+typedef unsigned __int128 Bitboard;
+#else
+struct Bitboard {
+    uint64_t b64[2];
+
+    constexpr Bitboard() : b64 {0, 0} {}
+    constexpr Bitboard(uint64_t i) : b64 {0, i} {}
+    constexpr Bitboard(uint64_t hi, uint64_t lo) : b64 {hi, lo} {};
 };
 #endif
 constexpr int SQUARE_BITS = 7;
@@ -492,7 +587,24 @@ enum : int {
 };
 
 enum Square : int {
-#ifdef LARGEBOARDS
+#if defined(VERY_LARGE_BOARDS)
+  SQ_A1, SQ_B1, SQ_C1, SQ_D1, SQ_E1, SQ_F1, SQ_G1, SQ_H1, SQ_I1, SQ_J1, SQ_K1, SQ_L1, SQ_M1, SQ_N1, SQ_O1, SQ_P1,
+  SQ_A2, SQ_B2, SQ_C2, SQ_D2, SQ_E2, SQ_F2, SQ_G2, SQ_H2, SQ_I2, SQ_J2, SQ_K2, SQ_L2, SQ_M2, SQ_N2, SQ_O2, SQ_P2,
+  SQ_A3, SQ_B3, SQ_C3, SQ_D3, SQ_E3, SQ_F3, SQ_G3, SQ_H3, SQ_I3, SQ_J3, SQ_K3, SQ_L3, SQ_M3, SQ_N3, SQ_O3, SQ_P3,
+  SQ_A4, SQ_B4, SQ_C4, SQ_D4, SQ_E4, SQ_F4, SQ_G4, SQ_H4, SQ_I4, SQ_J4, SQ_K4, SQ_L4, SQ_M4, SQ_N4, SQ_O4, SQ_P4,
+  SQ_A5, SQ_B5, SQ_C5, SQ_D5, SQ_E5, SQ_F5, SQ_G5, SQ_H5, SQ_I5, SQ_J5, SQ_K5, SQ_L5, SQ_M5, SQ_N5, SQ_O5, SQ_P5,
+  SQ_A6, SQ_B6, SQ_C6, SQ_D6, SQ_E6, SQ_F6, SQ_G6, SQ_H6, SQ_I6, SQ_J6, SQ_K6, SQ_L6, SQ_M6, SQ_N6, SQ_O6, SQ_P6,
+  SQ_A7, SQ_B7, SQ_C7, SQ_D7, SQ_E7, SQ_F7, SQ_G7, SQ_H7, SQ_I7, SQ_J7, SQ_K7, SQ_L7, SQ_M7, SQ_N7, SQ_O7, SQ_P7,
+  SQ_A8, SQ_B8, SQ_C8, SQ_D8, SQ_E8, SQ_F8, SQ_G8, SQ_H8, SQ_I8, SQ_J8, SQ_K8, SQ_L8, SQ_M8, SQ_N8, SQ_O8, SQ_P8,
+  SQ_A9, SQ_B9, SQ_C9, SQ_D9, SQ_E9, SQ_F9, SQ_G9, SQ_H9, SQ_I9, SQ_J9, SQ_K9, SQ_L9, SQ_M9, SQ_N9, SQ_O9, SQ_P9,
+  SQ_A10, SQ_B10, SQ_C10, SQ_D10, SQ_E10, SQ_F10, SQ_G10, SQ_H10, SQ_I10, SQ_J10, SQ_K10, SQ_L10, SQ_M10, SQ_N10, SQ_O10, SQ_P10,
+  SQ_A11, SQ_B11, SQ_C11, SQ_D11, SQ_E11, SQ_F11, SQ_G11, SQ_H11, SQ_I11, SQ_J11, SQ_K11, SQ_L11, SQ_M11, SQ_N11, SQ_O11, SQ_P11,
+  SQ_A12, SQ_B12, SQ_C12, SQ_D12, SQ_E12, SQ_F12, SQ_G12, SQ_H12, SQ_I12, SQ_J12, SQ_K12, SQ_L12, SQ_M12, SQ_N12, SQ_O12, SQ_P12,
+  SQ_A13, SQ_B13, SQ_C13, SQ_D13, SQ_E13, SQ_F13, SQ_G13, SQ_H13, SQ_I13, SQ_J13, SQ_K13, SQ_L13, SQ_M13, SQ_N13, SQ_O13, SQ_P13,
+  SQ_A14, SQ_B14, SQ_C14, SQ_D14, SQ_E14, SQ_F14, SQ_G14, SQ_H14, SQ_I14, SQ_J14, SQ_K14, SQ_L14, SQ_M14, SQ_N14, SQ_O14, SQ_P14,
+  SQ_A15, SQ_B15, SQ_C15, SQ_D15, SQ_E15, SQ_F15, SQ_G15, SQ_H15, SQ_I15, SQ_J15, SQ_K15, SQ_L15, SQ_M15, SQ_N15, SQ_O15, SQ_P15,
+  SQ_A16, SQ_B16, SQ_C16, SQ_D16, SQ_E16, SQ_F16, SQ_G16, SQ_H16, SQ_I16, SQ_J16, SQ_K16, SQ_L16, SQ_M16, SQ_N16, SQ_O16, SQ_P16,
+#elif defined(LARGEBOARDS)
   SQ_A1, SQ_B1, SQ_C1, SQ_D1, SQ_E1, SQ_F1, SQ_G1, SQ_H1, SQ_I1, SQ_J1, SQ_K1, SQ_L1,
   SQ_A2, SQ_B2, SQ_C2, SQ_D2, SQ_E2, SQ_F2, SQ_G2, SQ_H2, SQ_I2, SQ_J2, SQ_K2, SQ_L2,
   SQ_A3, SQ_B3, SQ_C3, SQ_D3, SQ_E3, SQ_F3, SQ_G3, SQ_H3, SQ_I3, SQ_J3, SQ_K3, SQ_L3,
@@ -516,7 +628,10 @@ enum Square : int {
   SQ_NONE,
 
   SQUARE_ZERO = 0,
-#ifdef LARGEBOARDS
+#if defined(VERY_LARGE_BOARDS)
+  SQUARE_NB = 256,
+  SQUARE_BIT_MASK = 255,
+#elif defined(LARGEBOARDS)
   SQUARE_NB = 120,
   SQUARE_BIT_MASK = 127,
 #else
@@ -529,7 +644,9 @@ enum Square : int {
 };
 
 enum Direction : int {
-#ifdef LARGEBOARDS
+#if defined(VERY_LARGE_BOARDS)
+  NORTH =  16,
+#elif defined(LARGEBOARDS)
   NORTH =  12,
 #else
   NORTH =  8,
@@ -545,7 +662,10 @@ enum Direction : int {
 };
 
 enum File : int {
-#ifdef LARGEBOARDS
+#if defined(VERY_LARGE_BOARDS)
+  FILE_A, FILE_B, FILE_C, FILE_D, FILE_E, FILE_F, FILE_G, FILE_H,
+  FILE_I, FILE_J, FILE_K, FILE_L, FILE_M, FILE_N, FILE_O, FILE_P,
+#elif defined(LARGEBOARDS)
   FILE_A, FILE_B, FILE_C, FILE_D, FILE_E, FILE_F, FILE_G, FILE_H, FILE_I, FILE_J, FILE_K, FILE_L,
 #else
   FILE_A, FILE_B, FILE_C, FILE_D, FILE_E, FILE_F, FILE_G, FILE_H,
@@ -555,7 +675,10 @@ enum File : int {
 };
 
 enum Rank : int {
-#ifdef LARGEBOARDS
+#if defined(VERY_LARGE_BOARDS)
+  RANK_1, RANK_2, RANK_3, RANK_4, RANK_5, RANK_6, RANK_7, RANK_8,
+  RANK_9, RANK_10, RANK_11, RANK_12, RANK_13, RANK_14, RANK_15, RANK_16,
+#elif defined(LARGEBOARDS)
   RANK_1, RANK_2, RANK_3, RANK_4, RANK_5, RANK_6, RANK_7, RANK_8, RANK_9, RANK_10,
 #else
   RANK_1, RANK_2, RANK_3, RANK_4, RANK_5, RANK_6, RANK_7, RANK_8,
@@ -812,7 +935,7 @@ inline PieceType gating_type(Move m) {
 }
 
 inline Square gating_square(Move m) {
-  return Square((m >> (2 * SQUARE_BITS + MOVE_TYPE_BITS + PIECE_TYPE_BITS)) & SQUARE_BIT_MASK);
+  return Square((static_cast<uint32_t>(m) >> (2 * SQUARE_BITS + MOVE_TYPE_BITS + PIECE_TYPE_BITS)) & SQUARE_BIT_MASK);
 }
 
 inline bool is_gating(Move m) {

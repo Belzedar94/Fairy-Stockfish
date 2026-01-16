@@ -51,7 +51,7 @@ public:
 private:
     Config config;
     template <bool Current = true, class T> bool parse_attribute(const std::string& key, T& target);
-    template <bool Current = true, class T> bool parse_attribute(const std::string& key, T& target, std::string pieceToChar);
+    template <bool Current = true, class T> bool parse_attribute(const std::string& key, T& target, const Variant* v);
 };
 
 } // namespace Stockfish

@@ -418,14 +418,31 @@ void StateMachine::process_command(std::string token, std::istringstream& is) {
           && std::getline(is, token, '[') && std::getline(is, black_holdings, ']'))
       {
           std::string fen;
-          char color, pieceType;
+          char color;
+          bool used_single = false;
           // Use the obtained holding if available to avoid race conditions
-          if (is >> color && is >> pieceType)
+          if (is >> color)
           {
-              fen = pos.fen();
-              fen.insert(fen.find(']'), 1, toupper(color) == 'B' ? tolower(pieceType) : toupper(pieceType));
+              char base;
+              if (is >> base)
+              {
+                  std::string token_piece(1, base);
+                  if (Variant::is_piece_id_suffix(is.peek()))
+                  {
+                      char suffix;
+                      is >> suffix;
+                      token_piece.push_back(suffix);
+                  }
+                  std::string symbol = Variant::normalize_piece_symbol(token_piece, toupper(color) == 'B' ? BLACK : WHITE);
+                  if (!symbol.empty())
+                  {
+                      fen = pos.fen();
+                      fen.insert(fen.find(']'), symbol);
+                      used_single = true;
+                  }
+              }
           }
-          else
+          if (!used_single)
           {
               std::transform(black_holdings.begin(), black_holdings.end(), black_holdings.begin(), ::tolower);
               fen = pos.fen(false, false, 0, white_holdings + black_holdings);

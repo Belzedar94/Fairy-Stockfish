@@ -61,6 +61,7 @@ Magic* magics[] = {BishopMagics, RookMagicsH, RookMagicsV, CannonMagicsH, Cannon
 
 namespace {
 
+#if !defined(VERY_LARGE_BOARDS)
 // Some magics need to be split in order to reduce memory consumption.
 // Otherwise on a 12x10 board they can be >100 MB.
 #ifdef LARGEBOARDS
@@ -93,6 +94,7 @@ namespace {
   Bitboard GrasshopperTableH[0xA00];  // To store horizontal grasshopper attacks
   Bitboard GrasshopperTableV[0xA00];  // To store vertical grasshopper attacks
   Bitboard GrasshopperTableD[0x1480]; // To store diagonal grasshopper attacks
+#endif
 #endif
 
   // Rider directions
@@ -207,22 +209,71 @@ inline Bitboard safe_destination(Square s, int step) {
     return is_ok(to) && distance(s, to) <= 3 ? square_bb(to) : Bitboard(0);
 }
 
+#ifdef VERY_LARGE_BOARDS
+Bitboard rider_attacks_bb(RiderType R, Square s, Bitboard occupied) {
+  switch (R)
+  {
+  case RIDER_BISHOP:
+      return sliding_attack<RIDER>(BishopDirections, s, occupied);
+  case RIDER_ROOK_H:
+      return sliding_attack<RIDER>(RookDirectionsH, s, occupied);
+  case RIDER_ROOK_V:
+      return sliding_attack<RIDER>(RookDirectionsV, s, occupied);
+  case RIDER_CANNON_H:
+      return sliding_attack<HOPPER>(RookDirectionsH, s, occupied);
+  case RIDER_CANNON_V:
+      return sliding_attack<HOPPER>(RookDirectionsV, s, occupied);
+  case RIDER_LAME_DABBABA:
+      return lame_leaper_attack(LameDabbabaDirections, s, occupied);
+  case RIDER_HORSE:
+      return lame_leaper_attack(HorseDirections, s, occupied);
+  case RIDER_ELEPHANT:
+      return lame_leaper_attack(ElephantDirections, s, occupied);
+  case RIDER_JANGGI_ELEPHANT:
+      return lame_leaper_attack(JanggiElephantDirections, s, occupied);
+  case RIDER_CANNON_DIAG:
+      return sliding_attack<HOPPER>(BishopDirections, s, occupied);
+  case RIDER_NIGHTRIDER:
+      return sliding_attack<RIDER>(HorseDirections, s, occupied);
+  case RIDER_GRASSHOPPER_H:
+      return sliding_attack<HOPPER>(GrasshopperDirectionsH, s, occupied);
+  case RIDER_GRASSHOPPER_V:
+      return sliding_attack<HOPPER>(GrasshopperDirectionsV, s, occupied);
+  case RIDER_GRASSHOPPER_D:
+      return sliding_attack<HOPPER>(GrasshopperDirectionsD, s, occupied);
+  default:
+      return Bitboard(0);
+  }
+}
+#endif
+
 
 /// Bitboards::pretty() returns an ASCII representation of a bitboard suitable
 /// to be printed to standard output. Useful for debugging.
 
 std::string Bitboards::pretty(Bitboard b) {
 
-  std::string s = "+---+---+---+---+---+---+---+---+---+---+---+---+\n";
+  auto divider = []() {
+      std::string line = "+";
+      for (File f = FILE_A; f <= FILE_MAX; ++f)
+          line += "---+";
+      line += "\n";
+      return line;
+  };
+
+  std::string s = divider();
 
   for (Rank r = RANK_MAX; r >= RANK_1; --r)
   {
       for (File f = FILE_A; f <= FILE_MAX; ++f)
           s += b & make_square(f, r) ? "| X " : "|   ";
 
-      s += "| " + std::to_string(1 + r) + "\n+---+---+---+---+---+---+---+---+---+---+---+---+\n";
+      s += "| " + std::to_string(1 + r) + "\n" + divider();
   }
-  s += "  a   b   c   d   e   f   g   h   i   j   k   l\n";
+  s += " ";
+  for (File f = FILE_A; f <= FILE_MAX; ++f)
+      s += " " + std::string(1, char('a' + f)) + " ";
+  s += "\n";
 
   return s;
 }
@@ -330,6 +381,7 @@ void Bitboards::init() {
       for (Square s2 = SQ_A1; s2 <= SQ_MAX; ++s2)
               SquareDistance[s1][s2] = std::max(distance<File>(s1, s2), distance<Rank>(s1, s2));
 
+#if !defined(VERY_LARGE_BOARDS)
 #ifdef PRECOMPUTED_MAGICS
   init_magics<RIDER>(RookTableH, RookMagicsH, RookDirectionsH, RookMagicHInit);
   init_magics<RIDER>(RookTableV, RookMagicsV, RookDirectionsV, RookMagicVInit);
@@ -361,6 +413,7 @@ void Bitboards::init() {
   init_magics<HOPPER>(GrasshopperTableV, GrasshopperMagicsV, GrasshopperDirectionsV);
   init_magics<HOPPER>(GrasshopperTableD, GrasshopperMagicsD, GrasshopperDirectionsD);
 #endif
+#endif
 
   init_pieces();
 
@@ -381,6 +434,7 @@ void Bitboards::init() {
 
 namespace {
 
+#if !defined(VERY_LARGE_BOARDS)
   // init_magics() computes all rook and bishop attacks at startup. Magic
   // bitboards are used to look up attacks of sliding pieces. As a reference see
   // www.chessprogramming.org/Magic_Bitboards. In particular, here we use the so
@@ -496,6 +550,7 @@ namespace {
     delete[] reference;
     delete[] epoch;
   }
+#endif
 }
 
 } // namespace Stockfish

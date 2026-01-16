@@ -27,6 +27,7 @@
 #include <functional>
 #include <sstream>
 #include <iostream>
+#include <cctype>
 
 #include "types.h"
 #include "bitboard.h"
@@ -49,6 +50,10 @@ struct Variant {
   std::string pieceToChar =  " PNBRQ" + std::string(KING - QUEEN - 1, ' ') + "K" + std::string(PIECE_TYPE_NB - KING - 1, ' ')
                            + " pnbrq" + std::string(KING - QUEEN - 1, ' ') + "k" + std::string(PIECE_TYPE_NB - KING - 1, ' ');
   std::string pieceToCharSynonyms = std::string(PIECE_NB, ' ');
+  std::vector<std::string> pieceToSymbol = std::vector<std::string>(PIECE_NB, "");
+  std::vector<std::string> pieceToSymbolSynonyms = std::vector<std::string>(PIECE_NB, "");
+  std::map<std::string, Piece> symbolToPiece;
+  std::map<std::string, PieceType> symbolToPieceType;
   std::string startFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
   Bitboard mobilityRegion[COLOR_NB][PIECE_TYPE_NB] = {};
   Bitboard promotionRegion[COLOR_NB] = {Rank8BB, Rank1BB};
@@ -178,20 +183,122 @@ struct Variant {
   bool shogiStylePromotions = false;
   std::vector<Direction> connectDirections;
   PieceSet connectPieceTypesTrimmed = ~NO_PIECE_SET;
-  void add_piece(PieceType pt, char c, std::string betza = "", char c2 = ' ') {
-      // Avoid ambiguous definition by removing existing piece with same letter
-      size_t idx;
-      if ((idx = pieceToChar.find(toupper(c))) != std::string::npos)
-          remove_piece(PieceType(idx));
-      // Now add new piece
-      pieceToChar[make_piece(WHITE, pt)] = toupper(c);
-      pieceToChar[make_piece(BLACK, pt)] = tolower(c);
-      pieceToCharSynonyms[make_piece(WHITE, pt)] = toupper(c2);
-      pieceToCharSynonyms[make_piece(BLACK, pt)] = tolower(c2);
+  static bool is_piece_id_suffix(char c) {
+      return c == '\'' || c == '"' || c == '!';
+  }
+
+  static bool is_piece_id_start(char c) {
+      return std::isalpha(static_cast<unsigned char>(c));
+  }
+
+  static std::string normalize_piece_symbol(const std::string& token, Color c) {
+      if (token.empty() || !is_piece_id_start(token[0]) || token.size() > 2)
+          return "";
+
+      std::string symbol(1, c == WHITE ? char(std::toupper(static_cast<unsigned char>(token[0])))
+                                      : char(std::tolower(static_cast<unsigned char>(token[0]))));
+      if (token.size() == 2) {
+          if (!is_piece_id_suffix(token[1]))
+              return "";
+          symbol.push_back(token[1]);
+      }
+      return symbol;
+  }
+
+  void rebuild_piece_symbol_maps() {
+      symbolToPiece.clear();
+      symbolToPieceType.clear();
+      for (Piece pc = W_PAWN; pc < PIECE_NB; ++pc)
+      {
+          if (pieceToSymbol[pc].empty() && pieceToChar[pc] != ' ')
+              pieceToSymbol[pc] = std::string(1, pieceToChar[pc]);
+          if (pieceToSymbolSynonyms[pc].empty() && pieceToCharSynonyms[pc] != ' ')
+              pieceToSymbolSynonyms[pc] = std::string(1, pieceToCharSynonyms[pc]);
+          if (!pieceToSymbol[pc].empty())
+          {
+              symbolToPiece[pieceToSymbol[pc]] = pc;
+              std::string typeSymbol = pieceToSymbol[pc];
+              typeSymbol[0] = char(std::toupper(static_cast<unsigned char>(typeSymbol[0])));
+              symbolToPieceType[typeSymbol] = type_of(pc);
+          }
+          if (!pieceToSymbolSynonyms[pc].empty())
+          {
+              symbolToPiece[pieceToSymbolSynonyms[pc]] = pc;
+              std::string typeSymbol = pieceToSymbolSynonyms[pc];
+              typeSymbol[0] = char(std::toupper(static_cast<unsigned char>(typeSymbol[0])));
+              symbolToPieceType[typeSymbol] = type_of(pc);
+          }
+      }
+  }
+
+  Piece piece_from_symbol(const std::string& token) const {
+      auto it = symbolToPiece.find(token);
+      return it == symbolToPiece.end() ? NO_PIECE : it->second;
+  }
+
+  PieceType piece_type_from_symbol(const std::string& token) const {
+      if (token.empty())
+          return NO_PIECE_TYPE;
+      std::string typeToken = token;
+      typeToken[0] = char(std::toupper(static_cast<unsigned char>(typeToken[0])));
+      auto it = symbolToPieceType.find(typeToken);
+      return it == symbolToPieceType.end() ? NO_PIECE_TYPE : it->second;
+  }
+
+  const std::string& piece_symbol(Piece pc) const {
+      static const std::string empty;
+      return pieceToSymbol[pc].empty() ? empty : pieceToSymbol[pc];
+  }
+
+  const std::string& piece_symbol_synonym(Piece pc) const {
+      static const std::string empty;
+      return pieceToSymbolSynonyms[pc].empty() ? empty : pieceToSymbolSynonyms[pc];
+  }
+
+  void add_piece(PieceType pt, const std::string& token, std::string betza = "", const std::string& token2 = "") {
+      std::string whiteSymbol = normalize_piece_symbol(token, WHITE);
+      std::string blackSymbol = normalize_piece_symbol(token, BLACK);
+      std::string whiteSyn = normalize_piece_symbol(token2, WHITE);
+      std::string blackSyn = normalize_piece_symbol(token2, BLACK);
+
+      if (whiteSymbol.empty() || blackSymbol.empty())
+      {
+          remove_piece(pt);
+          return;
+      }
+
+      auto remove_if_duplicate = [&](const std::string& symbol) {
+          if (symbol.empty())
+              return;
+          for (Piece p = W_PAWN; p < PIECE_NB; ++p)
+              if (pieceToSymbol[p] == symbol || pieceToSymbolSynonyms[p] == symbol)
+                  remove_piece(type_of(p));
+      };
+
+      remove_if_duplicate(whiteSymbol);
+      remove_if_duplicate(blackSymbol);
+      remove_if_duplicate(whiteSyn);
+      remove_if_duplicate(blackSyn);
+
+      pieceToChar[make_piece(WHITE, pt)] = whiteSymbol[0];
+      pieceToChar[make_piece(BLACK, pt)] = blackSymbol[0];
+      pieceToCharSynonyms[make_piece(WHITE, pt)] = whiteSyn.empty() ? ' ' : whiteSyn[0];
+      pieceToCharSynonyms[make_piece(BLACK, pt)] = blackSyn.empty() ? ' ' : blackSyn[0];
+      pieceToSymbol[make_piece(WHITE, pt)] = whiteSymbol;
+      pieceToSymbol[make_piece(BLACK, pt)] = blackSymbol;
+      pieceToSymbolSynonyms[make_piece(WHITE, pt)] = whiteSyn;
+      pieceToSymbolSynonyms[make_piece(BLACK, pt)] = blackSyn;
       pieceTypes |= pt;
-      // Add betza notation for custom piece
       if (is_custom(pt))
           customPiece[pt - CUSTOM_PIECES] = betza;
+  }
+
+  void add_piece(PieceType pt, char c, std::string betza = "", char c2 = ' ') {
+      std::string token(1, c);
+      std::string token2;
+      if (c2 != ' ')
+          token2 = std::string(1, c2);
+      add_piece(pt, token, betza, token2);
   }
 
   void add_piece(PieceType pt, char c, char c2) {
@@ -203,6 +310,10 @@ struct Variant {
       pieceToChar[make_piece(BLACK, pt)] = ' ';
       pieceToCharSynonyms[make_piece(WHITE, pt)] = ' ';
       pieceToCharSynonyms[make_piece(BLACK, pt)] = ' ';
+      pieceToSymbol[make_piece(WHITE, pt)].clear();
+      pieceToSymbol[make_piece(BLACK, pt)].clear();
+      pieceToSymbolSynonyms[make_piece(WHITE, pt)].clear();
+      pieceToSymbolSynonyms[make_piece(BLACK, pt)].clear();
       pieceTypes &= ~piece_set(pt);
       // erase from promotion types to ensure consistency
       promotionPieceTypes[WHITE] &= ~piece_set(pt);
@@ -212,6 +323,10 @@ struct Variant {
   void reset_pieces() {
       pieceToChar = std::string(PIECE_NB, ' ');
       pieceToCharSynonyms = std::string(PIECE_NB, ' ');
+      pieceToSymbol.assign(PIECE_NB, "");
+      pieceToSymbolSynonyms.assign(PIECE_NB, "");
+      symbolToPiece.clear();
+      symbolToPieceType.clear();
       pieceTypes = NO_PIECE_SET;
       // clear promotion types to ensure consistency
       promotionPieceTypes[WHITE] = NO_PIECE_SET;

@@ -16,6 +16,8 @@
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#include <algorithm>
+#include <cctype>
 #include <cstdlib>
 #include <cassert>
 #include <cmath>
@@ -496,9 +498,9 @@ string UCI::dropped_piece(const Position& pos, Move m) {
   assert(type_of(m) == DROP);
   if (dropped_piece_type(m) == pos.promoted_piece_type(in_hand_piece_type(m)))
       // Dropping as promoted piece
-      return std::string{'+', pos.piece_to_char()[in_hand_piece_type(m)]};
+      return std::string("+") + pos.piece_symbol(make_piece(WHITE, in_hand_piece_type(m)));
   else
-      return std::string{pos.piece_to_char()[dropped_piece_type(m)]};
+      return pos.piece_symbol(make_piece(WHITE, dropped_piece_type(m)));
 }
 
 
@@ -511,6 +513,7 @@ string UCI::move(const Position& pos, Move m) {
 
   Square from = from_sq(m);
   Square to = to_sq(m);
+  Square gate = pos.gate_square(m);
 
   if (m == MOVE_NONE)
       return CurrentProtocol == USI ? "resign" : "(none)";
@@ -521,7 +524,7 @@ string UCI::move(const Position& pos, Move m) {
   if (is_pass(m) && CurrentProtocol == XBOARD)
       return "@@@@";
 
-  if (is_gating(m) && gating_square(m) == to)
+  if (is_gating(m) && gate == to)
       from = to_sq(m), to = from_sq(m);
   else if (type_of(m) == CASTLING && !pos.is_chess960())
   {
@@ -536,24 +539,24 @@ string UCI::move(const Position& pos, Move m) {
 
   // Wall square
   if (pos.walling() && CurrentProtocol == XBOARD)
-      move += "," + UCI::square(pos, to) + UCI::square(pos, gating_square(m));
+      move += "," + UCI::square(pos, to) + UCI::square(pos, gate);
 
   if (type_of(m) == PROMOTION)
-      move += pos.piece_to_char()[make_piece(BLACK, promotion_type(m))];
+      move += pos.piece_symbol(make_piece(BLACK, promotion_type(m)));
   else if (type_of(m) == PIECE_PROMOTION)
       move += '+';
   else if (type_of(m) == PIECE_DEMOTION)
       move += '-';
   else if (is_gating(m))
   {
-      move += pos.piece_to_char()[make_piece(BLACK, gating_type(m))];
-      if (gating_square(m) != from)
-          move += UCI::square(pos, gating_square(m));
+      move += pos.piece_symbol(make_piece(BLACK, gating_type(m)));
+      if (gate != from)
+          move += UCI::square(pos, gate);
   }
 
   // Wall square
   if (pos.walling() && CurrentProtocol != XBOARD)
-      move += "," + UCI::square(pos, to) + UCI::square(pos, gating_square(m));
+      move += "," + UCI::square(pos, to) + UCI::square(pos, gate);
 
   return move;
 }
@@ -564,14 +567,23 @@ string UCI::move(const Position& pos, Move m) {
 
 Move UCI::to_move(const Position& pos, string& str) {
 
-  if (str.length() == 5)
+  if (!str.empty())
   {
-      if (str[4] == '=')
-          // shogi moves refraining from promotion might use equals sign
-          str.pop_back();
-      else
-          // Junior could send promotion piece in uppercase
-          str[4] = char(tolower(str[4]));
+      // shogi moves refraining from promotion might use equals sign
+      str.erase(std::remove(str.begin(), str.end(), '='), str.end());
+
+      // Junior could send promotion piece in uppercase
+      if (str.size() >= 5)
+      {
+          size_t last = str.size() - 1;
+          if (Variant::is_piece_id_suffix(str[last]))
+          {
+              if (last >= 1 && std::isalpha(static_cast<unsigned char>(str[last - 1])))
+                  str[last - 1] = char(std::tolower(static_cast<unsigned char>(str[last - 1])));
+          }
+          else if (std::isalpha(static_cast<unsigned char>(str[last])))
+              str[last] = char(std::tolower(static_cast<unsigned char>(str[last])));
+      }
   }
 
   for (const auto& m : MoveList<LEGAL>(pos))
