@@ -1,0 +1,22 @@
+reprosearch testing started
+reprosearch testing with 150 nodes
+reprosearch testing with 225 nodes
+reprosearch testing with 337 nodes
+reprosearch testing with 506 nodes
+reprosearch testing with 759 nodes
+reprosearch testing with 1139 nodes
+reprosearch testing with 1708 nodes
+reprosearch testing with 2562 nodes
+reprosearch testing with 3844 nodes
+reprosearch testing with 5766 nodes
+reprosearch testing with 8649 nodes
+reprosearch testing with 12974 nodes
+reprosearch testing with 19461 nodes
+reprosearch testing with 29192 nodes
+reprosearch testing with 43789 nodes
+reprosearch testing with 65684 nodes
+reprosearch testing with 98526 nodes
+reprosearch testing with 147789 nodes
+reprosearch testing with 221683 nodes
+reprosearch testing with 332525 nodes
+reprosearch testing OK

@@ -1,0 +1,30 @@
+Fairy-Stockfish 150126 LB by Fabian Fichter
+id name Fairy-Stockfish 150126 LB
+id author Fabian Fichter
+
+option name Debug Log File type string default 
+option name Threads type spin default 1 min 1 max 512
+option name Hash type spin default 16 min 1 max 33554432
+option name Clear Hash type button
+option name Ponder type check default false
+option name MultiPV type spin default 1 min 1 max 500
+option name Skill Level type spin default 20 min -20 max 20
+option name Move Overhead type spin default 10 min 0 max 5000
+option name Slow Mover type spin default 100 min 10 max 1000
+option name nodestime type spin default 0 min 0 max 10000
+option name UCI_Chess960 type check default false
+option name UCI_Variant type combo default chess var 3check var 5check var ai-wok var almost var amazon var amazons var antichess var armageddon var asean var ataxx var atomar var atomic var berolina var breakthrough var bughouse var cambodian var capablanca var capahouse var caparandom var centaur var chancellor var chaturanga var checkshogi var chess var chessgi var chigorin var clobber var clobber10 var codrus var coregal var courier var crazyhouse var dobutsu var dragon var duck var embassy var euroshogi var extinction var fairy var fischerandom var flipello var flipello10 var flipersi var fox-and-hounds var gardner var giveaway var gorogoro var gothic var grand var grasshopper var gustav3 var hoppelpoppel var horde var isolation var isolation7x7 var janggi var janggicasual var janggimodern var janggitraditional var janus var jesonmor var joust var judkins var karouk var kinglet var kingofthehill var knightmate var koedem var kyotoshogi var legan var loop var losalamos var losers var makpong var makruk var manchu var micro var mini var minishogi var minixiangqi var misere var modern var newzealand var nightrider var nocastle var nocheckatomic var normal var okisakishogi var omega var omicron var opulent var paradigm var pawnback var pawnsideways var perfect var petrified var placement var pocketknight var raazuvaa var racingkings var seirawan var shako var shatar var shatranj var shogi var shoshogi var shouse var sittuyin var snailtrail var sortofalmost var spartan var suicide var supply var tencubed var threekings var torishogi var torpedo var troitzky var wolf var xiangqi var yarishogi
+option name UCI_AnalyseMode type check default false
+option name UCI_LimitStrength type check default false
+option name UCI_Elo type spin default 1350 min 500 max 2850
+option name UCI_ShowWDL type check default false
+option name SyzygyPath type string default <empty>
+option name SyzygyProbeDepth type spin default 1 min 1 max 100
+option name Syzygy50MoveRule type check default true
+option name SyzygyProbeLimit type spin default 7 min 0 max 7
+option name Use NNUE type check default true
+option name EvalFile type string default <empty>
+option name TsumeMode type check default false
+option name VariantPath type string default <empty>
+option name usemillisec type check default true
+uciok

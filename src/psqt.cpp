@@ -304,6 +304,7 @@ void init(const Variant* v) {
 
       // Determine pawn rank
       std::istringstream ss(v->startFen);
+      ss >> std::noskipws;
       unsigned char token;
       Rank rc = v->maxRank;
       Rank pawnRank = RANK_2;
@@ -311,8 +312,18 @@ void init(const Variant* v) {
       {
           if (token == '/')
               --rc;
-          else if (token == v->pieceToChar[PAWN] || token == v->pieceToChar[SHOGI_PAWN])
-              pawnRank = rc;
+          else if (Variant::is_piece_id_start(token))
+          {
+              std::string symbol(1, char(token));
+              if (Variant::is_piece_id_suffix(ss.peek()))
+              {
+                  ss >> token;
+                  symbol.push_back(char(token));
+              }
+              PieceType ptFen = v->piece_type_from_symbol(symbol);
+              if (ptFen == PAWN || ptFen == SHOGI_PAWN)
+                  pawnRank = rc;
+          }
       }
 
       for (Square s = SQ_A1; s <= SQ_MAX; ++s)

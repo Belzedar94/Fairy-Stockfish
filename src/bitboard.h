@@ -40,18 +40,34 @@ std::string pretty(Bitboard b);
 
 } // namespace Stockfish::Bitboards
 
-#ifdef LARGEBOARDS
+#if defined(VERY_LARGE_BOARDS)
+constexpr Bitboard AllSquares = ~Bitboard(0);
+#elif defined(LARGEBOARDS)
 constexpr Bitboard AllSquares = ((~Bitboard(0)) >> 8);
 #else
 constexpr Bitboard AllSquares = ~Bitboard(0);
 #endif
-#ifdef LARGEBOARDS
+#if defined(VERY_LARGE_BOARDS)
+constexpr Bitboard DarkSquares = (Bitboard(0x5555) | (Bitboard(0xAAAA) << FILE_NB))
+                               | ((Bitboard(0x5555) | (Bitboard(0xAAAA) << FILE_NB)) << (2 * FILE_NB))
+                               | ((Bitboard(0x5555) | (Bitboard(0xAAAA) << FILE_NB)) << (4 * FILE_NB))
+                               | ((Bitboard(0x5555) | (Bitboard(0xAAAA) << FILE_NB)) << (6 * FILE_NB))
+                               | ((Bitboard(0x5555) | (Bitboard(0xAAAA) << FILE_NB)) << (8 * FILE_NB))
+                               | ((Bitboard(0x5555) | (Bitboard(0xAAAA) << FILE_NB)) << (10 * FILE_NB))
+                               | ((Bitboard(0x5555) | (Bitboard(0xAAAA) << FILE_NB)) << (12 * FILE_NB))
+                               | ((Bitboard(0x5555) | (Bitboard(0xAAAA) << FILE_NB)) << (14 * FILE_NB));
+#elif defined(LARGEBOARDS)
 constexpr Bitboard DarkSquares = (Bitboard(0xAAA555AAA555AAULL) << 64) ^ Bitboard(0xA555AAA555AAA555ULL);
 #else
 constexpr Bitboard DarkSquares = 0xAA55AA55AA55AA55ULL;
 #endif
 
-#ifdef LARGEBOARDS
+#if defined(VERY_LARGE_BOARDS)
+constexpr Bitboard FileABB = Bitboard(0x0001000100010001ULL)
+                           | (Bitboard(0x0001000100010001ULL) << 64)
+                           | (Bitboard(0x0001000100010001ULL) << 128)
+                           | (Bitboard(0x0001000100010001ULL) << 192);
+#elif defined(LARGEBOARDS)
 constexpr Bitboard FileABB = (Bitboard(0x00100100100100ULL) << 64) ^ Bitboard(0x1001001001001001ULL);
 #else
 constexpr Bitboard FileABB = 0x0101010101010101ULL;
@@ -69,9 +85,17 @@ constexpr Bitboard FileJBB = FileABB << 9;
 constexpr Bitboard FileKBB = FileABB << 10;
 constexpr Bitboard FileLBB = FileABB << 11;
 #endif
+#ifdef VERY_LARGE_BOARDS
+constexpr Bitboard FileMBB = FileABB << 12;
+constexpr Bitboard FileNBB = FileABB << 13;
+constexpr Bitboard FileOBB = FileABB << 14;
+constexpr Bitboard FilePBB = FileABB << 15;
+#endif
 
 
-#ifdef LARGEBOARDS
+#if defined(VERY_LARGE_BOARDS)
+constexpr Bitboard Rank1BB = 0xFFFF;
+#elif defined(LARGEBOARDS)
 constexpr Bitboard Rank1BB = 0xFFF;
 #else
 constexpr Bitboard Rank1BB = 0xFF;
@@ -86,6 +110,14 @@ constexpr Bitboard Rank8BB = Rank1BB << (FILE_NB * 7);
 #ifdef LARGEBOARDS
 constexpr Bitboard Rank9BB = Rank1BB << (FILE_NB * 8);
 constexpr Bitboard Rank10BB = Rank1BB << (FILE_NB * 9);
+#endif
+#ifdef VERY_LARGE_BOARDS
+constexpr Bitboard Rank11BB = Rank1BB << (FILE_NB * 10);
+constexpr Bitboard Rank12BB = Rank1BB << (FILE_NB * 11);
+constexpr Bitboard Rank13BB = Rank1BB << (FILE_NB * 12);
+constexpr Bitboard Rank14BB = Rank1BB << (FILE_NB * 13);
+constexpr Bitboard Rank15BB = Rank1BB << (FILE_NB * 14);
+constexpr Bitboard Rank16BB = Rank1BB << (FILE_NB * 15);
 #endif
 
 constexpr Bitboard QueenSide   = FileABB | FileBBB | FileCBB | FileDBB;
@@ -399,7 +431,17 @@ template<> inline int distance<Square>(Square x, Square y) { return SquareDistan
 inline int edge_distance(File f, File maxFile = FILE_H) { return std::min(f, File(maxFile - f)); }
 inline int edge_distance(Rank r, Rank maxRank = RANK_8) { return std::min(r, Rank(maxRank - r)); }
 
+#ifdef VERY_LARGE_BOARDS
+Bitboard rider_attacks_bb(RiderType R, Square s, Bitboard occupied);
 
+template<RiderType R>
+inline Bitboard rider_attacks_bb(Square s, Bitboard occupied) {
+  static_assert(R != NO_RIDER && !(R & (R - 1))); // exactly one bit
+  return rider_attacks_bb(R, s, occupied);
+}
+
+inline Square lsb(Bitboard b);
+#else
 template<RiderType R>
 inline Bitboard rider_attacks_bb(Square s, Bitboard occupied) {
 
@@ -429,6 +471,7 @@ inline Bitboard rider_attacks_bb(RiderType R, Square s, Bitboard occupied) {
   const Magic& m = magics[lsb(R)][s]; // re-use Bitboard lsb for riders
   return m.attacks[m.index(occupied)];
 }
+#endif
 
 
 /// attacks_bb(Square) returns the pseudo attacks of the give piece type
@@ -495,7 +538,13 @@ inline int popcount(Bitboard b) {
 
 #ifndef USE_POPCNT
 
-#ifdef LARGEBOARDS
+#if defined(VERY_LARGE_BOARDS)
+  union { Bitboard bb; uint16_t u[16]; } v = { b };
+  return  PopCnt16[v.u[0]] + PopCnt16[v.u[1]] + PopCnt16[v.u[2]] + PopCnt16[v.u[3]]
+        + PopCnt16[v.u[4]] + PopCnt16[v.u[5]] + PopCnt16[v.u[6]] + PopCnt16[v.u[7]]
+        + PopCnt16[v.u[8]] + PopCnt16[v.u[9]] + PopCnt16[v.u[10]] + PopCnt16[v.u[11]]
+        + PopCnt16[v.u[12]] + PopCnt16[v.u[13]] + PopCnt16[v.u[14]] + PopCnt16[v.u[15]];
+#elif defined(LARGEBOARDS)
   union { Bitboard bb; uint16_t u[8]; } v = { b };
   return  PopCnt16[v.u[0]] + PopCnt16[v.u[1]] + PopCnt16[v.u[2]] + PopCnt16[v.u[3]]
         + PopCnt16[v.u[4]] + PopCnt16[v.u[5]] + PopCnt16[v.u[6]] + PopCnt16[v.u[7]];
@@ -506,7 +555,10 @@ inline int popcount(Bitboard b) {
 
 #elif defined(_MSC_VER) || defined(__INTEL_COMPILER)
 
-#ifdef LARGEBOARDS
+#if defined(VERY_LARGE_BOARDS)
+  return (int)_mm_popcnt_u64(b.b64[0]) + (int)_mm_popcnt_u64(b.b64[1])
+       + (int)_mm_popcnt_u64(b.b64[2]) + (int)_mm_popcnt_u64(b.b64[3]);
+#elif defined(LARGEBOARDS)
   return (int)_mm_popcnt_u64(uint64_t(b >> 64)) + (int)_mm_popcnt_u64(uint64_t(b));
 #else
   return (int)_mm_popcnt_u64(b);
@@ -514,7 +566,10 @@ inline int popcount(Bitboard b) {
 
 #else // Assumed gcc or compatible compiler
 
-#ifdef LARGEBOARDS
+#if defined(VERY_LARGE_BOARDS)
+  return __builtin_popcountll(b.b64[0]) + __builtin_popcountll(b.b64[1])
+       + __builtin_popcountll(b.b64[2]) + __builtin_popcountll(b.b64[3]);
+#elif defined(LARGEBOARDS)
   return __builtin_popcountll(b >> 64) + __builtin_popcountll(b);
 #else
   return __builtin_popcountll(b);
@@ -530,7 +585,15 @@ inline int popcount(Bitboard b) {
 
 inline Square lsb(Bitboard b) {
   assert(b);
-#ifdef LARGEBOARDS
+#if defined(VERY_LARGE_BOARDS)
+  if (b.b64[3])
+      return Square(__builtin_ctzll(b.b64[3]));
+  if (b.b64[2])
+      return Square(__builtin_ctzll(b.b64[2]) + 64);
+  if (b.b64[1])
+      return Square(__builtin_ctzll(b.b64[1]) + 128);
+  return Square(__builtin_ctzll(b.b64[0]) + 192);
+#elif defined(LARGEBOARDS)
   if (!(b << 64))
       return Square(__builtin_ctzll(b >> 64) + 64);
 #endif
@@ -539,7 +602,15 @@ inline Square lsb(Bitboard b) {
 
 inline Square msb(Bitboard b) {
   assert(b);
-#ifdef LARGEBOARDS
+#if defined(VERY_LARGE_BOARDS)
+  if (b.b64[0])
+      return Square(192 + 63 - __builtin_clzll(b.b64[0]));
+  if (b.b64[1])
+      return Square(128 + 63 - __builtin_clzll(b.b64[1]));
+  if (b.b64[2])
+      return Square(64 + 63 - __builtin_clzll(b.b64[2]));
+  return Square(63 - __builtin_clzll(b.b64[3]));
+#elif defined(LARGEBOARDS)
   if (b >> 64)
       return Square(int(SQUARE_BIT_MASK) ^ __builtin_clzll(b >> 64));
   return Square(int(SQUARE_BIT_MASK) ^ (__builtin_clzll(b) + 64));
@@ -555,7 +626,25 @@ inline Square msb(Bitboard b) {
 inline Square lsb(Bitboard b) {
   assert(b);
   unsigned long idx;
-#ifdef LARGEBOARDS
+#if defined(VERY_LARGE_BOARDS)
+  if (b.b64[3])
+  {
+      _BitScanForward64(&idx, b.b64[3]);
+      return Square(idx);
+  }
+  if (b.b64[2])
+  {
+      _BitScanForward64(&idx, b.b64[2]);
+      return Square(idx + 64);
+  }
+  if (b.b64[1])
+  {
+      _BitScanForward64(&idx, b.b64[1]);
+      return Square(idx + 128);
+  }
+  _BitScanForward64(&idx, b.b64[0]);
+  return Square(idx + 192);
+#elif defined(LARGEBOARDS)
   if (uint64_t(b))
   {
       _BitScanForward64(&idx, uint64_t(b));
@@ -575,7 +664,25 @@ inline Square lsb(Bitboard b) {
 inline Square msb(Bitboard b) {
   assert(b);
   unsigned long idx;
-#ifdef LARGEBOARDS
+#if defined(VERY_LARGE_BOARDS)
+  if (b.b64[0])
+  {
+      _BitScanReverse64(&idx, b.b64[0]);
+      return Square(idx + 192);
+  }
+  if (b.b64[1])
+  {
+      _BitScanReverse64(&idx, b.b64[1]);
+      return Square(idx + 128);
+  }
+  if (b.b64[2])
+  {
+      _BitScanReverse64(&idx, b.b64[2]);
+      return Square(idx + 64);
+  }
+  _BitScanReverse64(&idx, b.b64[3]);
+  return Square(idx);
+#elif defined(LARGEBOARDS)
   if (b >> 64)
   {
       _BitScanReverse64(&idx, uint64_t(b >> 64));
@@ -598,7 +705,33 @@ inline Square lsb(Bitboard b) {
   assert(b);
   unsigned long idx;
 
-#ifdef LARGEBOARDS
+#if defined(VERY_LARGE_BOARDS)
+  if (b.b64[3] & 0xffffffff) {
+      _BitScanForward(&idx, uint32_t(b.b64[3]));
+      return Square(idx);
+  } else if (b.b64[3] >> 32) {
+      _BitScanForward(&idx, uint32_t(b.b64[3] >> 32));
+      return Square(idx + 32);
+  } else if (b.b64[2] & 0xffffffff) {
+      _BitScanForward(&idx, uint32_t(b.b64[2]));
+      return Square(idx + 64);
+  } else if (b.b64[2] >> 32) {
+      _BitScanForward(&idx, uint32_t(b.b64[2] >> 32));
+      return Square(idx + 96);
+  } else if (b.b64[1] & 0xffffffff) {
+      _BitScanForward(&idx, uint32_t(b.b64[1]));
+      return Square(idx + 128);
+  } else if (b.b64[1] >> 32) {
+      _BitScanForward(&idx, uint32_t(b.b64[1] >> 32));
+      return Square(idx + 160);
+  } else if (b.b64[0] & 0xffffffff) {
+      _BitScanForward(&idx, uint32_t(b.b64[0]));
+      return Square(idx + 192);
+  } else {
+      _BitScanForward(&idx, uint32_t(b.b64[0] >> 32));
+      return Square(idx + 224);
+  }
+#elif defined(LARGEBOARDS)
   if (b << 96) {
       _BitScanForward(&idx, uint32_t(b));
       return Square(idx);
@@ -627,22 +760,47 @@ inline Square msb(Bitboard b) {
   assert(b);
   unsigned long idx;
 
-#ifdef LARGEBOARDS
+#if defined(VERY_LARGE_BOARDS)
+  if (b.b64[0] >> 32) {
+      _BitScanReverse(&idx, uint32_t(b.b64[0] >> 32));
+      return Square(idx + 224);
+  } else if (b.b64[0] & 0xffffffff) {
+      _BitScanReverse(&idx, uint32_t(b.b64[0]));
+      return Square(idx + 192);
+  } else if (b.b64[1] >> 32) {
+      _BitScanReverse(&idx, uint32_t(b.b64[1] >> 32));
+      return Square(idx + 160);
+  } else if (b.b64[1] & 0xffffffff) {
+      _BitScanReverse(&idx, uint32_t(b.b64[1]));
+      return Square(idx + 128);
+  } else if (b.b64[2] >> 32) {
+      _BitScanReverse(&idx, uint32_t(b.b64[2] >> 32));
+      return Square(idx + 96);
+  } else if (b.b64[2] & 0xffffffff) {
+      _BitScanReverse(&idx, uint32_t(b.b64[2]));
+      return Square(idx + 64);
+  } else if (b.b64[3] >> 32) {
+      _BitScanReverse(&idx, uint32_t(b.b64[3] >> 32));
+      return Square(idx + 32);
+  } else {
+      _BitScanReverse(&idx, uint32_t(b.b64[3]));
+      return Square(idx);
+  }
+#else
   if (b >> 96) {
       _BitScanReverse(&idx, uint32_t(b >> 96));
       return Square(idx + 96);
   } else if (b >> 64) {
       _BitScanReverse(&idx, uint32_t(b >> 64));
       return Square(idx + 64);
-  } else
-#endif
-  if (b >> 32) {
+  } else if (b >> 32) {
       _BitScanReverse(&idx, uint32_t(b >> 32));
       return Square(idx + 32);
   } else {
       _BitScanReverse(&idx, uint32_t(b));
       return Square(idx);
   }
+#endif
 }
 
 #endif

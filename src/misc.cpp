@@ -154,7 +154,9 @@ string engine_info(bool to_uci, bool to_xboard) {
       ss << setw(2) << day << setw(2) << (1 + months.find(month) / 4) << year.substr(2);
   }
 
-#ifdef LARGEBOARDS
+#if defined(VERY_LARGE_BOARDS)
+  ss << " VLB";
+#elif defined(LARGEBOARDS)
   ss << " LB";
 #endif
 

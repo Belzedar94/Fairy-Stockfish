@@ -314,7 +314,7 @@ namespace Stockfish::Eval::NNUE {
          board[y+i][x] = board[y+i][x+8] = '|';
       board[y][x] = board[y][x+8] = board[y+3][x+8] = board[y+3][x] = '+';
       if (pc != NO_PIECE)
-        board[y+1][x+4] = pos.piece_to_char()[pc];
+        board[y+1][x+4] = pos.piece_symbol(pc).empty() ? ' ' : pos.piece_symbol(pc)[0];
       if (value != VALUE_NONE)
         format_cp_compact(value, &board[y+2][x+2]);
     };

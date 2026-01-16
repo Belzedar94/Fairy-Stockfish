@@ -463,6 +463,7 @@ void Thread::search() {
               if (   mainThread
                   && multiPV == 1
                   && (bestValue <= alpha || bestValue >= beta)
+                  && (Limits.use_time_management() || Limits.movetime)
                   && Time.elapsed() > 3000)
                   sync_cout << UCI::pv(rootPos, rootDepth, alpha, beta) << sync_endl;
 
@@ -494,7 +495,9 @@ void Thread::search() {
           std::stable_sort(rootMoves.begin() + pvFirst, rootMoves.begin() + pvIdx + 1);
 
           if (    mainThread
-              && (Threads.stop || pvIdx + 1 == multiPV || Time.elapsed() > 3000))
+              && (   Threads.stop
+                  || pvIdx + 1 == multiPV
+                  || ((Limits.use_time_management() || Limits.movetime) && Time.elapsed() > 3000)))
               sync_cout << UCI::pv(rootPos, rootDepth, alpha, beta) << sync_endl;
       }
 
@@ -803,7 +806,7 @@ namespace {
                 int penalty = -stat_bonus(depth);
                 thisThread->mainHistory[us][from_to(ttMove)] << penalty;
                 if (pos.walling())
-                    thisThread->gateHistory[us][gating_square(ttMove)] << penalty;
+                    thisThread->gateHistory[us][pos.gate_square(ttMove)] << penalty;
                 update_continuation_histories(ss, pos.moved_piece(ttMove), to_sq(ttMove), penalty);
             }
         }
@@ -1327,7 +1330,7 @@ moves_loop: // When in check, search starts from here
                   r++;
 
               ss->statScore =  thisThread->mainHistory[us][from_to(move)]
-                             + thisThread->gateHistory[us][gating_square(move)] * 2
+                             + thisThread->gateHistory[us][pos.gate_square(move)] * 2
                              + (*contHist[0])[history_slot(movedPiece)][to_sq(move)]
                              + (*contHist[1])[history_slot(movedPiece)][to_sq(move)]
                              + (*contHist[3])[history_slot(movedPiece)][to_sq(move)]
@@ -1832,7 +1835,7 @@ moves_loop: // When in check, search starts from here
             if (!(pos.walling() && from_to(quietsSearched[i]) == from_to(bestMove)))
                 thisThread->mainHistory[us][from_to(quietsSearched[i])] << -bonus2;
             if (pos.walling())
-                thisThread->gateHistory[us][gating_square(quietsSearched[i])] << -bonus2;
+                thisThread->gateHistory[us][pos.gate_square(quietsSearched[i])] << -bonus2;
             update_continuation_histories(ss, pos.moved_piece(quietsSearched[i]), to_sq(quietsSearched[i]), -bonus2);
         }
     }
@@ -1841,7 +1844,7 @@ moves_loop: // When in check, search starts from here
         // Increase stats for the best move in case it was a capture move
         captureHistory[moved_piece][to_sq(bestMove)][captured] << bonus1;
         if (pos.walling())
-            thisThread->gateHistory[us][gating_square(bestMove)] << bonus1;
+        thisThread->gateHistory[us][pos.gate_square(bestMove)] << bonus1;
     }
 
     // Extra penalty for a quiet early move that was not a TT move or
@@ -1858,7 +1861,7 @@ moves_loop: // When in check, search starts from here
         if (!(pos.walling() && from_to(capturesSearched[i]) == from_to(bestMove)))
             captureHistory[moved_piece][to_sq(capturesSearched[i])][captured] << -bonus1;
         if (pos.walling())
-            thisThread->gateHistory[us][gating_square(capturesSearched[i])] << -bonus1;
+            thisThread->gateHistory[us][pos.gate_square(capturesSearched[i])] << -bonus1;
     }
   }
 
@@ -1894,7 +1897,7 @@ moves_loop: // When in check, search starts from here
     Thread* thisThread = pos.this_thread();
     thisThread->mainHistory[us][from_to(move)] << bonus;
     if (pos.walling())
-        thisThread->gateHistory[us][gating_square(move)] << bonus;
+        thisThread->gateHistory[us][pos.gate_square(move)] << bonus;
     update_continuation_histories(ss, pos.moved_piece(move), to_sq(move), bonus);
 
     // Penalty for reversed move in case of moved piece not being a pawn

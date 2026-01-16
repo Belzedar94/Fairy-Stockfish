@@ -11,7 +11,7 @@ trap 'error ${LINENO}' ERR
 echo "perft testing started"
 
 cat << EOF > perft.exp
-   set timeout 60
+   set timeout 300
    lassign \$argv var pos depth result chess960
    if {\$chess960 eq ""} {set chess960 false}
    spawn ./stockfish

@@ -32,7 +32,6 @@
 #include "variant.h"
 #include "xboard.h"
 
-
 using namespace Stockfish;
 
 int main(int argc, char* argv[]) {

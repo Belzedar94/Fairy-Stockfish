@@ -1,0 +1,8 @@
+protocol testing started
+Testing uci.exp
+Testing ucci.exp
+Testing usi.exp
+Testing ucicyclone.exp
+Testing ucicyclone2.exp
+Testing xboard.exp
+protocol testing OK

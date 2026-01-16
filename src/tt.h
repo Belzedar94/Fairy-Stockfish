@@ -24,6 +24,12 @@
 
 namespace Stockfish {
 
+#if defined(VERY_LARGE_BOARDS)
+using TTMove = uint64_t;
+#else
+using TTMove = uint32_t;
+#endif
+
 /// TTEntry struct is the 12 bytes transposition table entry, defined as below:
 ///
 /// key        16 bit
@@ -37,7 +43,7 @@ namespace Stockfish {
 
 struct TTEntry {
 
-  Move  move()  const { return (Move )move32; }
+  Move  move()  const { return Move(move32); }
   Value value() const { return (Value)value16; }
   Value eval()  const { return (Value)eval16; }
   Depth depth() const { return (Depth)depth8 + DEPTH_OFFSET; }
@@ -51,7 +57,7 @@ private:
   uint16_t key16;
   uint8_t  depth8;
   uint8_t  genBound8;
-  uint32_t move32;
+  TTMove move32;
   int16_t  value16;
   int16_t  eval16;
 };
@@ -65,11 +71,17 @@ private:
 
 class TranspositionTable {
 
+#if defined(VERY_LARGE_BOARDS)
+  static constexpr int ClusterSize = 4;
+#else
   static constexpr int ClusterSize = 5;
+#endif
 
   struct Cluster {
     TTEntry entry[ClusterSize];
+#if !defined(VERY_LARGE_BOARDS)
     char padding[4]; // Pad to 64 bytes
+#endif
   };
 
   static_assert(sizeof(Cluster) == 64, "Unexpected Cluster size");

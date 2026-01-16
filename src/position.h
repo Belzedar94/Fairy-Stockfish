@@ -128,6 +128,10 @@ public:
   PieceSet piece_types() const;
   const std::string& piece_to_char() const;
   const std::string& piece_to_char_synonyms() const;
+  const std::string& piece_symbol(Piece pc) const;
+  const std::string& piece_symbol_synonym(Piece pc) const;
+  Piece piece_from_symbol(const std::string& token) const;
+  PieceType piece_type_from_symbol(const std::string& token) const;
   Bitboard promotion_zone(Color c) const;
   Square promotion_square(Color c, Square s) const;
   PieceType main_promotion_pawn_type(Color c) const;
@@ -248,6 +252,7 @@ public:
   Bitboard ep_squares() const;
   Square castling_king_square(Color c) const;
   Bitboard gates(Color c) const;
+  Square gate_square(Move m) const;
   bool empty(Square s) const;
   int count(Color c, PieceType pt) const;
   template<PieceType Pt> int count(Color c) const;
@@ -445,6 +450,26 @@ inline const std::string& Position::piece_to_char() const {
 inline const std::string& Position::piece_to_char_synonyms() const {
   assert(var != nullptr);
   return var->pieceToCharSynonyms;
+}
+
+inline const std::string& Position::piece_symbol(Piece pc) const {
+  assert(var != nullptr);
+  return var->piece_symbol(pc);
+}
+
+inline const std::string& Position::piece_symbol_synonym(Piece pc) const {
+  assert(var != nullptr);
+  return var->piece_symbol_synonym(pc);
+}
+
+inline Piece Position::piece_from_symbol(const std::string& token) const {
+  assert(var != nullptr);
+  return var->piece_from_symbol(token);
+}
+
+inline PieceType Position::piece_type_from_symbol(const std::string& token) const {
+  assert(var != nullptr);
+  return var->piece_type_from_symbol(token);
 }
 
 inline Bitboard Position::promotion_zone(Color c) const {
@@ -1262,6 +1287,21 @@ inline Bitboard Position::gates(Color c) const {
   return st->gatesBB[c];
 }
 
+inline Square Position::gate_square(Move m) const {
+  if (seirawan_gating() && is_gating(m))
+  {
+      Square from = from_sq(m);
+      if (type_of(m) != CASTLING)
+          return from;
+      Square to = to_sq(m);
+      Square gate = gating_square(m);
+      if (gate == from || gate == to)
+          return gate;
+      return from;
+  }
+  return gating_square(m);
+}
+
 inline bool Position::is_on_semiopen_file(Color c, Square s) const {
   return !((pieces(c, PAWN) | pieces(c, SHOGI_PAWN, SOLDIER)) & file_bb(s));
 }
@@ -1505,7 +1545,7 @@ inline const std::string Position::piece_to_partner() const {
   Piece piece = st->capturedpromoted ?
       (st->unpromotedCapturedPiece ? st->unpromotedCapturedPiece : make_piece(color, main_promotion_pawn_type(color))) :
       st->capturedPiece;
-  return std::string(1, piece_to_char()[piece]);
+  return piece_symbol(piece);
 }
 
 inline Thread* Position::this_thread() const {
