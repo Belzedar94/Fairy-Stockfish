@@ -268,7 +268,6 @@ Position& Position::set(const Variant* v, const string& fenStr, bool isChess960,
 */
 
   unsigned char col, row, token;
-  size_t idx;
   std::istringstream ss(fenStr);
 
   std::memset(this, 0, sizeof(Position));

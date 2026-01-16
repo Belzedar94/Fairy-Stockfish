@@ -37,7 +37,7 @@ void TTEntry::save(Key k, Value v, bool pv, Bound b, Depth d, Move m, Value ev) 
 
   // Preserve any existing move for the same position
   if (m || (uint16_t)k != key16)
-      move32 = (uint32_t)m;
+      move32 = static_cast<TTMove>(m);
 
   // Overwrite less valuable entries (cheapest checks first)
   if (b == BOUND_EXACT

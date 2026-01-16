@@ -1294,12 +1294,9 @@ inline Square Position::gate_square(Move m) const {
       if (type_of(m) != CASTLING)
           return from;
       Square to = to_sq(m);
-      const unsigned mask = (1u << PIECE_TYPE_BITS) - 1u;
-      const unsigned gate_bits = static_cast<unsigned>(gating_square(m)) & mask;
-      if ((static_cast<unsigned>(from) & mask) == gate_bits)
-          return from;
-      if ((static_cast<unsigned>(to) & mask) == gate_bits)
-          return to;
+      Square gate = gating_square(m);
+      if (gate == from || gate == to)
+          return gate;
       return from;
   }
   return gating_square(m);

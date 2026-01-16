@@ -204,7 +204,7 @@ struct Bitboard {
     }
 
     constexpr bool operator == (const Bitboard y) const {
-        return (b64[0] == y.b64[0]) && (b64[1] == y.b64[1]);
+        return (b64[0] == y.b64[0]) && (b64[1] == y.b64[1]) && (b64[2] == y.b64[2]) && (b64[3] == y.b64[3]);
     }
 
     constexpr bool operator != (const Bitboard y) const {
@@ -314,6 +314,123 @@ struct Bitboard {
     constexpr Bitboard() : b64 {0, 0} {}
     constexpr Bitboard(uint64_t i) : b64 {0, i} {}
     constexpr Bitboard(uint64_t hi, uint64_t lo) : b64 {hi, lo} {};
+
+    constexpr operator bool() const {
+        return b64[0] || b64[1];
+    }
+
+    constexpr operator long long unsigned () const {
+        return b64[1];
+    }
+
+    constexpr operator unsigned() const {
+        return b64[1];
+    }
+
+    constexpr Bitboard operator << (const unsigned int bits) const {
+        if (bits == 0)
+            return *this;
+        if (bits >= 128)
+            return Bitboard();
+        if (bits >= 64)
+            return Bitboard(b64[1] << (bits - 64), 0);
+        return Bitboard((b64[0] << bits) | (b64[1] >> (64 - bits)), b64[1] << bits);
+    }
+
+    constexpr Bitboard operator >> (const unsigned int bits) const {
+        if (bits == 0)
+            return *this;
+        if (bits >= 128)
+            return Bitboard();
+        if (bits >= 64)
+            return Bitboard(0, b64[0] >> (bits - 64));
+        return Bitboard(b64[0] >> bits, (b64[0] << (64 - bits)) | (b64[1] >> bits));
+    }
+
+    constexpr Bitboard operator << (const int bits) const {
+        return *this << unsigned(bits);
+    }
+
+    constexpr Bitboard operator >> (const int bits) const {
+        return *this >> unsigned(bits);
+    }
+
+    constexpr bool operator == (const Bitboard y) const {
+        return (b64[0] == y.b64[0]) && (b64[1] == y.b64[1]);
+    }
+
+    constexpr bool operator != (const Bitboard y) const {
+        return !(*this == y);
+    }
+
+    inline Bitboard& operator |=(const Bitboard x) {
+        b64[0] |= x.b64[0];
+        b64[1] |= x.b64[1];
+        return *this;
+    }
+    inline Bitboard& operator &=(const Bitboard x) {
+        b64[0] &= x.b64[0];
+        b64[1] &= x.b64[1];
+        return *this;
+    }
+    inline Bitboard& operator ^=(const Bitboard x) {
+        b64[0] ^= x.b64[0];
+        b64[1] ^= x.b64[1];
+        return *this;
+    }
+
+    constexpr Bitboard operator ~ () const {
+        return Bitboard(~b64[0], ~b64[1]);
+    }
+
+    constexpr Bitboard operator - () const {
+        uint64_t n1 = 0ULL - b64[1];
+        uint64_t borrow = b64[1] != 0;
+        uint64_t n0 = 0ULL - b64[0] - borrow;
+        return Bitboard(n0, n1);
+    }
+
+    constexpr Bitboard operator | (const Bitboard x) const {
+        return Bitboard(b64[0] | x.b64[0], b64[1] | x.b64[1]);
+    }
+
+    constexpr Bitboard operator & (const Bitboard x) const {
+        return Bitboard(b64[0] & x.b64[0], b64[1] & x.b64[1]);
+    }
+
+    constexpr Bitboard operator ^ (const Bitboard x) const {
+        return Bitboard(b64[0] ^ x.b64[0], b64[1] ^ x.b64[1]);
+    }
+
+    constexpr Bitboard operator - (const Bitboard x) const {
+        uint64_t r1 = b64[1] - x.b64[1];
+        uint64_t borrow = b64[1] < x.b64[1];
+        uint64_t r0 = b64[0] - x.b64[0] - borrow;
+        return Bitboard(r0, r1);
+    }
+
+    constexpr Bitboard operator - (const int x) const {
+        return *this - Bitboard(x);
+    }
+
+    inline Bitboard operator * (const Bitboard x) const {
+#if defined(__GNUC__) || defined(__clang__)
+        unsigned __int128 lo = (unsigned __int128)b64[1] * x.b64[1];
+        unsigned __int128 cross1 = (unsigned __int128)b64[1] * x.b64[0];
+        unsigned __int128 cross2 = (unsigned __int128)b64[0] * x.b64[1];
+        uint64_t r1 = uint64_t(lo);
+        uint64_t r0 = uint64_t(lo >> 64);
+        r0 += uint64_t(cross1);
+        r0 += uint64_t(cross2);
+        return Bitboard(r0, r1);
+#else
+        Bitboard result;
+        for (int i = 0; i < 128; ++i)
+            if (((*this >> i) & Bitboard(1)))
+                result |= x << i;
+        return result;
+#endif
+    }
 };
 #endif
 constexpr int SQUARE_BITS = 7;
@@ -351,10 +468,17 @@ constexpr int MAX_PLY = 246;
 /// any normal move destination square is always different from origin square
 /// while MOVE_NONE and MOVE_NULL have the same origin and destination square.
 
+#if defined(VERY_LARGE_BOARDS)
+enum Move : uint64_t {
+  MOVE_NONE,
+  MOVE_NULL = 1 + (1ULL << SQUARE_BITS)
+};
+#else
 enum Move : int {
   MOVE_NONE,
   MOVE_NULL = 1 + (1 << SQUARE_BITS)
 };
+#endif
 
 enum MoveType : int {
   NORMAL,
@@ -935,7 +1059,8 @@ inline PieceType gating_type(Move m) {
 }
 
 inline Square gating_square(Move m) {
-  return Square((static_cast<uint32_t>(m) >> (2 * SQUARE_BITS + MOVE_TYPE_BITS + PIECE_TYPE_BITS)) & SQUARE_BIT_MASK);
+  const uint64_t raw = static_cast<uint64_t>(m);
+  return Square((raw >> (2 * SQUARE_BITS + MOVE_TYPE_BITS + PIECE_TYPE_BITS)) & SQUARE_BIT_MASK);
 }
 
 inline bool is_gating(Move m) {
@@ -947,16 +1072,22 @@ inline bool is_pass(Move m) {
 }
 
 constexpr Move make_move(Square from, Square to) {
-  return Move((from << SQUARE_BITS) + to);
+  return Move((static_cast<uint64_t>(from) << SQUARE_BITS) + static_cast<uint64_t>(to));
 }
 
 template<MoveType T>
 inline Move make(Square from, Square to, PieceType pt = NO_PIECE_TYPE) {
-  return Move((pt << (2 * SQUARE_BITS + MOVE_TYPE_BITS)) + T + (from << SQUARE_BITS) + to);
+  return Move((static_cast<uint64_t>(pt) << (2 * SQUARE_BITS + MOVE_TYPE_BITS))
+            + static_cast<uint64_t>(T)
+            + (static_cast<uint64_t>(from) << SQUARE_BITS)
+            + static_cast<uint64_t>(to));
 }
 
 constexpr Move make_drop(Square to, PieceType pt_in_hand, PieceType pt_dropped) {
-  return Move((pt_in_hand << (2 * SQUARE_BITS + MOVE_TYPE_BITS + PIECE_TYPE_BITS)) + (pt_dropped << (2 * SQUARE_BITS + MOVE_TYPE_BITS)) + DROP + to);
+  return Move((static_cast<uint64_t>(pt_in_hand) << (2 * SQUARE_BITS + MOVE_TYPE_BITS + PIECE_TYPE_BITS))
+            + (static_cast<uint64_t>(pt_dropped) << (2 * SQUARE_BITS + MOVE_TYPE_BITS))
+            + static_cast<uint64_t>(DROP)
+            + static_cast<uint64_t>(to));
 }
 
 constexpr Move reverse_move(Move m) {
@@ -965,7 +1096,11 @@ constexpr Move reverse_move(Move m) {
 
 template<MoveType T>
 constexpr Move make_gating(Square from, Square to, PieceType pt, Square gate) {
-  return Move((gate << (2 * SQUARE_BITS + MOVE_TYPE_BITS + PIECE_TYPE_BITS)) + (pt << (2 * SQUARE_BITS + MOVE_TYPE_BITS)) + T + (from << SQUARE_BITS) + to);
+  return Move((static_cast<uint64_t>(gate) << (2 * SQUARE_BITS + MOVE_TYPE_BITS + PIECE_TYPE_BITS))
+            + (static_cast<uint64_t>(pt) << (2 * SQUARE_BITS + MOVE_TYPE_BITS))
+            + static_cast<uint64_t>(T)
+            + (static_cast<uint64_t>(from) << SQUARE_BITS)
+            + static_cast<uint64_t>(to));
 }
 
 constexpr PieceType dropped_piece_type(Move m) {
