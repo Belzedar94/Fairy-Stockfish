@@ -525,13 +525,15 @@ namespace {
   }
 
   template<Color Us, GenType Type>
-  ExtMove* generate_potion_moves(const Position& pos, ExtMove* baseEnd) {
+  ExtMove* generate_potion_moves(const Position& pos, ExtMove* baseStart, ExtMove* baseEnd) {
 
     if (!pos.potions_enabled())
         return baseEnd;
 
     const Variant* var = pos.variant();
     ExtMove* cur = baseEnd;
+    const Bitboard baseFrozen = pos.freeze_squares();
+    const Bitboard allPieces = pos.pieces();
 
     for (int pt = 0; pt < Variant::POTION_TYPE_NB; ++pt)
     {
@@ -544,22 +546,54 @@ namespace {
 
         Bitboard candidates = pos.board_bb();
         if (!var->potionDropOnOccupied)
-            candidates &= ~pos.pieces();
+            candidates &= ~allPieces;
 
         if (potion == Variant::POTION_JUMP)
-            candidates &= pos.pieces();
+            candidates &= allPieces;
 
         while (candidates)
         {
             Square gate = pop_lsb(candidates);
 
-            if (potion == Variant::POTION_JUMP && !(pos.pieces() & gate))
+            if (potion == Variant::POTION_JUMP && !(allPieces & gate))
                 continue;
 
-            Bitboard freezeExtra = potion == Variant::POTION_FREEZE ? pos.freeze_zone_from_square(gate) : Bitboard(0);
-            Bitboard jumpRemoved = potion == Variant::POTION_JUMP ? square_bb(gate) : Bitboard(0);
+            if (potion == Variant::POTION_FREEZE)
+            {
+                // Freeze only restricts moves, so reuse the base list and filter by frozen squares.
+                Bitboard frozen = baseFrozen | pos.freeze_zone_from_square(gate);
+                ExtMove* write = cur;
+                for (ExtMove* it = baseStart; it != baseEnd; ++it)
+                {
+                    Move base = it->move;
+                    if (is_gating(base))
+                        continue;
 
-            SpellContextGuard guard(pos, freezeExtra, jumpRemoved);
+                    MoveType mt = type_of(base);
+                    if (mt != NORMAL && mt != CASTLING)
+                        continue;
+
+                    if (frozen & from_sq(base))
+                        continue;
+                    if (mt == CASTLING && (frozen & to_sq(base)))
+                        continue;
+
+                    Move gatingMove = mt == NORMAL
+                                      ? make_gating<NORMAL>(from_sq(base), to_sq(base), potionPiece, gate)
+                                      : make_gating<CASTLING>(from_sq(base), to_sq(base), potionPiece, gate);
+
+                    write->move = gatingMove;
+                    write->value = it->value;
+                    ++write;
+                }
+
+                cur = write;
+                continue;
+            }
+
+            Bitboard jumpRemoved = square_bb(gate);
+
+            SpellContextGuard guard(pos, Bitboard(0), jumpRemoved);
 
             ExtMove* potionStart = cur;
             cur = generate_all_impl<Us, Type>(pos, cur);
@@ -595,7 +629,7 @@ namespace {
   ExtMove* generate_all(const Position& pos, ExtMove* moveList) {
 
     ExtMove* baseEnd = generate_all_impl<Us, Type>(pos, moveList);
-    return generate_potion_moves<Us, Type>(pos, baseEnd);
+    return generate_potion_moves<Us, Type>(pos, moveList, baseEnd);
   }
 
 } // namespace
