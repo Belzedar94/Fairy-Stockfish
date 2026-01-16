@@ -16,6 +16,7 @@
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#include <algorithm>
 #include <cassert>
 
 #include "movegen.h"
@@ -534,6 +535,12 @@ namespace {
     ExtMove* cur = baseEnd;
     const Bitboard baseFrozen = pos.freeze_squares();
     const Bitboard allPieces = pos.pieces();
+    const Square ksq = pos.count<KING>(Us) ? pos.square<KING>(Us) : SQ_NONE;
+    const bool allowNonKing = Type != EVASIONS
+                           || !more_than_one(pos.checkers() & ~pos.non_sliding_riders());
+    bool baseMovesSorted = false;
+    Move baseMoves[MAX_MOVES];
+    int baseCount = 0;
 
     for (int pt = 0; pt < Variant::POTION_TYPE_NB; ++pt)
     {
@@ -593,13 +600,8 @@ namespace {
 
             Bitboard jumpRemoved = square_bb(gate);
 
-            SpellContextGuard guard(pos, Bitboard(0), jumpRemoved);
-
-            ExtMove* potionStart = cur;
-            cur = generate_all_impl<Us, Type>(pos, cur);
-
-            ExtMove* write = potionStart;
-            for (ExtMove* it = potionStart; it != cur; ++it)
+            ExtMove* write = cur;
+            for (ExtMove* it = baseStart; it != baseEnd; ++it)
             {
                 Move base = it->move;
                 if (is_gating(base))
@@ -609,10 +611,80 @@ namespace {
                 if (mt != NORMAL && mt != CASTLING)
                     continue;
 
+                if (to_sq(base) == gate)
+                    continue;
+
                 Move gatingMove = mt == NORMAL
                                   ? make_gating<NORMAL>(from_sq(base), to_sq(base), potionPiece, gate)
                                   : make_gating<CASTLING>(from_sq(base), to_sq(base), potionPiece, gate);
 
+                write->move = gatingMove;
+                write->value = it->value;
+                ++write;
+            }
+
+            cur = write;
+            if (!allowNonKing)
+                continue;
+
+            if (!baseMovesSorted)
+            {
+                for (ExtMove* it = baseStart; it != baseEnd; ++it)
+                    baseMoves[baseCount++] = it->move;
+                std::sort(baseMoves, baseMoves + baseCount);
+                baseMovesSorted = true;
+            }
+
+            SpellContextGuard guard(pos, Bitboard(0), jumpRemoved);
+
+            Bitboard target = Type == EVASIONS     ?  between_bb(ksq, lsb(pos.checkers()))
+                            : Type == NON_EVASIONS ? ~pos.pieces( Us)
+                            : Type == CAPTURES     ?  pos.pieces(~Us)
+                                                   : ~pos.pieces(   ); // QUIETS || QUIET_CHECKS
+
+            if (Type == EVASIONS)
+            {
+                if (pos.checkers() & pos.non_sliding_riders())
+                    target = ~pos.pieces(Us);
+                // Leaper attacks can not be blocked
+                Square checksq = lsb(pos.checkers());
+                if (LeaperAttacks[~Us][type_of(pos.piece_on(checksq))][checksq] & pos.square<KING>(Us))
+                    target = pos.checkers();
+            }
+
+            // Remove inaccessible squares (outside board + wall squares)
+            target &= pos.board_bb();
+            target &= ~jumpRemoved;
+
+            Bitboard captureTarget = target;
+            captureTarget &= ~jumpRemoved;
+            if (pos.self_capture() && (Type == NON_EVASIONS || Type == CAPTURES))
+                captureTarget |= pos.pieces(Us) & ~pos.pieces(Us, KING);
+
+            static thread_local ExtMove extraMoves[MAX_MOVES];
+            ExtMove* extraEnd = extraMoves;
+            for (PieceSet ps = pos.piece_types() & ~(piece_set(PAWN) | KING); ps;)
+            {
+                PieceType sliderPt = pop_lsb(ps);
+                if (!(MoveRiderTypes[0][sliderPt] | MoveRiderTypes[1][sliderPt] | AttackRiderTypes[sliderPt]))
+                    continue;
+                extraEnd = generate_moves<Us, Type>(pos, extraEnd, sliderPt, target, captureTarget);
+            }
+
+            write = cur;
+            for (ExtMove* it = extraMoves; it != extraEnd; ++it)
+            {
+                Move base = it->move;
+                if (is_gating(base))
+                    continue;
+                if (type_of(base) != NORMAL)
+                    continue;
+                if (to_sq(base) == gate)
+                    continue;
+                if (std::binary_search(baseMoves, baseMoves + baseCount, base))
+                    continue;
+
+                Move gatingMove = make_gating<NORMAL>(from_sq(base), to_sq(base), potionPiece, gate);
                 write->move = gatingMove;
                 write->value = it->value;
                 ++write;
