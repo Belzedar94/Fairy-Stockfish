@@ -347,7 +347,7 @@ Position& Position::set(const Variant* v, const string& fenStr, bool isChess960,
       }
 
       // Promoted shogi pieces
-      else if (token == '+')
+      else if (token == '+' && var->shogiStylePromotions)
       {
           if (Variant::is_piece_id_start(ss.peek()))
           {
@@ -467,33 +467,55 @@ Position& Position::set(const Variant* v, const string& fenStr, bool isChess960,
       // 4. En passant square.
       // Ignore if square is invalid or not on side to move relative rank 6.
       else
-          while (   ((ss >> col) && (col >= 'a' && col <= 'a' + max_file()))
-                 && ((ss >> row) && (row >= '1' && row <= '1' + max_rank())))
+      {
+          std::string epInfo;
+          ss >> std::skipws >> epInfo;
+          ss >> std::noskipws;
+          if (!epInfo.empty() && epInfo != "-")
           {
-              Square epSquare = make_square(File(col - 'a'), Rank(row - '1'));
+              size_t i = 0;
+              while (i < epInfo.size())
+              {
+                  char fileChar = epInfo[i];
+                  if (fileChar < 'a' || fileChar > 'a' + max_file())
+                      break;
+                  ++i;
+                  if (i >= epInfo.size() || !isdigit(epInfo[i]))
+                      break;
+                  int rankNum = 0;
+                  while (i < epInfo.size() && isdigit(epInfo[i]))
+                  {
+                      rankNum = rankNum * 10 + (epInfo[i] - '0');
+                      ++i;
+                  }
+                  if (rankNum < 1 || rankNum > int(max_rank()) + 1)
+                      continue;
+                  Square epSquare = make_square(File(fileChar - 'a'), Rank(rankNum - 1));
 #ifdef LARGEBOARDS
-              // Consider different rank numbering in CECP
-              if (max_rank() == RANK_10 && CurrentProtocol == XBOARD)
-                  epSquare += NORTH;
+                  // Consider different rank numbering in CECP
+                  if (max_rank() == RANK_10 && CurrentProtocol == XBOARD)
+                      epSquare += NORTH;
 #endif
 
-              // En passant square will be considered only if
-              // epSquare is within enPassantRegion and
-              // 1) variant has non-standard rules
-              // or
-              // 2)
-              // a) side to move have a pawn threatening epSquare
-              // b) there is an enemy pawn one or two (for triple steps) squares in front of epSquare
-              // c) there is no (non-wall) piece on epSquare or behind epSquare
-              if (   (var->enPassantRegion[sideToMove] & epSquare)
-                  && (   !var->fastAttacks
-                      || (var->enPassantTypes[sideToMove] & ~piece_set(PAWN))
-                      || (   pawn_attacks_bb(~sideToMove, epSquare) & pieces(sideToMove, PAWN)
-                          && (   (pieces(~sideToMove, PAWN) & (epSquare + pawn_push(~sideToMove)))
-                              || (pieces(~sideToMove, PAWN) & (epSquare + 2 * pawn_push(~sideToMove))))
-                          && !((pieces(WHITE) | pieces(BLACK)) & (epSquare | (epSquare + pawn_push(sideToMove)))))))
-                  st->epSquares |= epSquare;
+                  // En passant square will be considered only if
+                  // epSquare is within enPassantRegion and
+                  // 1) variant has non-standard rules
+                  // or
+                  // 2)
+                  // a) side to move have a pawn threatening epSquare
+                  // b) there is an enemy pawn one or two (for triple steps) squares in front of epSquare
+                  // c) there is no (non-wall) piece on epSquare or behind epSquare
+                  if (   (var->enPassantRegion[sideToMove] & epSquare)
+                      && (   !var->fastAttacks
+                          || (var->enPassantTypes[sideToMove] & ~piece_set(PAWN))
+                          || (   pawn_attacks_bb(~sideToMove, epSquare) & pieces(sideToMove, PAWN)
+                              && (   (pieces(~sideToMove, PAWN) & (epSquare + pawn_push(~sideToMove)))
+                                  || (pieces(~sideToMove, PAWN) & (epSquare + 2 * pawn_push(~sideToMove))))
+                              && !((pieces(WHITE) | pieces(BLACK)) & (epSquare | (epSquare + pawn_push(sideToMove)))))))
+                      st->epSquares |= epSquare;
+              }
           }
+      }
   }
 
   // Check counter for nCheck

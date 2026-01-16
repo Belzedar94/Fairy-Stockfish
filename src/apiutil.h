@@ -569,7 +569,12 @@ inline Validation check_for_valid_characters(const std::string& firstFenPart, co
         if (isdigit(c) || contains(validSpecialCharactersFirstField, c))
             continue;
         if (c == '+')
-            continue;
+        {
+            if (v && v->shogiStylePromotions)
+                continue;
+            std::cerr << "Invalid piece character: '+'." << std::endl;
+            return NOK;
+        }
         if (Variant::is_piece_id_start(c))
         {
             std::string token(1, c);

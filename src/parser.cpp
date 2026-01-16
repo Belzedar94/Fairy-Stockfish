@@ -297,6 +297,52 @@ Variant* VariantParser<DoCheck>::parse() {
 
 template <bool DoCheck>
 Variant* VariantParser<DoCheck>::parse(Variant* v) {
+    auto parse_rank_value = [](const std::string& value, int& out) {
+        std::stringstream ss(value);
+        int i;
+        ss >> i;
+        if (ss.fail())
+            return false;
+        out = i;
+        return true;
+    };
+    auto parse_file_value = [](const std::string& value, int& out) {
+        std::string trimmed = trim(value);
+        if (trimmed.empty())
+            return false;
+        std::stringstream ss(trimmed);
+        if (isdigit(ss.peek()))
+        {
+            int i;
+            ss >> i;
+            if (ss.fail())
+                return false;
+            out = i - 1;
+            return true;
+        }
+        char c;
+        ss >> c;
+        if (ss.fail())
+            return false;
+        out = tolower(c) - 'a';
+        return true;
+    };
+    int cfgMaxRank = -1;
+    int cfgMaxFile = -1;
+    auto itRank = config.find("maxRank");
+    if (itRank != config.end())
+        parse_rank_value(itRank->second, cfgMaxRank);
+    auto itFile = config.find("maxFile");
+    if (itFile != config.end())
+        parse_file_value(itFile->second, cfgMaxFile);
+    if (   (cfgMaxRank > 0 && cfgMaxRank - 1 > RANK_MAX)
+        || (cfgMaxFile >= 0 && cfgMaxFile > FILE_MAX))
+    {
+        v->maxRank = static_cast<Rank>(RANK_MAX + 1);
+        v->maxFile = static_cast<File>(FILE_MAX + 1);
+        return v;
+    }
+
     parse_attribute("maxRank", v->maxRank);
     parse_attribute("maxFile", v->maxFile);
     // piece types

@@ -414,7 +414,7 @@ struct Bitboard {
     }
 
     inline Bitboard operator * (const Bitboard x) const {
-#if defined(__GNUC__) || defined(__clang__)
+#if (defined(__GNUC__) || defined(__clang__)) && defined(__SIZEOF_INT128__)
         unsigned __int128 lo = (unsigned __int128)b64[1] * x.b64[1];
         unsigned __int128 cross1 = (unsigned __int128)b64[1] * x.b64[0];
         unsigned __int128 cross2 = (unsigned __int128)b64[0] * x.b64[1];
