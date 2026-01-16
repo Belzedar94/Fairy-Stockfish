@@ -267,7 +267,7 @@ Position& Position::set(const Variant* v, const string& fenStr, bool isChess960,
       incremented after Black's move.
 */
 
-  unsigned char col, row, token;
+  unsigned char token;
   std::istringstream ss(fenStr);
 
   std::memset(this, 0, sizeof(Position));
