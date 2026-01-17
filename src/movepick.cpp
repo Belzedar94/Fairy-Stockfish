@@ -244,6 +244,7 @@ void MovePicker::score() {
   static_assert(Type == CAPTURES || Type == QUIETS || Type == EVASIONS, "Wrong type");
 
   for (auto& m : *this)
+  {
       if constexpr (Type == CAPTURES)
           m.value =  int(PieceValue[MG][pos.piece_on(to_sq(m))]) * 6
                    + (*gateHistory)[pos.side_to_move()][gating_square(m)]       
@@ -251,16 +252,12 @@ void MovePicker::score() {
 
       else if constexpr (Type == QUIETS)
           m.value =      (*mainHistory)[pos.side_to_move()][from_to(m)]
-                   +     (*gateHistory)[pos.side_to_move()][gating_square(m)]
+                   +     (*gateHistory)[pos.side_to_move()][gating_square(m)]   
                    + 2 * (*continuationHistory[0])[history_slot(pos.moved_piece(m))][to_sq(m)]
                    +     (*continuationHistory[1])[history_slot(pos.moved_piece(m))][to_sq(m)]
                    +     (*continuationHistory[3])[history_slot(pos.moved_piece(m))][to_sq(m)]
                    +     (*continuationHistory[5])[history_slot(pos.moved_piece(m))][to_sq(m)]
                    + (ply < MAX_LPH ? std::min(4, depth / 3) * (*lowPlyHistory)[ply][from_to(m)] : 0);
-
-      if constexpr (Type == CAPTURES || Type == QUIETS)
-          if (is_potion_move(m))
-              m.value -= PotionPenalty;
 
       else // Type == EVASIONS
       {
@@ -268,10 +265,15 @@ void MovePicker::score() {
               m.value =  PieceValue[MG][pos.piece_on(to_sq(m))]
                        - Value(type_of(pos.moved_piece(m)));
           else
-              m.value =      (*mainHistory)[pos.side_to_move()][from_to(m)]
+              m.value =      (*mainHistory)[pos.side_to_move()][from_to(m)]     
                        + 2 * (*continuationHistory[0])[history_slot(pos.moved_piece(m))][to_sq(m)]
                        - (1 << 28);
       }
+
+      if constexpr (Type == CAPTURES || Type == QUIETS)
+          if (is_potion_move(m))
+              m.value -= PotionPenalty;
+  }
 }
 
 /// MovePicker::select() returns the next move satisfying a predicate function.
