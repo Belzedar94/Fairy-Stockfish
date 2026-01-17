@@ -16,7 +16,9 @@
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#include <algorithm>
 #include <cassert>
+#include <limits>
 
 #include "movepick.h"
 
@@ -51,6 +53,18 @@ namespace {
                 *q = *(q - 1);
             *q = tmp;
         }
+  }
+
+  int potion_limit(Depth d) {
+    if (d <= 0)
+        return 0;
+    if (d <= 4)
+        return 4;
+    if (d <= 6)
+        return 6;
+    if (d <= 8)
+        return 8;
+    return 0;
   }
 
 } // namespace
@@ -93,6 +107,85 @@ bool MovePicker::is_useless_potion(Move m) const {
   return false;
 }
 
+bool MovePicker::is_potion_move(Move m) const {
+
+  if (!pos.potions_enabled() || !is_gating(m))
+      return false;
+
+  PieceType gatingPiece = gating_type(m);
+  for (int idx = 0; idx < Variant::POTION_TYPE_NB; ++idx)
+      if (pos.potion_piece(static_cast<Variant::PotionType>(idx)) == gatingPiece)
+          return true;
+
+  return false;
+}
+
+int MovePicker::potion_impact(Move m) const {
+
+  if (!pos.potions_enabled() || !is_gating(m))
+      return 0;
+
+  PieceType gatingPiece = gating_type(m);
+  for (int idx = 0; idx < Variant::POTION_TYPE_NB; ++idx)
+  {
+      auto potion = static_cast<Variant::PotionType>(idx);
+      if (pos.potion_piece(potion) != gatingPiece)
+          continue;
+
+      if (potion == Variant::POTION_FREEZE)
+      {
+          Bitboard zone = pos.freeze_zone_from_square(gating_square(m));
+          Bitboard enemies = zone & pos.pieces(~pos.side_to_move());
+          int impact = 0;
+          while (enemies)
+              impact += PieceValue[MG][pos.piece_on(pop_lsb(enemies))];
+          return impact;
+      }
+
+      if (potion == Variant::POTION_JUMP)
+      {
+          Square gate = gating_square(m);
+          if (pos.piece_on(gate) == NO_PIECE)
+              return 0;
+
+          Bitboard path = between_bb(from_sq(m), to_sq(m), type_of(pos.moved_piece(m)));
+          path &= ~square_bb(to_sq(m));
+          if (!(path & square_bb(gate)))
+              return 0;
+
+          int impact = 128;
+          if (pos.capture(m))
+              impact += PieceValue[MG][pos.piece_on(to_sq(m))];
+          return impact;
+      }
+
+      break;
+  }
+
+  return 0;
+}
+
+void MovePicker::reset_potion_window(ExtMove* begin, ExtMove* end) {
+
+  potionSeen = 0;
+  potionThreshold = std::numeric_limits<int>::min();
+
+  if (potionLimit <= 0)
+      return;
+
+  int impacts[MAX_MOVES];
+  int count = 0;
+  for (ExtMove* it = begin; it != end; ++it)
+      if (is_potion_move(it->move))
+          impacts[count++] = potion_impact(it->move);
+
+  if (count <= potionLimit)
+      return;
+
+  std::nth_element(impacts, impacts + (potionLimit - 1), impacts + count, std::greater<int>());
+  potionThreshold = impacts[potionLimit - 1];
+}
+
 
 /// Constructors of the MovePicker class. As arguments we pass information
 /// to help it to return the (presumably) good moves first, to decide which
@@ -107,6 +200,8 @@ MovePicker::MovePicker(const Position& p, Move ttm, Depth d, const ButterflyHist
              ttMove(ttm), refutations{{killers[0], 0}, {killers[1], 0}, {cm, 0}}, depth(d), ply(pl) {
 
   assert(d > 0);
+  potionLimit = pos.potions_enabled() ? potion_limit(depth) : 0;
+  potionThreshold = std::numeric_limits<int>::min();
 
   stage = (pos.checkers() ? EVASION_TT : MAIN_TT) +
           !(ttm && pos.pseudo_legal(ttm));
@@ -118,6 +213,8 @@ MovePicker::MovePicker(const Position& p, Move ttm, Depth d, const ButterflyHist
            : pos(p), mainHistory(mh), gateHistory(dh), captureHistory(cph), continuationHistory(ch), ttMove(ttm), recaptureSquare(rs), depth(d) {
 
   assert(d <= 0);
+  potionLimit = 0;
+  potionThreshold = std::numeric_limits<int>::min();
 
   stage = (pos.checkers() ? EVASION_TT : QSEARCH_TT) +
           !(   ttm
@@ -131,6 +228,8 @@ MovePicker::MovePicker(const Position& p, Move ttm, Value th, const GateHistory*
            : pos(p), gateHistory(dh), captureHistory(cph), ttMove(ttm), threshold(th) {
 
   assert(!pos.checkers());
+  potionLimit = 0;
+  potionThreshold = std::numeric_limits<int>::min();
 
   stage = PROBCUT_TT + !(ttm && pos.capture(ttm)
                              && pos.pseudo_legal(ttm)
@@ -185,7 +284,18 @@ Move MovePicker::select(Pred filter) {
       Move move = *cur;
 
       if (move != ttMove && !is_useless_potion(move) && filter())
+      {
+          if (potionLimit > 0 && is_potion_move(move))
+          {
+              if (potionSeen >= potionLimit || potion_impact(move) < potionThreshold)
+              {
+                  cur++;
+                  continue;
+              }
+              ++potionSeen;
+          }
           return *cur++;
+      }
 
       cur++;
   }
@@ -220,6 +330,8 @@ top:
       endMoves = generate<CAPTURES>(pos, cur);
 
       score<CAPTURES>();
+      if (potionLimit > 0)
+          reset_potion_window(cur, endMoves);
       ++stage;
       goto top;
 
@@ -257,6 +369,8 @@ top:
           endMoves = generate<QUIETS>(pos, cur);
 
           score<QUIETS>();
+          if (potionLimit > 0)
+              reset_potion_window(cur, endMoves);
           partial_insertion_sort(cur, endMoves, -3000 * depth);
       }
 
