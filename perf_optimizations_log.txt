@@ -4,6 +4,12 @@ Baseline: spell/nnue-potions (post-v2 merge), bench uses UCI_Variant=spell-chess
 Use NNUE=true, EvalFile=spell-chess_run1test_e4_l05.nnue.
 Perft: startpos depth1=1814, depth2=3007820, branching=1658.11.
 
+Idea v1: freeze potion movegen optimization (initial big speedup)
+- Bench baseline: not recorded (prior run)
+- Bench new: ~+45% speedup (per user test)
+- Perft startpos: unchanged
+- Status: accepted
+
 Idea v2: jump potion movegen reuse (reuse base moves; recompute rider deltas only)
 - Bench baseline: 99175 NPS
 - Bench new: 100405 NPS (+1.24%)
