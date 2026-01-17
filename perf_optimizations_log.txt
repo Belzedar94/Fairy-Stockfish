@@ -1,0 +1,23 @@
+# Spell-chess perf ideas log
+Date: 2026-01-17
+Baseline: spell/nnue-potions (post-v2 merge), bench uses UCI_Variant=spell-chess,
+Use NNUE=true, EvalFile=spell-chess_run1test_e4_l05.nnue.
+Perft: startpos depth1=1814, depth2=3007820, branching=1658.11.
+
+Idea v2: jump potion movegen reuse (reuse base moves; recompute rider deltas only)
+- Bench baseline: 99175 NPS
+- Bench new: 100405 NPS (+1.24%)
+- Perft startpos: depth1 1814, depth2 3007820, branching 1658.11 (unchanged)
+- Status: accepted (user: ~+5 Elo)
+
+Idea v3: potion move ordering boost (history/continuation bonus when potion affects path)
+- Bench baseline: 99175 NPS
+- Bench new: 92262 NPS (-6.97%)
+- Perft startpos: depth1 1814, depth2 3007820, branching 1658.11 (unchanged)
+- Status: discarded (no Elo gain)
+
+Idea v4: potion LMR tuning (lighter for potion checks/captures, heavier for weak quiets)
+- Bench baseline: 99175 NPS
+- Bench new: 92861 NPS (-6.37%)
+- Perft startpos: depth1 1814, depth2 3007820, branching 1658.11 (unchanged)
+- Status: discarded (no Elo gain)
