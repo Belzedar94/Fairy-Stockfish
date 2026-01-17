@@ -88,6 +88,19 @@ namespace {
     return d > 14 ? 73 : 6 * d * d + 229 * d - 215;
   }
 
+  bool is_potion_gating_move(const Position& pos, Move m) {
+
+    if (!pos.potions_enabled() || !is_gating(m))
+        return false;
+
+    PieceType gatingPiece = gating_type(m);
+    for (int idx = 0; idx < Variant::POTION_TYPE_NB; ++idx)
+        if (pos.potion_piece(static_cast<Variant::PotionType>(idx)) == gatingPiece)
+            return true;
+
+    return false;
+  }
+
   // Add a small random component to draw evaluations to avoid 3-fold blindness
   Value value_draw(Thread* thisThread) {
     return VALUE_DRAW + Value(2 * (thisThread->nodes & 1) - 1);
@@ -1261,6 +1274,8 @@ moves_loop: // When in check, search starts from here
 
       // Add extension to new depth
       newDepth += extension;
+      if (is_potion_gating_move(pos, move) && depth >= 3)
+          newDepth = std::max(newDepth - (givesCheck || captureOrPromotion ? 1 : 2), 0);
       ss->doubleExtensions = (ss-1)->doubleExtensions + (extension == 2);
 
       // Speculative prefetch as early as possible
