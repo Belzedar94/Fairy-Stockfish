@@ -157,6 +157,15 @@ if [[ $1 == "all" || $1 == "variant" ]]; then
   expect perft.exp extinction "fen rnbqb1kr/pppppppp/8/8/8/8/PPPPPPPP/RNBQB1KR w AHah - 0 1" 4 195286 true > /dev/null
   expect perft.exp seirawan "fen qbbrnkrn/pppppppp/8/8/8/8/PPPPPPPP/QBBRNKRN[HEhe] w ABCDEFGHabcdefgh - 0 1" 3 21170 true > /dev/null
   expect perft.exp spell-chess "fen 4k3/p7/8/8/8/8/8/4K2R[f] b K - 0 1 moves f@h1,a7a6" 1 5 > /dev/null
+  castling_output=$(printf "setoption name UCI_Variant value spell-chess\nposition fen rnb1k2r/pp1pnppp/2p1p3/q1b1P3/3P4/5N2/PPP1BPPP/RNBQK2R[JJFFFFjjffff] w KQkq - 1 6\ngo perft 1\nquit\n" | ./stockfish)
+  if echo "$castling_output" | grep -q "e1g1:"; then
+    echo "spell-chess castling-in-check test failed (e1g1)"
+    exit 1
+  fi
+  if echo "$castling_output" | grep -q "e1c1:"; then
+    echo "spell-chess castling-in-check test failed (e1c1)"
+    exit 1
+  fi
 fi
 
 # large-board variants

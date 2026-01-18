@@ -40,12 +40,59 @@ namespace {
 
   inline Variant::PotionType potion_type_from_piece(const Variant* var, PieceType pt) {
     if (!var || !var->potions)
-        return static_cast<Variant::PotionType>(Variant::POTION_TYPE_NB);
+        return static_cast<Variant::PotionType>(Variant::POTION_TYPE_NB);       
     if (pt == var->potionPiece[Variant::POTION_FREEZE])
         return Variant::POTION_FREEZE;
     if (pt == var->potionPiece[Variant::POTION_JUMP])
         return Variant::POTION_JUMP;
     return static_cast<Variant::PotionType>(Variant::POTION_TYPE_NB);
+  }
+
+  inline Square potion_zone_center(const Position& pos, Variant::PotionType potion,
+                                   Bitboard zone) {
+    if (zone == Bitboard(0))
+        return SQ_NONE;
+    if (potion == Variant::POTION_JUMP)
+        return lsb(zone);
+    Bitboard candidates = zone;
+    while (candidates)
+    {
+        Square s = pop_lsb(candidates);
+        if (pos.freeze_zone_from_square(s) == zone)
+            return s;
+    }
+    return lsb(zone);
+  }
+
+  inline Bitboard potion_zone_from_center(const Position& pos, Variant::PotionType potion,
+                                          Square s) {
+    if (s == SQ_NONE)
+        return Bitboard(0);
+    if (potion == Variant::POTION_FREEZE)
+        return pos.freeze_zone_from_square(s);
+    return square_bb(s);
+  }
+
+  inline Square parse_fen_square(const Position& pos, const std::string& token) {
+    if (token.size() < 2)
+        return SQ_NONE;
+    char fileChar = char(tolower(token[0]));
+    if (fileChar < 'a' || fileChar > char('a' + pos.max_file()))
+        return SQ_NONE;
+    int file = fileChar - 'a';
+    int rank = 0;
+    for (size_t i = 1; i < token.size(); ++i)
+    {
+        if (!isdigit(token[i]))
+            return SQ_NONE;
+        rank = rank * 10 + (token[i] - '0');
+    }
+    if (rank <= 0)
+        return SQ_NONE;
+    int rankIndex = rank - 1;
+    if (rankIndex > pos.max_rank())
+        return SQ_NONE;
+    return make_square(File(file), Rank(rankIndex));
   }
 
   struct SpellContextScope {
@@ -402,7 +449,87 @@ Position& Position::set(const Variant* v, const string& fenStr, bool isChess960,
               add_to_hand(Piece(idx));
       }
 
+  if (!sfen && potions_enabled())
+  {
+      std::string potionState;
+      ss >> std::ws;
+      if (ss.peek() == '{')
+      {
+          ss >> token;
+          while (ss >> token)
+          {
+              if (token == '}')
+                  break;
+              if (!isspace(token))
+                  potionState.push_back(char(token));
+          }
+      }
+
+      auto parse_potion_state = [&](const std::string& state) {
+          size_t start = 0;
+          const int maxCooldown = (1u << POTION_COOLDOWN_BITS) - 1;
+          while (start < state.size())
+          {
+              size_t end = state.find(',', start);
+              std::string entry = state.substr(start, end == std::string::npos ? end : end - start);
+              if (entry.size() >= 4)
+              {
+                  char pieceChar = entry[0];
+                  Color c = islower(pieceChar) ? BLACK : WHITE;
+                  Variant::PotionType potion = static_cast<Variant::PotionType>(Variant::POTION_TYPE_NB);
+                  for (int pt = 0; pt < Variant::POTION_TYPE_NB; ++pt)
+                  {
+                      Variant::PotionType ptEnum = static_cast<Variant::PotionType>(pt);
+                      PieceType potionPiece = potion_piece(ptEnum);
+                      if (potionPiece == NO_PIECE_TYPE)
+                          continue;
+                      char expected = piece_to_char()[make_piece(WHITE, potionPiece)];
+                      if (tolower(expected) == tolower(pieceChar))
+                      {
+                          potion = ptEnum;
+                          break;
+                      }
+                  }
+
+                  size_t at = entry.find('@', 1);
+                  size_t colon = entry.find(':', at == std::string::npos ? 0 : at + 1);
+                  if (potion != Variant::POTION_TYPE_NB && at != std::string::npos && colon != std::string::npos)
+                  {
+                      std::string squareToken = entry.substr(at + 1, colon - at - 1);
+                      std::string cooldownToken = entry.substr(colon + 1);
+                      Square center = SQ_NONE;
+                      if (!squareToken.empty() && squareToken != "-")
+                          center = parse_fen_square(*this, squareToken);
+
+                      int cooldown = 0;
+                      for (char ch : cooldownToken)
+                      {
+                          if (!isdigit(ch))
+                          {
+                              cooldown = 0;
+                              break;
+                          }
+                          cooldown = cooldown * 10 + (ch - '0');
+                      }
+                      if (cooldown > maxCooldown)
+                          cooldown = maxCooldown;
+
+                      st->potionCooldown[c][potion] = cooldown;
+                      st->potionZones[c][potion] = potion_zone_from_center(*this, potion, center);
+                  }
+              }
+              if (end == std::string::npos)
+                  break;
+              start = end + 1;
+          }
+      };
+
+      if (!potionState.empty())
+          parse_potion_state(potionState);
+  }
+
   // 2. Active color
+  ss >> std::ws;
   ss >> token;
   sideToMove = (token != (sfen ? 'w' : 'b') ? WHITE : BLACK);  // Invert colors for SFEN
   ss >> token;
@@ -834,6 +961,38 @@ string Position::fen(bool sfen, bool showPromoted, int countStarted, std::string
                   ss << std::string(pieceCountInHand[c][pt], piece_to_char()[make_piece(c, pt)]);
               }
       ss << ']';
+  }
+
+  if (potions_enabled())
+  {
+      std::string potionState;
+      const int maxCooldown = (1u << POTION_COOLDOWN_BITS) - 1;
+      for (Color c : {WHITE, BLACK})
+          for (int pt = 0; pt < Variant::POTION_TYPE_NB; ++pt)
+          {
+              Variant::PotionType potion = static_cast<Variant::PotionType>(pt);
+              PieceType potionPiece = potion_piece(potion);
+              if (potionPiece == NO_PIECE_TYPE)
+                  continue;
+              if (!potionState.empty())
+                  potionState += ",";
+              potionState += piece_to_char()[make_piece(c, potionPiece)];
+              potionState += "@";
+              Bitboard zone = potion_zone(c, potion);
+              if (zone)
+                  potionState += UCI::square(*this, potion_zone_center(*this, potion, zone));
+              else
+                  potionState += "-";
+              potionState += ":";
+              int cooldown = potion_cooldown(c, potion);
+              if (cooldown < 0)
+                  cooldown = 0;
+              if (cooldown > maxCooldown)
+                  cooldown = maxCooldown;
+              potionState += std::to_string(cooldown);
+          }
+      if (!potionState.empty())
+          ss << " {" << potionState << "}";
   }
 
   ss << (sideToMove == WHITE ? " w " : " b ");
@@ -1352,8 +1511,8 @@ bool Position::legal(Move m) const {
       if (freeze_squares() & to_sq(m))
           return false;
 
-      // Non-royal pieces can not be impeded from castling
-      if (type_of(piece_on(from)) != KING)
+      // Only the castling king piece is subject to attack checks
+      if (type_of(piece_on(from)) != castling_king_piece(us))
           return true;
 
       for (Square s = to; s != from; s += step)
