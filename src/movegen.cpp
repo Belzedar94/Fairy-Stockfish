@@ -42,6 +42,64 @@ namespace {
     }
   };
 
+  struct GateScore {
+    Square gate;
+    int score;
+  };
+
+  constexpr Direction RookDirections[] = {NORTH, SOUTH, EAST, WEST};
+  constexpr Direction BishopDirections[] = {NORTH_EAST, SOUTH_EAST, SOUTH_WEST, NORTH_WEST};
+  constexpr int PotionKingBonus = 10000;
+  constexpr int MaxFreezePotionGates = 8;
+  constexpr int MaxJumpPotionGates = 6;
+
+  void add_jump_gate_scores(const Position& pos, Color us, PieceType pt,
+                            const Direction* dirs, int dirCount, int scores[SQUARE_NB]) {
+    Bitboard sliders = pos.pieces(us, pt);
+    const Bitboard board = pos.board_bb();
+    const Bitboard occ = pos.pieces();
+
+    while (sliders)
+    {
+        Square s = pop_lsb(sliders);
+        for (int i = 0; i < dirCount; ++i)
+        {
+            Direction d = dirs[i];
+            Square cur = s;
+            while (true)
+            {
+                cur += d;
+                if (!is_ok(cur) || !(board & square_bb(cur)))
+                    break;
+                if (occ & square_bb(cur))
+                {
+                    Square blocker = cur;
+                    cur += d;
+                    while (true)
+                    {
+                        if (!is_ok(cur) || !(board & square_bb(cur)))
+                            break;
+                        if (occ & square_bb(cur))
+                        {
+                            Piece target = pos.piece_on(cur);
+                            if (color_of(target) == ~us)
+                            {
+                                int bonus = int(CapturePieceValue[MG][target]);
+                                if (type_of(target) == pos.king_type())
+                                    bonus += PotionKingBonus;
+                                scores[blocker] += bonus;
+                            }
+                            break;
+                        }
+                        cur += d;
+                    }
+                    break;
+                }
+            }
+        }
+    }
+  }
+
   template<MoveType T>
   ExtMove* make_move_and_gating(const Position& pos, ExtMove* moveList, Color us, Square from, Square to, PieceType pt = NO_PIECE_TYPE) {
 
@@ -541,6 +599,9 @@ namespace {
     bool baseMovesSorted = false;
     Move baseMoves[MAX_MOVES];
     int baseCount = 0;
+    constexpr bool LimitPotionGates = Type == QUIETS;
+    int jumpGateScores[SQUARE_NB];
+    bool jumpScoresReady = false;
 
     for (int pt = 0; pt < Variant::POTION_TYPE_NB; ++pt)
     {
@@ -558,12 +619,10 @@ namespace {
         if (potion == Variant::POTION_JUMP)
             candidates &= allPieces;
 
-        while (candidates)
-        {
-            Square gate = pop_lsb(candidates);
+        auto generate_for_gate = [&](Square gate) {
 
             if (potion == Variant::POTION_JUMP && !(allPieces & gate))
-                continue;
+                return;
 
             if (potion == Variant::POTION_FREEZE)
             {
@@ -595,7 +654,7 @@ namespace {
                 }
 
                 cur = write;
-                continue;
+                return;
             }
 
             Bitboard jumpRemoved = square_bb(gate);
@@ -625,7 +684,7 @@ namespace {
 
             cur = write;
             if (!allowNonKing)
-                continue;
+                return;
 
             if (!baseMovesSorted)
             {
@@ -691,6 +750,57 @@ namespace {
             }
 
             cur = write;
+        };
+
+        if constexpr (LimitPotionGates)
+        {
+            GateScore gateScores[SQUARE_NB];
+            int gateCount = 0;
+
+            if (potion == Variant::POTION_JUMP && !jumpScoresReady)
+            {
+                std::fill_n(jumpGateScores, SQUARE_NB, 0);
+                add_jump_gate_scores(pos, Us, ROOK, RookDirections, 4, jumpGateScores);
+                add_jump_gate_scores(pos, Us, BISHOP, BishopDirections, 4, jumpGateScores);
+                add_jump_gate_scores(pos, Us, QUEEN, RookDirections, 4, jumpGateScores);
+                add_jump_gate_scores(pos, Us, QUEEN, BishopDirections, 4, jumpGateScores);
+                jumpScoresReady = true;
+            }
+
+            while (candidates)
+            {
+                Square gate = pop_lsb(candidates);
+                int score = 0;
+                if (potion == Variant::POTION_FREEZE)
+                {
+                    Bitboard zone = pos.freeze_zone_from_square(gate);
+                    Bitboard enemies = zone & pos.pieces(~Us);
+                    while (enemies)
+                        score += int(CapturePieceValue[MG][pos.piece_on(pop_lsb(enemies))]);
+                    PieceType kingType = pos.king_type();
+                    if (kingType != NO_PIECE_TYPE && (zone & pos.pieces(~Us, kingType)))
+                        score += PotionKingBonus;
+                }
+                else
+                    score = jumpGateScores[gate];
+                gateScores[gateCount++] = {gate, score};
+            }
+
+            int gateLimit = potion == Variant::POTION_FREEZE ? MaxFreezePotionGates : MaxJumpPotionGates;
+            if (gateCount > gateLimit)
+            {
+                std::partial_sort(gateScores, gateScores + gateLimit, gateScores + gateCount,
+                                  [](const GateScore& a, const GateScore& b) { return a.score > b.score; });
+                gateCount = gateLimit;
+            }
+
+            for (int i = 0; i < gateCount; ++i)
+                generate_for_gate(gateScores[i].gate);
+        }
+        else
+        {
+            while (candidates)
+                generate_for_gate(pop_lsb(candidates));
         }
     }
 

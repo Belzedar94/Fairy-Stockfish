@@ -27,3 +27,9 @@ Idea v4: potion LMR tuning (lighter for potion checks/captures, heavier for weak
 - Bench new: 92861 NPS (-6.37%)
 - Perft startpos: depth1 1814, depth2 3007820, branching 1658.11 (unchanged)
 - Status: discarded (no Elo gain)
+
+Idea v8: potion gate progressive pruning in QUIETS (topK gates by impact)
+- Bench baseline: 31353 NPS
+- Bench new: 67646 NPS (+115.8%)
+- Perft startpos: depth1 1814, depth2 3007820, branching 1658.11 (unchanged)
+- Status: pending (needs Elo test)
