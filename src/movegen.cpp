@@ -837,6 +837,62 @@ ExtMove* generate(const Position& pos, ExtMove* moveList) {
                      : generate_all<BLACK, Type>(pos, moveList);
 }
 
+ExtMove* generate_base(GenType Type, const Position& pos, ExtMove* moveList) {
+
+  assert(Type != LEGAL);
+  Color us = pos.side_to_move();
+
+  switch (Type)
+  {
+  case CAPTURES:
+      return us == WHITE ? generate_all_impl<WHITE, CAPTURES>(pos, moveList)
+                         : generate_all_impl<BLACK, CAPTURES>(pos, moveList);
+  case QUIETS:
+      return us == WHITE ? generate_all_impl<WHITE, QUIETS>(pos, moveList)
+                         : generate_all_impl<BLACK, QUIETS>(pos, moveList);
+  case QUIET_CHECKS:
+      return us == WHITE ? generate_all_impl<WHITE, QUIET_CHECKS>(pos, moveList)
+                         : generate_all_impl<BLACK, QUIET_CHECKS>(pos, moveList);
+  case EVASIONS:
+      return us == WHITE ? generate_all_impl<WHITE, EVASIONS>(pos, moveList)
+                         : generate_all_impl<BLACK, EVASIONS>(pos, moveList);
+  case NON_EVASIONS:
+      return us == WHITE ? generate_all_impl<WHITE, NON_EVASIONS>(pos, moveList)
+                         : generate_all_impl<BLACK, NON_EVASIONS>(pos, moveList);
+  default:
+      assert(false);
+      return moveList;
+  }
+}
+
+ExtMove* generate_potions(GenType Type, const Position& pos, ExtMove* baseStart, ExtMove* baseEnd) {
+
+  assert(Type != LEGAL);
+  Color us = pos.side_to_move();
+
+  switch (Type)
+  {
+  case CAPTURES:
+      return us == WHITE ? generate_potion_moves<WHITE, CAPTURES>(pos, baseStart, baseEnd)
+                         : generate_potion_moves<BLACK, CAPTURES>(pos, baseStart, baseEnd);
+  case QUIETS:
+      return us == WHITE ? generate_potion_moves<WHITE, QUIETS>(pos, baseStart, baseEnd)
+                         : generate_potion_moves<BLACK, QUIETS>(pos, baseStart, baseEnd);
+  case QUIET_CHECKS:
+      return us == WHITE ? generate_potion_moves<WHITE, QUIET_CHECKS>(pos, baseStart, baseEnd)
+                         : generate_potion_moves<BLACK, QUIET_CHECKS>(pos, baseStart, baseEnd);
+  case EVASIONS:
+      return us == WHITE ? generate_potion_moves<WHITE, EVASIONS>(pos, baseStart, baseEnd)
+                         : generate_potion_moves<BLACK, EVASIONS>(pos, baseStart, baseEnd);
+  case NON_EVASIONS:
+      return us == WHITE ? generate_potion_moves<WHITE, NON_EVASIONS>(pos, baseStart, baseEnd)
+                         : generate_potion_moves<BLACK, NON_EVASIONS>(pos, baseStart, baseEnd);
+  default:
+      assert(false);
+      return baseEnd;
+  }
+}
+
 // Explicit template instantiations
 template ExtMove* generate<CAPTURES>(const Position&, ExtMove*);
 template ExtMove* generate<QUIETS>(const Position&, ExtMove*);

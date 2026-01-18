@@ -32,4 +32,16 @@ Idea v8: potion gate progressive pruning in QUIETS (topK gates by impact)
 - Bench baseline: 31353 NPS
 - Bench new: 67646 NPS (+115.8%)
 - Perft startpos: depth1 1814, depth2 3007820, branching 1658.11 (unchanged)
+- Status: accepted (user: ~+80 Elo)
+
+Idea v9: potion LMP pruning in search (non-PV, quiet potion moves)
+- Bench baseline: 137793 NPS
+- Bench new: 135998 NPS (-1.30%)
+- Perft startpos: unchanged (search-only change)
+- Status: discarded (no Elo gain)
+
+Idea v10: lazy potion generation in MovePicker (generate potions only after quiets)
+- Bench baseline: 137402 NPS
+- Bench new: 172862 NPS (+25.8%)
+- Perft startpos: unchanged (generation-order change)
 - Status: pending (needs Elo test)

@@ -32,7 +32,7 @@ int history_slot(Piece pc) {
 namespace {
 
   enum Stages {
-    MAIN_TT, CAPTURE_INIT, GOOD_CAPTURE, REFUTATION, QUIET_INIT, QUIET, BAD_CAPTURE,
+    MAIN_TT, CAPTURE_INIT, GOOD_CAPTURE, REFUTATION, QUIET_INIT, QUIET, POTION_INIT, POTION, BAD_CAPTURE,
     EVASION_TT, EVASION_INIT, EVASION,
     PROBCUT_TT, PROBCUT_INIT, PROBCUT,
     QSEARCH_TT, QCAPTURE_INIT, QCAPTURE, QCHECK_INIT, QCHECK
@@ -117,7 +117,7 @@ bool MovePicker::is_potion_move(Move m) const {
 MovePicker::MovePicker(const Position& p, Move ttm, Depth d, const ButterflyHistory* mh, const GateHistory* dh, const LowPlyHistory* lp,
                        const CapturePieceToHistory* cph, const PieceToHistory** ch, Move cm, const Move* killers, int pl)
            : pos(p), mainHistory(mh), gateHistory(dh), lowPlyHistory(lp), captureHistory(cph), continuationHistory(ch),
-             ttMove(ttm), refutations{{killers[0], 0}, {killers[1], 0}, {cm, 0}}, depth(d), ply(pl) {
+             ttMove(ttm), refutations{{killers[0], 0}, {killers[1], 0}, {cm, 0}}, quietStart(moves), quietEnd(moves), depth(d), ply(pl) {
 
   assert(d > 0);
 
@@ -128,7 +128,7 @@ MovePicker::MovePicker(const Position& p, Move ttm, Depth d, const ButterflyHist
 /// MovePicker constructor for quiescence search
 MovePicker::MovePicker(const Position& p, Move ttm, Depth d, const ButterflyHistory* mh, const GateHistory* dh,
                        const CapturePieceToHistory* cph, const PieceToHistory** ch, Square rs)
-           : pos(p), mainHistory(mh), gateHistory(dh), captureHistory(cph), continuationHistory(ch), ttMove(ttm), recaptureSquare(rs), depth(d) {
+           : pos(p), mainHistory(mh), gateHistory(dh), captureHistory(cph), continuationHistory(ch), ttMove(ttm), quietStart(moves), quietEnd(moves), recaptureSquare(rs), depth(d) {
 
   assert(d <= 0);
 
@@ -141,7 +141,7 @@ MovePicker::MovePicker(const Position& p, Move ttm, Depth d, const ButterflyHist
 /// MovePicker constructor for ProbCut: we generate captures with SEE greater
 /// than or equal to the given threshold.
 MovePicker::MovePicker(const Position& p, Move ttm, Value th, const GateHistory* dh, const CapturePieceToHistory* cph)
-           : pos(p), gateHistory(dh), captureHistory(cph), ttMove(ttm), threshold(th) {
+           : pos(p), gateHistory(dh), captureHistory(cph), ttMove(ttm), quietStart(moves), quietEnd(moves), threshold(th) {
 
   assert(!pos.checkers());
 
@@ -272,12 +272,16 @@ top:
   case QUIET_INIT:
       if (!skipQuiets && !(pos.must_capture() && pos.has_capture()))
       {
-          cur = endBadCaptures;
-          endMoves = generate<QUIETS>(pos, cur);
+          quietStart = endBadCaptures;
+          quietEnd = generate_base(QUIETS, pos, quietStart);
+          cur = quietStart;
+          endMoves = quietEnd;
 
           score<QUIETS>();
           partial_insertion_sort(cur, endMoves, -3000 * depth);
       }
+      else
+          quietStart = quietEnd = endBadCaptures;
 
       ++stage;
       [[fallthrough]];
@@ -287,6 +291,34 @@ top:
           && select<Next>([&](){return   *cur != refutations[0].move
                                       && *cur != refutations[1].move
                                       && *cur != refutations[2].move;}))
+          return *(cur - 1);
+
+      ++stage;
+      [[fallthrough]];
+
+  case POTION_INIT:
+      if (   skipQuiets
+          || (pos.must_capture() && pos.has_capture())
+          || !pos.potions_enabled()
+          || quietStart == quietEnd)
+      {
+          cur = moves;
+          endMoves = endBadCaptures;
+          stage = BAD_CAPTURE;
+          goto top;
+      }
+
+      cur = quietEnd;
+      endMoves = generate_potions(QUIETS, pos, quietStart, quietEnd);
+
+      score<QUIETS>();
+      partial_insertion_sort(cur, endMoves, -3000 * depth);
+
+      ++stage;
+      [[fallthrough]];
+
+  case POTION:
+      if (select<Next>([&](){return true;}))
           return *(cur - 1);
 
       // Prepare the pointers to loop over the bad captures
