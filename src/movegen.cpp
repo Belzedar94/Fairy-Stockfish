@@ -85,7 +85,7 @@ namespace {
                             if (color_of(target) == ~us)
                             {
                                 int bonus = int(CapturePieceValue[MG][target]);
-                                if (type_of(target) == pos.king_type())
+                                if (type_of(target) == pos.royal_piece_type())
                                     bonus += PotionKingBonus;
                                 scores[blocker] += bonus;
                             }
@@ -216,6 +216,7 @@ namespace {
     constexpr Direction Up       = pawn_push(Us);
     constexpr Direction UpRight  = (Us == WHITE ? NORTH_EAST : SOUTH_WEST);
     constexpr Direction UpLeft   = (Us == WHITE ? NORTH_WEST : SOUTH_EAST);
+    const PieceType royal = pos.royal_piece_type();
 
     const bool allowFriendlyCaptures = pos.self_capture()
                                     && (Type == CAPTURES || Type == EVASIONS || Type == NON_EVASIONS);
@@ -228,7 +229,7 @@ namespace {
     const Bitboard frozen     = pos.freeze_squares();
     const Bitboard pawns      = pos.pieces(Us, PAWN) & ~frozen;
     const Bitboard movable    = pos.board_bb(Us, PAWN) & ~pos.pieces();
-    const Bitboard friendlyCapturable = pos.pieces(Us) & ~pos.pieces(Us, KING);
+    const Bitboard friendlyCapturable = pos.pieces(Us) & ~pos.pieces(Us, royal);
     const Bitboard capturable = pos.board_bb(Us, PAWN)
                               & (allowFriendlyCaptures ? (pos.pieces(Them) | friendlyCapturable)
                                                        :  pos.pieces(Them));
@@ -258,12 +259,12 @@ namespace {
         blc &= ~standardPromotionZone;
     }
 
-    if (Type == QUIET_CHECKS && pos.count<KING>(Them))
+    if (Type == QUIET_CHECKS && pos.count(Them, royal))
     {
         // To make a quiet check, you either make a direct check by pushing a pawn
         // or push a blocker pawn that is not on the same file as the enemy king.
         // Discovered check promotion has been already generated amongst the captures.
-        Square ksq = pos.square<KING>(Them);
+        Square ksq = pos.square(Them, royal);
         Bitboard dcCandidatePawns = pos.blockers_for_king(Them) & ~file_bb(ksq);
         b1 &= pawn_attacks_bb(Them, ksq) | shift<   Up>(dcCandidatePawns);
         b2 &= pawn_attacks_bb(Them, ksq) | shift<Up+Up>(dcCandidatePawns);
@@ -473,7 +474,8 @@ namespace {
     static_assert(Type != LEGAL, "Unsupported type in generate_all()");
 
     constexpr bool Checks = Type == QUIET_CHECKS; // Reduce template instantiations
-    const Square ksq = pos.count<KING>(Us) ? pos.square<KING>(Us) : SQ_NONE;
+    const PieceType royal = pos.royal_piece_type();
+    const Square ksq = pos.count(Us, royal) ? pos.square(Us, royal) : SQ_NONE;
     Bitboard target;
     Bitboard captureTarget = Type == EVASIONS ? ~pos.pieces(Us) : Bitboard(0);
     Bitboard jumpForbidden = pos.spell_jump_removed();
@@ -492,7 +494,7 @@ namespace {
                 target = ~pos.pieces(Us);
             // Leaper attacks can not be blocked
             Square checksq = lsb(pos.checkers());
-            if (LeaperAttacks[~Us][type_of(pos.piece_on(checksq))][checksq] & pos.square<KING>(Us))
+            if (LeaperAttacks[~Us][type_of(pos.piece_on(checksq))][checksq] & ksq)
                 target = pos.checkers();
         }
 
@@ -505,10 +507,10 @@ namespace {
         if (jumpForbidden)
             captureTarget &= ~jumpForbidden;
         if (pos.self_capture() && (Type == NON_EVASIONS || Type == CAPTURES))
-            captureTarget |= pos.pieces(Us) & ~pos.pieces(Us, KING);
+            captureTarget |= pos.pieces(Us) & ~pos.pieces(Us, royal);
 
         moveList = generate_pawn_moves<Us, Type>(pos, moveList, target);
-        for (PieceSet ps = pos.piece_types() & ~(piece_set(PAWN) | KING); ps;)
+        for (PieceSet ps = pos.piece_types() & ~(piece_set(PAWN) | royal); ps;)
             moveList = generate_moves<Us, Type>(pos, moveList, pop_lsb(ps), target, captureTarget);
         // generate drops
         if (pos.piece_drops() && Type != CAPTURES && (pos.can_drop(Us, ALL_PIECES) || pos.two_boards()))
@@ -516,7 +518,7 @@ namespace {
                 moveList = generate_drops<Us, Type>(pos, moveList, pop_lsb(ps), target & ~pos.pieces(~Us));
 
         // Castling with non-king piece
-        if (!pos.count<KING>(Us) && Type != CAPTURES && pos.can_castle(Us & ANY_CASTLING))
+        if (!pos.count(Us, royal) && Type != CAPTURES && pos.can_castle(Us & ANY_CASTLING))
         {
             Square from = pos.castling_king_square(Us);
             for(CastlingRights cr : { Us & KING_SIDE, Us & QUEEN_SIDE } )
@@ -527,9 +529,9 @@ namespace {
         // Special moves
         if (pos.cambodian_moves() && pos.gates(Us) && Type != CAPTURES)
         {
-            if (Type != EVASIONS && (pos.pieces(Us, KING) & pos.gates(Us)))
+            if (Type != EVASIONS && (pos.pieces(Us, royal) & pos.gates(Us)))
             {
-                Square from = pos.square<KING>(Us);
+                Square from = pos.square(Us, royal);
                 Bitboard b = PseudoAttacks[WHITE][KNIGHT][from] & rank_bb(rank_of(from + (Us == WHITE ? NORTH : SOUTH)))
                     & target & ~pos.pieces();
                 while (b)
@@ -547,7 +549,7 @@ namespace {
         }
 
         // Workaround for passing: Execute a non-move with any piece
-        if (pos.pass(Us) && !pos.count<KING>(Us) && pos.pieces(Us))
+        if (pos.pass(Us) && !pos.count(Us, royal) && pos.pieces(Us))
             *moveList++ = make<SPECIAL>(lsb(pos.pieces(Us)), lsb(pos.pieces(Us)));
 
         //if "wall or move", generate walling action with null move
@@ -558,13 +560,13 @@ namespace {
     }
 
     // King moves
-    if (pos.count<KING>(Us) && (!Checks || pos.blockers_for_king(~Us) & ksq))
+    if (pos.count(Us, royal) && (!Checks || pos.blockers_for_king(~Us) & ksq))
     {
-        Bitboard kingAttacks = pos.attacks_from(Us, KING, ksq) & pos.pieces();
-        Bitboard kingMoves   = pos.moves_from  (Us, KING, ksq) & ~pos.pieces();
+        Bitboard kingAttacks = pos.attacks_from(Us, royal, ksq) & pos.pieces();
+        Bitboard kingMoves   = pos.moves_from  (Us, royal, ksq) & ~pos.pieces();
         Bitboard kingCaptureMask = Type == EVASIONS ? ~pos.pieces(Us) : captureTarget;
         if (Type == EVASIONS && pos.self_capture())
-            kingCaptureMask |= pos.pieces(Us) & ~pos.pieces(Us, KING);
+            kingCaptureMask |= pos.pieces(Us) & ~pos.pieces(Us, royal);
         Bitboard kingQuietMask = Type == EVASIONS ? ~pos.pieces(Us) : target;
         Bitboard b = (kingAttacks & kingCaptureMask) | (kingMoves & kingQuietMask);
         while (b)
@@ -590,10 +592,11 @@ namespace {
         return baseEnd;
 
     const Variant* var = pos.variant();
+    const PieceType royal = pos.royal_piece_type();
     ExtMove* cur = baseEnd;
     const Bitboard baseFrozen = pos.freeze_squares();
     const Bitboard allPieces = pos.pieces();
-    const Square ksq = pos.count<KING>(Us) ? pos.square<KING>(Us) : SQ_NONE;
+    const Square ksq = pos.count(Us, royal) ? pos.square(Us, royal) : SQ_NONE;
     const bool allowNonKing = Type != EVASIONS
                            || !more_than_one(pos.checkers() & ~pos.non_sliding_riders());
     bool baseMovesSorted = false;
@@ -707,7 +710,7 @@ namespace {
                     target = ~pos.pieces(Us);
                 // Leaper attacks can not be blocked
                 Square checksq = lsb(pos.checkers());
-                if (LeaperAttacks[~Us][type_of(pos.piece_on(checksq))][checksq] & pos.square<KING>(Us))
+                if (LeaperAttacks[~Us][type_of(pos.piece_on(checksq))][checksq] & ksq)
                     target = pos.checkers();
             }
 
@@ -718,11 +721,11 @@ namespace {
             Bitboard captureTarget = target;
             captureTarget &= ~jumpRemoved;
             if (pos.self_capture() && (Type == NON_EVASIONS || Type == CAPTURES))
-                captureTarget |= pos.pieces(Us) & ~pos.pieces(Us, KING);
+                captureTarget |= pos.pieces(Us) & ~pos.pieces(Us, royal);
 
             static thread_local ExtMove extraMoves[MAX_MOVES];
             ExtMove* extraEnd = extraMoves;
-            for (PieceSet ps = pos.piece_types() & ~(piece_set(PAWN) | KING); ps;)
+            for (PieceSet ps = pos.piece_types() & ~(piece_set(PAWN) | royal); ps;)
             {
                 PieceType sliderPt = pop_lsb(ps);
                 if (!(MoveRiderTypes[0][sliderPt] | MoveRiderTypes[1][sliderPt] | AttackRiderTypes[sliderPt]))
@@ -777,8 +780,7 @@ namespace {
                     Bitboard enemies = zone & pos.pieces(~Us);
                     while (enemies)
                         score += int(CapturePieceValue[MG][pos.piece_on(pop_lsb(enemies))]);
-                    PieceType kingType = pos.king_type();
-                    if (kingType != NO_PIECE_TYPE && (zone & pos.pieces(~Us, kingType)))
+                    if (royal != NO_PIECE_TYPE && (zone & pos.pieces(~Us, royal)))
                         score += PotionKingBonus;
                 }
                 else

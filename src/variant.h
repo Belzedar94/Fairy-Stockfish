@@ -89,6 +89,7 @@ struct Variant {
   PieceSet castlingRookPieces[COLOR_NB] = {piece_set(ROOK), piece_set(ROOK)};
   bool oppositeCastling = false;
   PieceType kingType = KING;
+  PieceType royalPiece = KING;
   bool checking = true;
   bool dropChecks = true;
   bool mustCapture = false;

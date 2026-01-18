@@ -157,6 +157,7 @@ public:
   PieceType castling_king_piece(Color c) const;
   PieceSet castling_rook_pieces(Color c) const;
   PieceType king_type() const;
+  PieceType royal_piece_type() const;
   PieceType nnue_king() const;
   Square nnue_king_square(Color c) const;
     bool nnue_use_pockets() const;
@@ -603,6 +604,11 @@ inline PieceSet Position::castling_rook_pieces(Color c) const {
 inline PieceType Position::king_type() const {
   assert(var != nullptr);
   return var->kingType;
+}
+
+inline PieceType Position::royal_piece_type() const {
+  assert(var != nullptr);
+  return var->royalPiece;
 }
 
 inline PieceType Position::nnue_king() const {

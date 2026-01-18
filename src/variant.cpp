@@ -91,6 +91,7 @@ namespace {
         v->potionDropOnOccupied = true;
         v->remove_piece(KING);
         v->add_piece(COMMONER, 'k');
+        v->royalPiece = COMMONER;
         v->castlingKingPiece[WHITE] = v->castlingKingPiece[BLACK] = COMMONER;
         v->pieceToChar[make_piece(WHITE, CUSTOM_PIECE_1)] = 'F';
         v->pieceToChar[make_piece(BLACK, CUSTOM_PIECE_1)] = 'f';
