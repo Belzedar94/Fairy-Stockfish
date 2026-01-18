@@ -146,8 +146,6 @@ private:
   template<PickType T, typename Pred> Move select(Pred);
   template<GenType> void score();
   bool is_potion_move(Move m) const;
-  int potion_impact(Move m) const;
-  void reset_potion_window(ExtMove* begin, ExtMove* end);
   bool is_useless_potion(Move m) const;
   ExtMove* begin() { return cur; }
   ExtMove* end() { return endMoves; }
@@ -165,9 +163,6 @@ private:
   Value threshold;
   Depth depth;
   int ply;
-  int potionLimit = 0;
-  int potionSeen = 0;
-  int potionThreshold = 0;
   ExtMove moves[MAX_MOVES];
 };
 
