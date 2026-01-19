@@ -35,7 +35,7 @@ namespace {
     MAIN_TT, CAPTURE_INIT, GOOD_CAPTURE, REFUTATION, QUIET_INIT, QUIET, POTION_INIT, POTION, BAD_CAPTURE,
     EVASION_TT, EVASION_INIT, EVASION,
     PROBCUT_TT, PROBCUT_INIT, PROBCUT,
-    QSEARCH_TT, QCAPTURE_INIT, QCAPTURE, QCHECK_INIT, QCHECK, QPOTION_INIT, QPOTION
+    QSEARCH_TT, QCAPTURE_INIT, QCAPTURE, QCHECK_INIT, QCHECK
   };
 
   // partial_insertion_sort() sorts moves in descending order up to and including
@@ -110,36 +110,6 @@ bool MovePicker::is_potion_move(Move m) const {
           return true;
 
   return false;
-}
-
-bool MovePicker::is_tactical_potion(Move m) const {
-
-  if (!pos.potions_enabled() || !is_gating(m))
-      return false;
-
-  Variant::PotionType potion = Variant::POTION_TYPE_NB;
-  PieceType gatingPiece = gating_type(m);
-  for (int idx = 0; idx < Variant::POTION_TYPE_NB; ++idx)
-      if (pos.potion_piece(static_cast<Variant::PotionType>(idx)) == gatingPiece)
-      {
-          potion = static_cast<Variant::PotionType>(idx);
-          break;
-      }
-
-  if (potion != Variant::POTION_FREEZE)
-      return false;
-
-  PieceType royal = pos.royal_piece_type();
-  Square enemyRoyal = pos.count(~pos.side_to_move(), royal) ? pos.square(~pos.side_to_move(), royal) : SQ_NONE;
-  Bitboard zone = pos.freeze_zone_from_square(gating_square(m));
-  if (enemyRoyal != SQ_NONE && (zone & square_bb(enemyRoyal)))
-      return true;
-
-  if (!pos.count(pos.side_to_move(), royal))
-      return false;
-
-  Bitboard attackers = pos.attackers_to(pos.square(pos.side_to_move(), royal), ~pos.side_to_move());
-  return attackers && (zone & attackers);
 }
 
 /// Constructors of the MovePicker class. As arguments we pass information
@@ -416,35 +386,7 @@ top:
       [[fallthrough]];
 
   case QCHECK:
-      if (select<Next>([](){ return true; }))
-          return *(cur - 1);
-      if (!pos.potions_enabled() || depth < DEPTH_QS_CHECKS)
-          return MOVE_NONE;
-      stage = QPOTION_INIT;
-      goto top;
-
-  case QPOTION_INIT: {
-      if (!pos.potions_enabled() || !pos.can_cast_potion(pos.side_to_move(), Variant::POTION_FREEZE))
-          return MOVE_NONE;
-      if (pos.must_capture() && pos.has_capture())
-          return MOVE_NONE;
-
-      quietStart = moves;
-      quietEnd = generate_base(QUIETS, pos, quietStart);
-      cur = quietEnd;
-      endMoves = generate_potions(QUIETS, pos, quietStart, quietEnd);
-
-      score<QUIETS>();
-      partial_insertion_sort(cur, endMoves, -3000 * depth);
-
-      ++stage;
-      [[fallthrough]];
-  }
-
-  case QPOTION:
-      if (select<Next>([&](){ return is_tactical_potion(*cur); }))
-          return *(cur - 1);
-      return MOVE_NONE;
+      return select<Next>([](){ return true; });
   }
 
   assert(false);
