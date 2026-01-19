@@ -631,8 +631,8 @@ namespace {
 
             if (potion == Variant::POTION_FREEZE)
             {
-                // Freeze only restricts moves, so reuse the base list and filter by frozen squares.
-                Bitboard frozen = baseFrozen | pos.freeze_zone_from_square(gate);
+                // New freeze zones apply after the move, so only existing frozen squares block it.
+                Bitboard frozen = baseFrozen;
                 ExtMove* write = cur;
                 for (ExtMove* it = baseStart; it != baseEnd; ++it)
                 {
