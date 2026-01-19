@@ -957,15 +957,43 @@ ExtMove* generate<LEGAL>(const Position& pos, ExtMove* moveList) {
 
   ExtMove* cur = moveList;
 
-  moveList = pos.checkers() ? generate<EVASIONS    >(pos, moveList)
-                            : generate<NON_EVASIONS>(pos, moveList);
-  while (cur != moveList)
+  ExtMove* end = pos.checkers() ? generate<EVASIONS    >(pos, moveList)
+                                : generate<NON_EVASIONS>(pos, moveList);
+  while (cur != end)
       if (!pos.legal(*cur) || pos.virtual_drop(*cur))
-          *cur = (--moveList)->move;
+          *cur = (--end)->move;
       else
           ++cur;
 
-  return moveList;
+  // In check, some potion moves only become evasions because of the gate effect.
+  // Generate extra potion moves from the full non-evasion base list and filter by legality.
+  if (pos.checkers() && pos.potions_enabled())
+  {
+      static thread_local ExtMove baseMoves[MAX_MOVES];
+      ExtMove* baseEnd = generate_base(NON_EVASIONS, pos, baseMoves);
+      ExtMove* potionEnd = generate_potions(NON_EVASIONS, pos, baseMoves, baseEnd);
+
+      for (ExtMove* it = baseEnd; it != potionEnd; ++it)
+      {
+          Move m = it->move;
+          if (!pos.legal(m) || pos.virtual_drop(m))
+              continue;
+
+          bool exists = false;
+          for (ExtMove* scan = moveList; scan != end; ++scan)
+              if (scan->move == m)
+              {
+                  exists = true;
+                  break;
+              }
+          if (exists)
+              continue;
+
+          *end++ = m;
+      }
+  }
+
+  return end;
 }
 
 } // namespace Stockfish
