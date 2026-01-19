@@ -1602,16 +1602,17 @@ bool Position::pseudo_legal(const Move m) const {
   // yet we skip the legality check of MoveList<LEGAL>().
   Bitboard freezeExtra = 0;
   Bitboard jumpRemoved = 0;
+  Variant::PotionType gatingPotion = Variant::POTION_TYPE_NB;
   if (is_gating(m))
   {
-      Variant::PotionType potion = potion_type_from_piece(var, gating_type(m));
-      if (potion != Variant::POTION_TYPE_NB)
+      gatingPotion = potion_type_from_piece(var, gating_type(m));
+      if (gatingPotion != Variant::POTION_TYPE_NB)
       {
-          if (!can_cast_potion(us, potion))
+          if (!can_cast_potion(us, gatingPotion))
               return false;
-          if (potion == Variant::POTION_FREEZE)
+          if (gatingPotion == Variant::POTION_FREEZE)
               freezeExtra = freeze_zone_from_square(gating_square(m));
-          else if (potion == Variant::POTION_JUMP)
+          else if (gatingPotion == Variant::POTION_JUMP)
           {
               jumpRemoved = square_bb(gating_square(m));
               if (!piece_on(gating_square(m)))
@@ -1629,17 +1630,9 @@ bool Position::pseudo_legal(const Move m) const {
   if (jumpRemoved && (square_bb(to) & jumpRemoved))
       return false;
 
-  if (type_of(m) != NORMAL || is_gating(m))
-  {
-      if (is_gating(m) && potions_enabled() && checkers())
-      {
-          Variant::PotionType potion = potion_type_from_piece(var, gating_type(m));
-          if (potion != Variant::POTION_TYPE_NB)
-              return legal(m);
-      }
+  if (type_of(m) != NORMAL || (is_gating(m) && gatingPotion == Variant::POTION_TYPE_NB))
       return checkers() ? MoveList<    EVASIONS>(*this).contains(m)
                         : MoveList<NON_EVASIONS>(*this).contains(m);
-  }
 
   //if walling, and walling is not optional, or they didn't move, do the checks.
   if (walling() && (!var->wallOrMove || (from==to)))

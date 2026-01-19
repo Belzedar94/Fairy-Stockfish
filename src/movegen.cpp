@@ -624,6 +624,15 @@ namespace {
         if (potion == Variant::POTION_JUMP)
             candidates &= allPieces;
 
+        ExtMove* freezeStart = baseStart;
+        ExtMove* freezeEnd = baseEnd;
+        static thread_local ExtMove freezeMoves[MAX_MOVES];
+        if (Type == EVASIONS && potion == Variant::POTION_FREEZE)
+        {
+            freezeStart = freezeMoves;
+            freezeEnd = generate_all_impl<Us, NON_EVASIONS>(pos, freezeStart);
+        }
+
         auto generate_for_gate = [&](Square gate, int gateScore) {
 
             if (potion == Variant::POTION_JUMP && !(allPieces & gate))
@@ -634,10 +643,12 @@ namespace {
                 // New freeze zones apply after the move, so only existing frozen squares block it.
                 Bitboard frozen = baseFrozen;
                 ExtMove* write = cur;
-                for (ExtMove* it = baseStart; it != baseEnd; ++it)
+                for (ExtMove* it = freezeStart; it != freezeEnd; ++it)
                 {
                     Move base = it->move;
                     if (is_gating(base))
+                        continue;
+                    if (from_sq(base) == gate)
                         continue;
 
                     MoveType mt = type_of(base);
