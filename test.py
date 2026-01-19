@@ -1004,6 +1004,11 @@ class TestPyffish(unittest.TestCase):
         self.assertNotEqual(result, sf.VALUE_MATE)
         self.assertNotEqual(result, -sf.VALUE_MATE)
 
+    def test_spell_chess_freeze_check_has_evasion(self):
+        fen = "rnbqkbnr/pp1p1ppp/2p1p3/8/4P3/5Q2/PPPP1PPP/RNB1KBNR[JJFFFFFjjfffff] {F@-:0,J@-:0,f@-:0,j@-:0} w KQkq - 0 3"
+        moves = sf.legal_moves("spell-chess", fen, ["f@d7,f3f7"])
+        self.assertIn("f@f7,g8h6", moves)
+
     def test_get_san(self):
         fen = "4k3/8/3R4/8/1R3R2/8/3R4/4K3 w - - 0 1"
         result = sf.get_san("chess", fen, "b4d4")

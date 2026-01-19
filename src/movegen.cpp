@@ -871,6 +871,9 @@ namespace {
 ///
 /// Returns a pointer to the end of the move list.
 
+ExtMove* generate_base(GenType Type, const Position& pos, ExtMove* moveList);
+ExtMove* generate_potions(GenType Type, const Position& pos, ExtMove* baseStart, ExtMove* baseEnd);
+
 template<GenType Type>
 ExtMove* generate(const Position& pos, ExtMove* moveList) {
 
@@ -879,8 +882,43 @@ ExtMove* generate(const Position& pos, ExtMove* moveList) {
 
   Color us = pos.side_to_move();
 
-  return us == WHITE ? generate_all<WHITE, Type>(pos, moveList)
-                     : generate_all<BLACK, Type>(pos, moveList);
+  ExtMove* end = us == WHITE ? generate_all<WHITE, Type>(pos, moveList)
+                             : generate_all<BLACK, Type>(pos, moveList);
+
+  // In check, some potion moves only become evasions because of the gate effect.
+  // Generate extra potion moves from the full non-evasion base list and filter by legality.
+  if constexpr (Type == EVASIONS)
+      if (pos.potions_enabled())
+      {
+          static thread_local ExtMove baseMoves[MAX_MOVES];
+          ExtMove* baseEnd = generate_base(NON_EVASIONS, pos, baseMoves);
+          ExtMove* potionEnd = generate_potions(NON_EVASIONS, pos, baseMoves, baseEnd);
+
+          for (ExtMove* it = baseEnd; it != potionEnd; ++it)
+          {
+              Move m = it->move;
+              if (type_of(m) == CASTLING)
+                  continue;
+              if (!pos.pseudo_legal(m))
+                  continue;
+              if (!pos.legal(m) || pos.virtual_drop(m))
+                  continue;
+
+              bool exists = false;
+              for (ExtMove* scan = moveList; scan != end; ++scan)
+                  if (scan->move == m)
+                  {
+                      exists = true;
+                      break;
+                  }
+              if (exists)
+                  continue;
+
+              *end++ = m;
+          }
+      }
+
+  return end;
 }
 
 ExtMove* generate_base(GenType Type, const Position& pos, ExtMove* moveList) {

@@ -295,7 +295,6 @@ extern "C" PyObject* pyffish_pieceToPartner(PyObject* self, PyObject *args) {
 }
 
 // INPUT variant, fen, move list
-// should only be called when the move list is empty
 extern "C" PyObject* pyffish_gameResult(PyObject* self, PyObject *args) {
     PyObject *moveList;
     Position pos;
@@ -309,11 +308,14 @@ extern "C" PyObject* pyffish_gameResult(PyObject* self, PyObject *args) {
 
     StateListPtr states(new std::deque<StateInfo>(1));
     buildPosition(pos, states, variant, fen, moveList, chess960);
-    assert(!MoveList<LEGAL>(pos).size());
     gameEnd = pos.is_immediate_game_end(result);
-    if (!gameEnd)
-        result = pos.checkers() ? pos.checkmate_value() : pos.stalemate_value();
+    if (gameEnd)
+        return Py_BuildValue("i", result);
 
+    if (MoveList<LEGAL>(pos).size())
+        return Py_BuildValue("i", VALUE_NONE);
+
+    result = pos.checkers() ? pos.checkmate_value() : pos.stalemate_value();
     return Py_BuildValue("i", result);
 }
 
