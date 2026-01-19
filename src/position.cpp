@@ -2897,6 +2897,7 @@ bool Position::see_ge(Move m, Value threshold) const {
       return VALUE_ZERO >= threshold;
 
   Square from = from_sq(m), to = to_sq(m);
+  Piece victim = piece_on(to);
 
   // nCheck
   if (check_counting() && color_of(moved_piece(m)) == sideToMove && gives_check(m))
@@ -2919,7 +2920,6 @@ bool Position::see_ge(Move m, Value threshold) const {
   if (must_capture() || !checking_permitted() || is_gating(m) || count<CLOBBER_PIECE>() == count<ALL_PIECES>())
       return VALUE_ZERO >= threshold;
 
-  Piece victim = piece_on(to);
   int victimValue = PieceValue[MG][victim];
   if (victim != NO_PIECE && color_of(victim) == color_of(moved_piece(m)) && self_capture())
       victimValue = -victimValue;

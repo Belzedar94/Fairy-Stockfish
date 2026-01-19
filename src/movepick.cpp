@@ -54,6 +54,11 @@ namespace {
   }
 
   constexpr int PotionPenalty = 1 << 28;
+  constexpr int PotionGateScale = 4;
+  constexpr int PotionGateMid = 1200;
+  constexpr int PotionGateHigh = 6000;
+  constexpr int PotionPenaltyMid = PotionPenalty / 2;
+  constexpr int PotionPenaltyHigh = PotionPenalty / 8;
 } // namespace
 
 
@@ -160,6 +165,9 @@ void MovePicker::score() {
 
   for (auto& m : *this)
   {
+      const bool potionMove = is_potion_move(m);
+      const int gateBonus = potionMove ? m.value : 0;
+
       if constexpr (Type == CAPTURES)
           m.value =  int(PieceValue[MG][pos.piece_on(to_sq(m))]) * 6
                    + (*gateHistory)[pos.side_to_move()][gating_square(m)]       
@@ -185,9 +193,21 @@ void MovePicker::score() {
                        - (1 << 28);
       }
 
-      if constexpr (Type == CAPTURES || Type == QUIETS)
-          if (is_potion_move(m))
-              m.value -= PotionPenalty;
+      if constexpr (Type == CAPTURES)
+      {
+          if (potionMove)
+              m.value += gateBonus;
+      }
+      else if constexpr (Type == QUIETS)
+      {
+          if (potionMove)
+          {
+              m.value += gateBonus * PotionGateScale;
+              m.value -= gateBonus >= PotionGateHigh ? PotionPenaltyHigh
+                       : gateBonus >= PotionGateMid ? PotionPenaltyMid
+                                                    : PotionPenalty;
+          }
+      }
   }
 }
 
@@ -296,7 +316,7 @@ top:
       ++stage;
       [[fallthrough]];
 
-  case POTION_INIT:
+  case POTION_INIT: {
       if (   skipQuiets
           || (pos.must_capture() && pos.has_capture())
           || !pos.potions_enabled()
@@ -316,6 +336,7 @@ top:
 
       ++stage;
       [[fallthrough]];
+  }
 
   case POTION:
       if (select<Next>([&](){return true;}))

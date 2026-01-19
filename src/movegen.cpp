@@ -605,6 +605,8 @@ namespace {
     constexpr bool LimitPotionGates = Type == QUIETS;
     int jumpGateScores[SQUARE_NB];
     bool jumpScoresReady = false;
+    int freezeThreatScores[SQUARE_NB];
+    bool freezeThreatReady = false;
 
     for (int pt = 0; pt < Variant::POTION_TYPE_NB; ++pt)
     {
@@ -622,7 +624,7 @@ namespace {
         if (potion == Variant::POTION_JUMP)
             candidates &= allPieces;
 
-        auto generate_for_gate = [&](Square gate) {
+        auto generate_for_gate = [&](Square gate, int gateScore) {
 
             if (potion == Variant::POTION_JUMP && !(allPieces & gate))
                 return;
@@ -652,7 +654,7 @@ namespace {
                                       : make_gating<CASTLING>(from_sq(base), to_sq(base), potionPiece, gate);
 
                     write->move = gatingMove;
-                    write->value = it->value;
+                    write->value = gateScore;
                     ++write;
                 }
 
@@ -681,7 +683,7 @@ namespace {
                                   : make_gating<CASTLING>(from_sq(base), to_sq(base), potionPiece, gate);
 
                 write->move = gatingMove;
-                write->value = it->value;
+                write->value = gateScore;
                 ++write;
             }
 
@@ -748,7 +750,7 @@ namespace {
 
                 Move gatingMove = make_gating<NORMAL>(from_sq(base), to_sq(base), potionPiece, gate);
                 write->move = gatingMove;
-                write->value = it->value;
+                write->value = gateScore;
                 ++write;
             }
 
@@ -769,6 +771,44 @@ namespace {
                 add_jump_gate_scores(pos, Us, QUEEN, BishopDirections, 4, jumpGateScores);
                 jumpScoresReady = true;
             }
+            else if (potion == Variant::POTION_FREEZE && !freezeThreatReady)
+            {
+                std::fill_n(freezeThreatScores, SQUARE_NB, 0);
+
+                const Bitboard frozen = baseFrozen;
+                Bitboard attackers = pos.pieces(~Us) & ~frozen;
+                const Bitboard occ = pos.pieces();
+                const Bitboard ours = pos.pieces(Us);
+                const Square ourRoyal = pos.count(Us, royal) ? pos.square(Us, royal) : SQ_NONE;
+
+                while (attackers)
+                {
+                    Square s = pop_lsb(attackers);
+                    Piece pc = pos.piece_on(s);
+                    PieceType enemyPt = type_of(pc);
+                    if (enemyPt == NO_PIECE_TYPE)
+                        continue;
+
+                    Bitboard attacks = attacks_bb(~Us, enemyPt, s, occ);
+                    Bitboard targets = attacks & ours;
+                    if (!targets && (ourRoyal == SQ_NONE || !(attacks & square_bb(ourRoyal))))
+                        continue;
+
+                    int bestValue = 0;
+                    while (targets)
+                    {
+                        Square t = pop_lsb(targets);
+                        bestValue = std::max(bestValue, int(CapturePieceValue[MG][pos.piece_on(t)]));
+                    }
+
+                    if (ourRoyal != SQ_NONE && (attacks & square_bb(ourRoyal)))
+                        bestValue += PotionKingBonus;
+
+                    freezeThreatScores[s] = bestValue;
+                }
+
+                freezeThreatReady = true;
+            }
 
             while (candidates)
             {
@@ -779,7 +819,11 @@ namespace {
                     Bitboard zone = pos.freeze_zone_from_square(gate);
                     Bitboard enemies = zone & pos.pieces(~Us);
                     while (enemies)
-                        score += int(CapturePieceValue[MG][pos.piece_on(pop_lsb(enemies))]);
+                    {
+                        Square esq = pop_lsb(enemies);
+                        score += int(CapturePieceValue[MG][pos.piece_on(esq)]);
+                        score += freezeThreatScores[esq];
+                    }
                     if (royal != NO_PIECE_TYPE && (zone & pos.pieces(~Us, royal)))
                         score += PotionKingBonus;
                 }
@@ -797,12 +841,12 @@ namespace {
             }
 
             for (int i = 0; i < gateCount; ++i)
-                generate_for_gate(gateScores[i].gate);
+                generate_for_gate(gateScores[i].gate, gateScores[i].score);
         }
         else
         {
             while (candidates)
-                generate_for_gate(pop_lsb(candidates));
+                generate_for_gate(pop_lsb(candidates), 0);
         }
     }
 

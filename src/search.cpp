@@ -938,6 +938,7 @@ namespace {
 
     // Step 7. Futility pruning: child node (~50 Elo)
     if (   !PvNode
+        && !ss->inCheck
         &&  depth < 9 - 3 * pos.blast_on_capture()
         &&  eval - futility_margin(depth, improving) * (1 + pos.check_counting() + 2 * pos.must_capture() + pos.extinction_single_piece() + !pos.checking_permitted()) >= beta
         &&  eval < VALUE_KNOWN_WIN) // Do not return unproven wins
@@ -945,6 +946,7 @@ namespace {
 
     // Step 8. Null move search with verification search (~40 Elo)
     if (   !PvNode
+        && !ss->inCheck
         && (ss-1)->currentMove != MOVE_NULL
         && (ss-1)->statScore < 23767
         &&  eval >= beta
@@ -1111,7 +1113,6 @@ moves_loop: // When in check, search starts from here
                          && ttMove
                          && (tte->bound() & BOUND_UPPER)
                          && tte->depth() >= depth;
-
     // Step 12. Loop through all pseudo-legal moves until no moves remain
     // or a beta cutoff occurs.
     while ((move = mp.next_move(moveCountPruning)) != MOVE_NONE)
