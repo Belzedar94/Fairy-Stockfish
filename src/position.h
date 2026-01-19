@@ -202,7 +202,6 @@ public:
   int potion_cooldown(Color c, Variant::PotionType type) const;
   Bitboard freeze_squares() const;
   Bitboard freeze_squares(Color c) const;
-  Bitboard freeze_move_squares() const;
   Bitboard jump_squares(Color c) const;
   Bitboard freeze_zone_from_square(Square s) const;
   bool gating() const;
@@ -937,50 +936,9 @@ inline Bitboard Position::freeze_squares(Color c) const {
   return mask;
 }
 
-  inline Bitboard Position::freeze_squares() const {
-    return freeze_squares(WHITE) | freeze_squares(BLACK);
-  }
-
-  inline Bitboard Position::freeze_move_squares() const {
-    Bitboard centers = 0;
-    for (Color c : {WHITE, BLACK})
-    {
-      Bitboard zone = st->potionZones[c][Variant::POTION_FREEZE];
-      if (zone)
-      {
-        Square center = SQ_NONE;
-        Bitboard candidates = zone;
-        while (candidates)
-        {
-          Square s = pop_lsb(candidates);
-          if (freeze_zone_from_square(s) == zone)
-          {
-            center = s;
-            break;
-          }
-        }
-        if (center != SQ_NONE)
-          centers |= square_bb(center);
-      }
-    }
-    if (spellContextActive && spellExtraFrozen)
-    {
-      Square center = SQ_NONE;
-      Bitboard candidates = spellExtraFrozen;
-      while (candidates)
-      {
-        Square s = pop_lsb(candidates);
-        if (freeze_zone_from_square(s) == spellExtraFrozen)
-        {
-          center = s;
-          break;
-        }
-      }
-      if (center != SQ_NONE)
-        centers |= square_bb(center);
-    }
-    return centers;
-  }
+inline Bitboard Position::freeze_squares() const {
+  return freeze_squares(WHITE) | freeze_squares(BLACK);
+}
 
 inline Bitboard Position::jump_squares(Color c) const {
   Bitboard mask = st->potionZones[c][Variant::POTION_JUMP];
