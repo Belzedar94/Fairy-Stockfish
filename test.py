@@ -1009,6 +1009,11 @@ class TestPyffish(unittest.TestCase):
         moves = sf.legal_moves("spell-chess", fen, ["f@d7,f3f7"])
         self.assertIn("f@f7,g8h6", moves)
 
+    def test_spell_chess_freeze_check_ignores_frozen_attacker(self):
+        fen = "rnbqkbnr/pp1p1Qpp/2p1p3/8/4P3/8/PPPP1PPP/RNB1KBNR[JJFFFFjjfffff] {F@f8:2,J@-:0,f@-:0,j@-:0} b KQkq - 0 3"
+        moves = sf.legal_moves("spell-chess", fen, [])
+        self.assertIn("g8h6", moves)
+
     def test_get_san(self):
         fen = "4k3/8/3R4/8/1R3R2/8/3R4/4K3 w - - 0 1"
         result = sf.get_san("chess", fen, "b4d4")
