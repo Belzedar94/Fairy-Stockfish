@@ -976,6 +976,10 @@ ExtMove* generate<LEGAL>(const Position& pos, ExtMove* moveList) {
       for (ExtMove* it = baseEnd; it != potionEnd; ++it)
       {
           Move m = it->move;
+          if (type_of(m) == CASTLING)
+              continue;
+          if (!pos.pseudo_legal(m))
+              continue;
           if (!pos.legal(m) || pos.virtual_drop(m))
               continue;
 
