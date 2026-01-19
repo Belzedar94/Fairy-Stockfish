@@ -1314,7 +1314,10 @@ bool Position::legal(Move m) const {
   SpellContextScope spellScope(*this, freezeExtra, jumpRemoved);
   PieceType royal = royal_piece_type();
 
-  if (type_of(m) != DROP && (freeze_squares() & from))
+  Bitboard frozen = freeze_squares();
+  if (freezeExtra)
+      frozen &= ~freezeExtra;
+  if (type_of(m) != DROP && (frozen & from))
       return false;
   if (jumpRemoved && (square_bb(to) & jumpRemoved))
       return false;
@@ -1620,7 +1623,10 @@ bool Position::pseudo_legal(const Move m) const {
 
   SpellContextScope spellScope(*this, freezeExtra, jumpRemoved);
 
-  if (type_of(m) != DROP && (freeze_squares() & from))
+  Bitboard frozen = freeze_squares();
+  if (freezeExtra)
+      frozen &= ~freezeExtra;
+  if (type_of(m) != DROP && (frozen & from))
       return false;
   if (jumpRemoved && (square_bb(to) & jumpRemoved))
       return false;
@@ -1775,7 +1781,10 @@ bool Position::gives_check(Move m) const {
   SpellContextScope spellScope(*this, freezeExtra, jumpRemoved);
   PieceType royal = royal_piece_type();
 
-  if (type_of(m) != DROP && (freeze_squares() & from))
+  Bitboard frozen = freeze_squares();
+  if (freezeExtra)
+      frozen &= ~freezeExtra;
+  if (type_of(m) != DROP && (frozen & from))
       return false;
   if (jumpRemoved && (square_bb(to) & jumpRemoved))
       return false;
