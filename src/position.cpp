@@ -1752,7 +1752,7 @@ bool Position::pseudo_legal(const Move m) const {
   // Evasions generator already takes care to avoid some kind of illegal moves
   // and legal() relies on this. We therefore have to take care that the same
   // kind of moves are filtered out here.
-  if (checkers() && !(checkers() & non_sliding_riders()))
+  if (checkers() && !allow_self_check() && !(checkers() & non_sliding_riders()))
   {
       if (extinctionCapture)
           return true;
