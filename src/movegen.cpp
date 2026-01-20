@@ -889,7 +889,9 @@ template<GenType Type>
 ExtMove* generate(const Position& pos, ExtMove* moveList) {
 
   static_assert(Type != LEGAL, "Unsupported type in generate()");
-  assert((Type == EVASIONS) == (bool)pos.checkers());
+  const bool needsEvasion = pos.checkers() && !pos.allow_self_check();
+  assert((Type == EVASIONS) == needsEvasion);
+  (void)needsEvasion;
 
   Color us = pos.side_to_move();
 

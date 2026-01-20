@@ -126,7 +126,8 @@ MovePicker::MovePicker(const Position& p, Move ttm, Depth d, const ButterflyHist
 
   assert(d > 0);
 
-  stage = (pos.checkers() ? EVASION_TT : MAIN_TT) +
+  bool needsEvasion = pos.checkers() && !pos.allow_self_check();
+  stage = (needsEvasion ? EVASION_TT : MAIN_TT) +
           !(ttm && pos.pseudo_legal(ttm));
 }
 
@@ -137,9 +138,10 @@ MovePicker::MovePicker(const Position& p, Move ttm, Depth d, const ButterflyHist
 
   assert(d <= 0);
 
-  stage = (pos.checkers() ? EVASION_TT : QSEARCH_TT) +
+  bool needsEvasion = pos.checkers() && !pos.allow_self_check();
+  stage = (needsEvasion ? EVASION_TT : QSEARCH_TT) +
           !(   ttm
-            && (pos.checkers() || depth > DEPTH_QS_RECAPTURES || to_sq(ttm) == recaptureSquare)
+            && (needsEvasion || depth > DEPTH_QS_RECAPTURES || to_sq(ttm) == recaptureSquare)
             && pos.pseudo_legal(ttm));
 }
 
@@ -148,7 +150,7 @@ MovePicker::MovePicker(const Position& p, Move ttm, Depth d, const ButterflyHist
 MovePicker::MovePicker(const Position& p, Move ttm, Value th, const GateHistory* dh, const CapturePieceToHistory* cph)
            : pos(p), gateHistory(dh), captureHistory(cph), ttMove(ttm), quietStart(moves), quietEnd(moves), threshold(th) {
 
-  assert(!pos.checkers());
+  assert(!pos.checkers() || pos.allow_self_check());
 
   stage = PROBCUT_TT + !(ttm && pos.capture(ttm)
                              && pos.pseudo_legal(ttm)
