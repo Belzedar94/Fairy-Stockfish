@@ -1161,7 +1161,7 @@ Bitboard Position::slider_blockers(Bitboard sliders, Square s, Bitboard& pinners
 
 Bitboard Position::attackers_to(Square s, Bitboard occupied, Color c, Bitboard janggiCannons) const {
 
-  const Bitboard active = potions_enabled() ? ~freeze_squares() : ~Bitboard(0);
+  const Bitboard active = potions_enabled() ? ~frozen_squares(c) : ~Bitboard(0);
 
   // Use a faster version for variants with moderate rule variations
   if (var->fastAttacks)
@@ -1314,8 +1314,7 @@ bool Position::legal(Move m) const {
   SpellContextScope spellScope(*this, freezeExtra, jumpRemoved);
   PieceType royal = royal_piece_type();
 
-  Bitboard frozen = st->potionZones[WHITE][Variant::POTION_FREEZE]
-                  | st->potionZones[BLACK][Variant::POTION_FREEZE];
+  Bitboard frozen = frozen_squares(us);
   if (type_of(m) != DROP && (frozen & from))
       return false;
   if (jumpRemoved && (square_bb(to) & jumpRemoved))
@@ -1324,6 +1323,19 @@ bool Position::legal(Move m) const {
   assert(color_of(moved_piece(m)) == us);
   assert(!count(us, royal) || piece_on(square(us, royal)) == make_piece(us, royal));
   assert(board_bb() & to);
+
+  Piece captured = NO_PIECE;
+  if (capture(m))
+  {
+      Square csq = type_of(m) == EN_PASSANT ? capture_square(to) : to;
+      captured = piece_on(csq);
+  }
+  bool extinctionCapture = captured != NO_PIECE
+                        && color_of(captured) == ~us
+                        && type_of(captured) == royal
+                        && extinction_value() != VALUE_NONE
+                        && (extinction_piece_types() & royal)
+                        && count(~us, royal) <= extinction_piece_count() + 1;
 
   // Illegal checks
   if ((!checking_permitted() || (sittuyin_promotion() && type_of(m) == PROMOTION) || (!drop_checks() && type_of(m) == DROP)) && gives_check(m))
@@ -1518,7 +1530,7 @@ bool Position::legal(Move m) const {
       Square rto = to + (to_sq(m) > from_sq(m) ? WEST : EAST);
       if (is_gating(m) && (gating_square(m) == to || gating_square(m) == rto))  
           return false;
-      if (freeze_squares() & to_sq(m))
+      if (frozen_squares(us) & to_sq(m))
           return false;
 
       // Only the castling king piece is subject to attack checks
@@ -1555,7 +1567,7 @@ bool Position::legal(Move m) const {
   // If the moving piece is a king, check whether the destination square is
   // attacked by the opponent.
   if (type_of(moved_piece(m)) == royal)
-      return !attackers_to(to, occupied, ~us);
+      return extinctionCapture || !attackers_to(to, occupied, ~us);
 
   // Return early when without king
   if (!count(us, royal))
@@ -1568,6 +1580,9 @@ bool Position::legal(Move m) const {
       janggiCannons ^= to;
 
   // A non-king move is legal if the king is not under attack after the move.
+  if (extinctionCapture)
+      return true;
+
   return !(attackers_to(square(us, royal), occupied, ~us, janggiCannons) & ~SquareBB[to]);
 }
 
@@ -1623,8 +1638,7 @@ bool Position::pseudo_legal(const Move m) const {
 
   SpellContextScope spellScope(*this, freezeExtra, jumpRemoved);
 
-  Bitboard frozen = st->potionZones[WHITE][Variant::POTION_FREEZE]
-                  | st->potionZones[BLACK][Variant::POTION_FREEZE];
+  Bitboard frozen = frozen_squares(us);
   if (type_of(m) != DROP && (frozen & from))
       return false;
   if (jumpRemoved && (square_bb(to) & jumpRemoved))
@@ -1686,6 +1700,19 @@ bool Position::pseudo_legal(const Move m) const {
           return false;
   }
 
+  Piece captured = NO_PIECE;
+  if (capture(m))
+  {
+      Square csq = type_of(m) == EN_PASSANT ? capture_square(to) : to;
+      captured = piece_on(csq);
+  }
+  bool extinctionCapture = captured != NO_PIECE
+                        && color_of(captured) == ~us
+                        && type_of(captured) == royal
+                        && extinction_value() != VALUE_NONE
+                        && (extinction_piece_types() & royal)
+                        && count(~us, royal) <= extinction_piece_count() + 1;
+
   // Handle the special case of a pawn move
   if (type_of(pc) == PAWN)
   {
@@ -1717,6 +1744,8 @@ bool Position::pseudo_legal(const Move m) const {
   // kind of moves are filtered out here.
   if (checkers() && !(checkers() & non_sliding_riders()))
   {
+      if (extinctionCapture)
+          return true;
       if (type_of(pc) != royal)
       {
           // Double check? In this case a king move is required
@@ -1772,8 +1801,7 @@ bool Position::gives_check(Move m) const {
   SpellContextScope spellScope(*this, freezeExtra, jumpRemoved);
   PieceType royal = royal_piece_type();
 
-  Bitboard frozen = st->potionZones[WHITE][Variant::POTION_FREEZE]
-                  | st->potionZones[BLACK][Variant::POTION_FREEZE];
+  Bitboard frozen = frozen_squares(sideToMove);
   if (type_of(m) != DROP && (frozen & from))
       return false;
   if (jumpRemoved && (square_bb(to) & jumpRemoved))

@@ -1014,6 +1014,22 @@ class TestPyffish(unittest.TestCase):
         moves = sf.legal_moves("spell-chess", fen, [])
         self.assertNotIn("g8h6", moves)
 
+    def test_spell_chess_freeze_zone_does_not_force_mate(self):
+        fen = "rnbqkbnr/pp1p1Qpp/2p1p3/8/4P3/8/PPPP1PPP/RNB1KBNR[JJFFFFjjfffff] {F@e8:2,J@-:0,f@-:0,j@-:0} b KQkq - 0 3"
+        moves = sf.legal_moves("spell-chess", fen, [])
+        self.assertIn("g8h6", moves)
+        self.assertIn("f@f7,g8h6", moves)
+        result = sf.game_result("spell-chess", fen, [])
+        self.assertNotEqual(result, sf.VALUE_MATE)
+        self.assertNotEqual(result, -sf.VALUE_MATE)
+
+    def test_spell_chess_capture_commoner_in_check(self):
+        fen = "rnbqkbnr/pp1p1Qpp/2p1p3/8/4P3/8/PPPP1PPP/RNB1KBNR[JJFFFFjjfffff] {F@e8:2,J@-:0,f@-:0,j@-:0} b KQkq - 0 3"
+        moves = sf.legal_moves("spell-chess", fen, ["j@d7,d8d2"])
+        self.assertIn("f7e8", moves)
+        result = sf.game_result("spell-chess", fen, ["j@d7,d8d2", "f7e8"])
+        self.assertEqual(result, -sf.VALUE_MATE)
+
     def test_get_san(self):
         fen = "4k3/8/3R4/8/1R3R2/8/3R4/4K3 w - - 0 1"
         result = sf.get_san("chess", fen, "b4d4")
