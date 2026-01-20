@@ -1522,6 +1522,10 @@ bool Position::legal(Move m) const {
   // enemy attacks, it is delayed at a later time: now!
   if (type_of(m) == CASTLING)
   {
+      // Castling is never allowed while in check, even if self-check is otherwise permitted.
+      if (checkers())
+          return false;
+
       // After castling, the rook and king final positions are the same in
       // Chess960 as they would be in standard chess.
       to = make_square(to > from ? castling_kingside_file() : castling_queenside_file(), castling_rank(us));
