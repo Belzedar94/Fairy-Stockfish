@@ -1006,8 +1006,9 @@ ExtMove* generate<LEGAL>(const Position& pos, ExtMove* moveList) {
 
   ExtMove* cur = moveList;
 
-  ExtMove* end = pos.checkers() ? generate<EVASIONS    >(pos, moveList)
-                                : generate<NON_EVASIONS>(pos, moveList);
+  bool needsEvasion = pos.checkers() && !pos.allow_self_check();
+  ExtMove* end = needsEvasion ? generate<EVASIONS    >(pos, moveList)
+                              : generate<NON_EVASIONS>(pos, moveList);
   while (cur != end)
       if (!pos.legal(*cur) || pos.virtual_drop(*cur))
           *cur = (--end)->move;
@@ -1016,7 +1017,7 @@ ExtMove* generate<LEGAL>(const Position& pos, ExtMove* moveList) {
 
   // In check, some potion moves only become evasions because of the gate effect.
   // Generate extra potion moves from the full non-evasion base list and filter by legality.
-  if (pos.checkers() && pos.potions_enabled())
+  if (needsEvasion && pos.potions_enabled())
   {
       static thread_local ExtMove baseMoves[MAX_MOVES];
       ExtMove* baseEnd = generate_base(NON_EVASIONS, pos, baseMoves);

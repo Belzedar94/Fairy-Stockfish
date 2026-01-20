@@ -175,6 +175,7 @@ public:
   bool fast_attacks() const;
   bool fast_attacks2() const;
   bool checking_permitted() const;
+  bool allow_self_check() const;
   bool drop_checks() const;
   bool self_capture() const;
   bool must_capture() const;
@@ -1149,6 +1150,13 @@ inline int Position::extinction_opponent_piece_count() const {
 inline bool Position::extinction_pseudo_royal() const {
   assert(var != nullptr);
   return var->extinctionPseudoRoyal;
+}
+
+inline bool Position::allow_self_check() const {
+  PieceType royal = royal_piece_type();
+  return   extinction_value() != VALUE_NONE
+        && (extinction_piece_types() & royal)
+        && !extinction_pseudo_royal();
 }
 
 inline PieceType Position::flag_piece(Color c) const {
