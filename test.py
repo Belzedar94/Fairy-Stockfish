@@ -1024,10 +1024,12 @@ class TestPyffish(unittest.TestCase):
         self.assertNotEqual(result, -sf.VALUE_MATE)
 
     def test_spell_chess_capture_commoner_in_check(self):
-        fen = "rnbqkbnr/pp1p1Qpp/2p1p3/8/4P3/8/PPPP1PPP/RNB1KBNR[JJFFFFjjfffff] {F@e8:2,J@-:0,f@-:0,j@-:0} b KQkq - 0 3"
-        moves = sf.legal_moves("spell-chess", fen, ["j@d7,d8d2"])
-        self.assertIn("f7e8", moves)
-        result = sf.game_result("spell-chess", fen, ["j@d7,d8d2", "f7e8"])
+        fen = "4k3/4b3/8/8/8/8/4R3/4K3[JJFFFFjjffff] b - - 0 1"
+        moves = sf.legal_moves("spell-chess", fen, [])
+        self.assertIn("e7b4", moves)
+        moves = sf.legal_moves("spell-chess", fen, ["e7b4"])
+        self.assertIn("e2e8", moves)
+        result = sf.game_result("spell-chess", fen, ["e7b4", "e2e8"])
         self.assertEqual(result, -sf.VALUE_MATE)
 
     def test_get_san(self):

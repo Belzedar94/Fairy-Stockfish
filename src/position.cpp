@@ -1161,7 +1161,7 @@ Bitboard Position::slider_blockers(Bitboard sliders, Square s, Bitboard& pinners
 
 Bitboard Position::attackers_to(Square s, Bitboard occupied, Color c, Bitboard janggiCannons) const {
 
-  const Bitboard active = potions_enabled() ? ~frozen_squares(c) : ~Bitboard(0);
+  const Bitboard active = potions_enabled() ? ~freeze_squares() : ~Bitboard(0);
 
   // Use a faster version for variants with moderate rule variations
   if (var->fastAttacks)
@@ -1314,7 +1314,7 @@ bool Position::legal(Move m) const {
   SpellContextScope spellScope(*this, freezeExtra, jumpRemoved);
   PieceType royal = royal_piece_type();
 
-  Bitboard frozen = frozen_squares(us);
+  Bitboard frozen = freeze_squares();
   if (type_of(m) != DROP && (frozen & from))
       return false;
   if (jumpRemoved && (square_bb(to) & jumpRemoved))
@@ -1530,7 +1530,7 @@ bool Position::legal(Move m) const {
       Square rto = to + (to_sq(m) > from_sq(m) ? WEST : EAST);
       if (is_gating(m) && (gating_square(m) == to || gating_square(m) == rto))  
           return false;
-      if (frozen_squares(us) & to_sq(m))
+      if (freeze_squares() & to_sq(m))
           return false;
 
       // Only the castling king piece is subject to attack checks
@@ -1638,7 +1638,7 @@ bool Position::pseudo_legal(const Move m) const {
 
   SpellContextScope spellScope(*this, freezeExtra, jumpRemoved);
 
-  Bitboard frozen = frozen_squares(us);
+  Bitboard frozen = freeze_squares();
   if (type_of(m) != DROP && (frozen & from))
       return false;
   if (jumpRemoved && (square_bb(to) & jumpRemoved))
@@ -1746,6 +1746,8 @@ bool Position::pseudo_legal(const Move m) const {
   {
       if (extinctionCapture)
           return true;
+      if (gatingPotion == Variant::POTION_FREEZE && freezeExtra && !(checkers() & ~freezeExtra))
+          return true;
       if (type_of(pc) != royal)
       {
           // Double check? In this case a king move is required
@@ -1801,7 +1803,7 @@ bool Position::gives_check(Move m) const {
   SpellContextScope spellScope(*this, freezeExtra, jumpRemoved);
   PieceType royal = royal_piece_type();
 
-  Bitboard frozen = frozen_squares(sideToMove);
+  Bitboard frozen = freeze_squares();
   if (type_of(m) != DROP && (frozen & from))
       return false;
   if (jumpRemoved && (square_bb(to) & jumpRemoved))

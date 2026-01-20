@@ -202,7 +202,6 @@ public:
   int potion_cooldown(Color c, Variant::PotionType type) const;
   Bitboard freeze_squares() const;
   Bitboard freeze_squares(Color c) const;
-  Bitboard frozen_squares(Color c) const;
   Bitboard jump_squares(Color c) const;
   Bitboard freeze_zone_from_square(Square s) const;
   bool gating() const;
@@ -932,17 +931,13 @@ inline bool Position::can_cast_potion(Color c, Variant::PotionType type) const {
 
 inline Bitboard Position::freeze_squares(Color c) const {
   Bitboard mask = st->potionZones[c][Variant::POTION_FREEZE];
-  if (spellContextActive && c == sideToMove)
+  if (spellContextActive)
       mask |= spellExtraFrozen;
   return mask;
 }
 
 inline Bitboard Position::freeze_squares() const {
   return freeze_squares(WHITE) | freeze_squares(BLACK);
-}
-
-inline Bitboard Position::frozen_squares(Color c) const {
-  return freeze_squares(~c);
 }
 
 inline Bitboard Position::jump_squares(Color c) const {
