@@ -931,8 +931,9 @@ inline bool Position::can_cast_potion(Color c, Variant::PotionType type) const {
 }
 
 inline Bitboard Position::freeze_squares(Color c) const {
-  Bitboard mask = st->potionZones[c][Variant::POTION_FREEZE];
-  if (spellContextActive)
+  // Freeze zones affect the opponent only; map to squares frozen for color c.
+  Bitboard mask = st->potionZones[~c][Variant::POTION_FREEZE];
+  if (spellContextActive && c == ~sideToMove)
       mask |= spellExtraFrozen;
   return mask;
 }
