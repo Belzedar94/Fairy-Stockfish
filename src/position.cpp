@@ -2536,10 +2536,12 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
           if (potion_piece(potion) == NO_PIECE_TYPE)
               continue;
 
+          int cooldown = var->potionCooldown[pt];
+          int zoneLifetime = std::max(cooldown - 1, 0);
+
           if (gatingPotion == potion)
           {
-              int cooldown = var->potionCooldown[pt];
-              st->potionCooldown[us][pt] = std::max(cooldown - 1, 0);
+              st->potionCooldown[us][pt] = zoneLifetime;
               if (potion == Variant::POTION_FREEZE)
                   st->potionZones[us][pt] = freezeExtra;
               else if (potion == Variant::POTION_JUMP)
@@ -2550,7 +2552,8 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
           else if (st->potionCooldown[us][pt] > 0)
           {
               --st->potionCooldown[us][pt];
-              if (st->potionCooldown[us][pt] == 0)
+              if (st->potionCooldown[us][pt] == 0
+                  || st->potionCooldown[us][pt] < zoneLifetime)
                   st->potionZones[us][pt] = Bitboard(0);
           }
           else
