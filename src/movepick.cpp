@@ -319,7 +319,14 @@ top:
       [[fallthrough]];
 
   case POTION_INIT: {
-      if (   skipQuiets
+      const Color us = pos.side_to_move();
+      const bool allowPotionsWhenSkipping =
+          skipQuiets
+          && pos.potions_enabled()
+          && pos.allow_self_check()
+          && pos.potion_zone(~us, Variant::POTION_FREEZE);
+
+      if (   (skipQuiets && !allowPotionsWhenSkipping)
           || (pos.must_capture() && pos.has_capture())
           || !pos.potions_enabled()
           || quietStart == quietEnd)

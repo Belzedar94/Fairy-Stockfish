@@ -602,7 +602,12 @@ namespace {
     bool baseMovesSorted = false;
     Move baseMoves[MAX_MOVES];
     int baseCount = 0;
-    constexpr bool LimitPotionGates = Type == QUIETS;
+    const bool urgentPotionDefense = Type == QUIETS
+                                  && pos.allow_self_check()
+                                  && ksq != SQ_NONE
+                                  && pos.attackers_to(ksq, ~Us);
+    const bool enemyFreezeActive = pos.potion_zone(~Us, Variant::POTION_FREEZE);
+    const bool limitPotionGates = Type == QUIETS && !urgentPotionDefense && !enemyFreezeActive;
     int jumpGateScores[SQUARE_NB];
     bool jumpScoresReady = false;
     int freezeThreatScores[SQUARE_NB];
@@ -768,7 +773,7 @@ namespace {
             cur = write;
         };
 
-        if constexpr (LimitPotionGates)
+        if (limitPotionGates)
         {
             GateScore gateScores[SQUARE_NB];
             int gateCount = 0;

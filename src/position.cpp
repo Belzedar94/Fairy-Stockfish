@@ -2540,16 +2540,22 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
           {
               int cooldown = var->potionCooldown[pt];
               st->potionCooldown[us][pt] = std::max(cooldown - 1, 0);
+              if (potion == Variant::POTION_FREEZE)
+                  st->potionZones[us][pt] = freezeExtra;
+              else if (potion == Variant::POTION_JUMP)
+                  st->potionZones[us][pt] = jumpRemoved;
+              else
+                  st->potionZones[us][pt] = Bitboard(0);
           }
           else if (st->potionCooldown[us][pt] > 0)
+          {
               --st->potionCooldown[us][pt];
+              if (st->potionCooldown[us][pt] == 0)
+                  st->potionZones[us][pt] = Bitboard(0);
+          }
+          else
+              st->potionZones[us][pt] = Bitboard(0);
       }
-
-      st->potionZones[us][Variant::POTION_FREEZE] = gatingPotion == Variant::POTION_FREEZE ? freezeExtra : Bitboard(0);
-      st->potionZones[us][Variant::POTION_JUMP] = Bitboard(0);
-
-      st->potionZones[them][Variant::POTION_FREEZE] = Bitboard(0);
-      st->potionZones[them][Variant::POTION_JUMP] = Bitboard(0);
 
       togglePotionHashes(k);
   }
