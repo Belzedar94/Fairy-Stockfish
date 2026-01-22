@@ -1032,6 +1032,11 @@ class TestPyffish(unittest.TestCase):
         self.assertNotEqual(result, sf.VALUE_MATE)
         self.assertNotEqual(result, -sf.VALUE_MATE)
 
+    def test_spell_chess_freeze_zone_blocks_starting_inside(self):
+        fen = "r3kbnr/pp1n1ppp/2p1p3/3pP1B1/3P4/1Q3N2/PqP2PPP/RN3RK1[JJFFFFjjffff] {F@-:0,J@-:0,f@-:0,j@-:0} b kq - 1 9"
+        moves = sf.legal_moves("spell-chess", fen, [])
+        self.assertNotIn("f@b1,b2b3", moves)
+
     def test_spell_chess_freeze_zone_history_allows_mate(self):
         fen = "rnbqkbnr/pp1p1Qpp/2p5/4p3/4P3/8/PPPP1PPP/RNB1KBNR[JJFFFFjjfffff] {F@f8:2,J@-:0,f@-:0,j@-:0} b KQkq - 0 3"
         moves = sf.legal_moves("spell-chess", fen, ["d7d5"])

@@ -599,6 +599,7 @@ namespace {
     const Square ksq = pos.count(Us, royal) ? pos.square(Us, royal) : SQ_NONE;
     const bool allowNonKing = Type != EVASIONS
                            || !more_than_one(pos.checkers() & ~pos.non_sliding_riders());
+    const bool needsEvasion = pos.checkers() && !pos.allow_self_check();
     bool baseMovesSorted = false;
     Move baseMoves[MAX_MOVES];
     int baseCount = 0;
@@ -645,8 +646,13 @@ namespace {
 
             if (potion == Variant::POTION_FREEZE)
             {
-                // New freeze zones apply after the move, so only existing frozen squares block it.
-                Bitboard frozen = baseFrozen;
+                // Pieces already adjacent (orthogonally) to the new freeze center are immobilized.
+                const Bitboard gateBb = square_bb(gate);
+                const Bitboard newZone =
+                    (gateBb | shift<NORTH>(gateBb) | shift<SOUTH>(gateBb)
+                            | shift<EAST>(gateBb) | shift<WEST>(gateBb))
+                    & pos.board_bb();
+                const Bitboard frozen = baseFrozen;
                 ExtMove* write = cur;
                 for (ExtMove* it = freezeStart; it != freezeEnd; ++it)
                 {
@@ -660,6 +666,8 @@ namespace {
                     if (mt != NORMAL && mt != CASTLING)
                         continue;
 
+                    if (!needsEvasion && (newZone & from_sq(base)))
+                        continue;
                     if (frozen & from_sq(base))
                         continue;
                     if (mt == CASTLING && (frozen & to_sq(base)))
