@@ -228,11 +228,15 @@ namespace {
 
     const Bitboard frozen     = pos.freeze_squares(Us);
     const Bitboard pawns      = pos.pieces(Us, PAWN) & ~frozen;
-    const Bitboard movable    = pos.board_bb(Us, PAWN) & ~pos.pieces();
+    const Bitboard jumpMask   = pos.potions_enabled() ? pos.jump_squares(Us) : Bitboard(0);
+    const Bitboard occupied   = pos.pieces() & ~jumpMask;
+    const Bitboard movable    = pos.board_bb(Us, PAWN) & ~occupied;
     const Bitboard friendlyCapturable = pos.pieces(Us) & ~pos.pieces(Us, royal);
-    const Bitboard capturable = pos.board_bb(Us, PAWN)
-                              & (allowFriendlyCaptures ? (pos.pieces(Them) | friendlyCapturable)
-                                                       :  pos.pieces(Them));
+    Bitboard capturable = pos.board_bb(Us, PAWN)
+                        & (allowFriendlyCaptures ? (pos.pieces(Them) | friendlyCapturable)
+                                                 :  pos.pieces(Them));
+    if (jumpMask)
+        capturable &= ~jumpMask;
 
     target = Type == EVASIONS ? target : AllSquares;
 
@@ -599,7 +603,6 @@ namespace {
     const Square ksq = pos.count(Us, royal) ? pos.square(Us, royal) : SQ_NONE;
     const bool allowNonKing = Type != EVASIONS
                            || !more_than_one(pos.checkers() & ~pos.non_sliding_riders());
-    const bool needsEvasion = pos.checkers() && !pos.allow_self_check();
     bool baseMovesSorted = false;
     Move baseMoves[MAX_MOVES];
     int baseCount = 0;
@@ -646,12 +649,8 @@ namespace {
 
             if (potion == Variant::POTION_FREEZE)
             {
-                // Pieces already adjacent (orthogonally) to the new freeze center are immobilized.
-                const Bitboard gateBb = square_bb(gate);
-                const Bitboard newZone =
-                    (gateBb | shift<NORTH>(gateBb) | shift<SOUTH>(gateBb)
-                            | shift<EAST>(gateBb) | shift<WEST>(gateBb))
-                    & pos.board_bb();
+                // Pieces already inside the new freeze block zone cannot be moved on the casting ply.
+                const Bitboard newBlockZone = pos.freeze_block_zone_from_square(gate);
                 const Bitboard frozen = baseFrozen;
                 ExtMove* write = cur;
                 for (ExtMove* it = freezeStart; it != freezeEnd; ++it)
@@ -666,7 +665,7 @@ namespace {
                     if (mt != NORMAL && mt != CASTLING)
                         continue;
 
-                    if (!needsEvasion && (newZone & from_sq(base)))
+                    if (newBlockZone & from_sq(base))
                         continue;
                     if (frozen & from_sq(base))
                         continue;
@@ -758,6 +757,7 @@ namespace {
                     continue;
                 extraEnd = generate_moves<Us, Type>(pos, extraEnd, sliderPt, target, captureTarget);
             }
+            extraEnd = generate_pawn_moves<Us, Type>(pos, extraEnd, target);
 
             write = cur;
             for (ExtMove* it = extraMoves; it != extraEnd; ++it)
@@ -1030,9 +1030,8 @@ ExtMove* generate<LEGAL>(const Position& pos, ExtMove* moveList) {
       else
           ++cur;
 
-  // In check, some potion moves only become evasions because of the gate effect.
-  // Generate extra potion moves from the full non-evasion base list and filter by legality.
-  if (needsEvasion && pos.potions_enabled())
+  // Add potion moves, filtering by legality and avoiding duplicates.
+  if (pos.potions_enabled())
   {
       static thread_local ExtMove baseMoves[MAX_MOVES];
       ExtMove* baseEnd = generate_base(NON_EVASIONS, pos, baseMoves);
@@ -1041,7 +1040,7 @@ ExtMove* generate<LEGAL>(const Position& pos, ExtMove* moveList) {
       for (ExtMove* it = baseEnd; it != potionEnd; ++it)
       {
           Move m = it->move;
-          if (type_of(m) == CASTLING)
+          if (needsEvasion && type_of(m) == CASTLING)
               continue;
           if (!pos.pseudo_legal(m))
               continue;

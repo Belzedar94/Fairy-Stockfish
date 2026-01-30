@@ -205,6 +205,7 @@ public:
   Bitboard freeze_squares(Color c) const;
   Bitboard jump_squares(Color c) const;
   Bitboard freeze_zone_from_square(Square s) const;
+  Bitboard freeze_block_zone_from_square(Square s) const;
   bool gating() const;
   bool walling() const;
   WallingRule walling_rule() const;
@@ -943,14 +944,22 @@ inline Bitboard Position::freeze_squares() const {
 }
 
 inline Bitboard Position::jump_squares(Color c) const {
-  Bitboard mask = st->potionZones[c][Variant::POTION_JUMP];
-  if (spellContextActive && c == sideToMove)
+  (void)c;
+  Bitboard mask = st->potionZones[WHITE][Variant::POTION_JUMP]
+                | st->potionZones[BLACK][Variant::POTION_JUMP];
+  if (spellContextActive)
       mask |= spellJumpRemoved;
   return mask;
 }
 
 inline Bitboard Position::freeze_zone_from_square(Square s) const {
   return (PseudoAttacks[WHITE][KING][s] | square_bb(s)) & board_bb();
+}
+
+inline Bitboard Position::freeze_block_zone_from_square(Square s) const {
+  Bitboard zone = square_bb(s);
+  zone |= shift<NORTH>(zone) | shift<SOUTH>(zone) | shift<EAST>(zone) | shift<WEST>(zone);
+  return zone & board_bb();
 }
 
 inline bool Position::gating() const {
@@ -1405,8 +1414,8 @@ inline Square Position::castling_rook_square(CastlingRights cr) const {
 
 inline Bitboard Position::attacks_from(Color c, PieceType pt, Square s) const {
   Bitboard occupancy = byTypeBB[ALL_PIECES];
-  if (spellContextActive && c == sideToMove)
-      occupancy &= ~spellJumpRemoved;
+  if (potions_enabled())
+      occupancy &= ~jump_squares(c);
 
   if (var->fastAttacks || var->fastAttacks2)
       return attacks_bb(c, pt, s, occupancy) & board_bb();
@@ -1439,8 +1448,8 @@ inline Bitboard Position::attacks_from(Color c, PieceType pt, Square s) const {
 
 inline Bitboard Position::moves_from(Color c, PieceType pt, Square s) const {
   Bitboard occupancy = byTypeBB[ALL_PIECES];
-  if (spellContextActive && c == sideToMove)
-      occupancy &= ~spellJumpRemoved;
+  if (potions_enabled())
+      occupancy &= ~jump_squares(c);
 
   if (var->fastAttacks || var->fastAttacks2)
       return moves_bb(c, pt, s, occupancy) & board_bb();

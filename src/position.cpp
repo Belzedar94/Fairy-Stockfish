@@ -1161,6 +1161,9 @@ Bitboard Position::slider_blockers(Bitboard sliders, Square s, Bitboard& pinners
 
 Bitboard Position::attackers_to(Square s, Bitboard occupied, Color c, Bitboard janggiCannons) const {
 
+  if (potions_enabled())
+      occupied &= ~jump_squares(c);
+
   const Bitboard active = potions_enabled() ? ~freeze_squares(c) : ~Bitboard(0);
 
   // Use a faster version for variants with moderate rule variations
@@ -1291,6 +1294,7 @@ bool Position::legal(Move m) const {
   Square to = to_sq(m);
 
   Bitboard freezeExtra = 0;
+  Bitboard freezeBlock = 0;
   Bitboard jumpRemoved = 0;
   Variant::PotionType gatingPotion = Variant::POTION_TYPE_NB;
   if (is_gating(m))
@@ -1301,7 +1305,10 @@ bool Position::legal(Move m) const {
           if (!can_cast_potion(us, gatingPotion))
               return false;
           if (gatingPotion == Variant::POTION_FREEZE)
+          {
               freezeExtra = freeze_zone_from_square(gating_square(m));
+              freezeBlock = freeze_block_zone_from_square(gating_square(m));
+          }
           else if (gatingPotion == Variant::POTION_JUMP)
           {
               jumpRemoved = square_bb(gating_square(m));
@@ -1314,10 +1321,15 @@ bool Position::legal(Move m) const {
   SpellContextScope spellScope(*this, freezeExtra, jumpRemoved);
   PieceType royal = royal_piece_type();
 
+  if (gatingPotion == Variant::POTION_FREEZE && type_of(m) != DROP && (freezeBlock & from))
+      return false;
+
+  Bitboard jumpMask = potions_enabled() ? jump_squares(us) : Bitboard(0);
+  if (type_of(m) != DROP && (jumpMask & to))
+      return false;
+
   Bitboard frozen = freeze_squares(us);
   if (type_of(m) != DROP && (frozen & from))
-      return false;
-  if (jumpRemoved && (square_bb(to) & jumpRemoved))
       return false;
 
   assert(color_of(moved_piece(m)) == us);
@@ -1623,6 +1635,7 @@ bool Position::pseudo_legal(const Move m) const {
   // Use a slower but simpler function for uncommon cases
   // yet we skip the legality check of MoveList<LEGAL>().
   Bitboard freezeExtra = 0;
+  Bitboard freezeBlock = 0;
   Bitboard jumpRemoved = 0;
   Variant::PotionType gatingPotion = Variant::POTION_TYPE_NB;
   if (is_gating(m))
@@ -1633,7 +1646,10 @@ bool Position::pseudo_legal(const Move m) const {
           if (!can_cast_potion(us, gatingPotion))
               return false;
           if (gatingPotion == Variant::POTION_FREEZE)
+          {
               freezeExtra = freeze_zone_from_square(gating_square(m));
+              freezeBlock = freeze_block_zone_from_square(gating_square(m));
+          }
           else if (gatingPotion == Variant::POTION_JUMP)
           {
               jumpRemoved = square_bb(gating_square(m));
@@ -1645,10 +1661,15 @@ bool Position::pseudo_legal(const Move m) const {
 
   SpellContextScope spellScope(*this, freezeExtra, jumpRemoved);
 
+  if (gatingPotion == Variant::POTION_FREEZE && type_of(m) != DROP && (freezeBlock & from))
+      return false;
+
+  Bitboard jumpMask = potions_enabled() ? jump_squares(us) : Bitboard(0);
+  if (type_of(m) != DROP && (jumpMask & to))
+      return false;
+
   Bitboard frozen = freeze_squares(us);
   if (type_of(m) != DROP && (frozen & from))
-      return false;
-  if (jumpRemoved && (square_bb(to) & jumpRemoved))
       return false;
 
   bool needsEvasion = checkers() && !allow_self_check();
@@ -1721,6 +1742,10 @@ bool Position::pseudo_legal(const Move m) const {
                         && (extinction_piece_types() & royal)
                         && count(~us, royal) <= extinction_piece_count() + 1;
 
+  Bitboard occupied = pieces();
+  if (potions_enabled())
+      occupied &= ~jump_squares(us);
+
   // Handle the special case of a pawn move
   if (type_of(pc) == PAWN)
   {
@@ -1731,13 +1756,13 @@ bool Position::pseudo_legal(const Move m) const {
 
       if (   !(pawn_attacks_bb(us, from)
               & (self_capture() ? pieces() : pieces(~us)) & to)     // Not a capture
-          && !((from + pawn_push(us) == to) && !(pieces() & to)) // Not a single push
+          && !((from + pawn_push(us) == to) && !(occupied & to)) // Not a single push
           && !(   (from + 2 * pawn_push(us) == to)               // Not a double push
                && (double_step_region(us) & from)
-               && !(pieces() & (to | (to - pawn_push(us)))))
+               && !(occupied & (to | (to - pawn_push(us)))))
           && !(   (from + 3 * pawn_push(us) == to)               // Not a triple push
                && (triple_step_region(us) & from)
-               && !(pieces() & (to | (to - pawn_push(us)) | (to - 2 * pawn_push(us))))))
+               && !(occupied & (to | (to - pawn_push(us)) | (to - 2 * pawn_push(us))))))
           return false;
   }
   else if (!((capture(m) ? attacks_from(us, type_of(pc), from) : moves_from(us, type_of(pc), from)) & to))
@@ -1789,17 +1814,22 @@ bool Position::gives_check(Move m) const {
   Square to = to_sq(m);
 
   Bitboard freezeExtra = 0;
+  Bitboard freezeBlock = 0;
   Bitboard jumpRemoved = 0;
+  Variant::PotionType gatingPotion = Variant::POTION_TYPE_NB;
   if (is_gating(m))
   {
-      Variant::PotionType potion = potion_type_from_piece(var, gating_type(m));
-      if (potion != Variant::POTION_TYPE_NB)
+      gatingPotion = potion_type_from_piece(var, gating_type(m));
+      if (gatingPotion != Variant::POTION_TYPE_NB)
       {
-          if (!can_cast_potion(sideToMove, potion))
+          if (!can_cast_potion(sideToMove, gatingPotion))
               return false;
-          if (potion == Variant::POTION_FREEZE)
+          if (gatingPotion == Variant::POTION_FREEZE)
+          {
               freezeExtra = freeze_zone_from_square(gating_square(m));
-          else if (potion == Variant::POTION_JUMP)
+              freezeBlock = freeze_block_zone_from_square(gating_square(m));
+          }
+          else if (gatingPotion == Variant::POTION_JUMP)
           {
               jumpRemoved = square_bb(gating_square(m));
               if (!piece_on(gating_square(m)))
@@ -1810,6 +1840,9 @@ bool Position::gives_check(Move m) const {
 
   SpellContextScope spellScope(*this, freezeExtra, jumpRemoved);
   PieceType royal = royal_piece_type();
+
+  if (gatingPotion == Variant::POTION_FREEZE && type_of(m) != DROP && (freezeBlock & from))
+      return false;
 
   Bitboard frozen = freeze_squares(sideToMove);
   if (type_of(m) != DROP && (frozen & from))
@@ -2564,8 +2597,18 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
   st->key = k;
   // Calculate checkers bitboard (if move gives check)
   PieceType royal = royal_piece_type();
-  st->checkersBB = (givesCheck && count(them, royal)) ? attackers_to(square(them, royal), us) & pieces(us) : Bitboard(0);
-  assert(givesCheck == bool(st->checkersBB));
+  if (count(them, royal))
+  {
+      if (potions_enabled())
+          st->checkersBB = attackers_to(square(them, royal), us) & pieces(us);
+      else
+          st->checkersBB = givesCheck ? (attackers_to(square(them, royal), us) & pieces(us)) : Bitboard(0);
+  }
+  else
+      st->checkersBB = Bitboard(0);
+
+  if (!potions_enabled())
+      assert(givesCheck == bool(st->checkersBB));
 
   sideToMove = ~sideToMove;
 

@@ -35,7 +35,7 @@ namespace {
     MAIN_TT, CAPTURE_INIT, GOOD_CAPTURE, REFUTATION, QUIET_INIT, QUIET, POTION_INIT, POTION, BAD_CAPTURE,
     EVASION_TT, EVASION_INIT, EVASION,
     PROBCUT_TT, PROBCUT_INIT, PROBCUT,
-    QSEARCH_TT, QCAPTURE_INIT, QCAPTURE, QCHECK_INIT, QCHECK
+    QSEARCH_TT, QCAPTURE_INIT, QCAPTURE, QPOTION_INIT, QPOTION, QCHECK_INIT, QCHECK
   };
 
   // partial_insertion_sort() sorts moves in descending order up to and including
@@ -59,6 +59,7 @@ namespace {
   constexpr int PotionGateHigh = 6000;
   constexpr int PotionPenaltyMid = PotionPenalty / 2;
   constexpr int PotionPenaltyHigh = PotionPenalty / 8;
+  constexpr int PotionQsearchMinScore = PotionGateMid;
 } // namespace
 
 
@@ -384,6 +385,46 @@ top:
       if (depth != DEPTH_QS_CHECKS)
           return MOVE_NONE;
 
+      ++stage;
+      [[fallthrough]];
+
+  case QPOTION_INIT: {
+      const Color us = pos.side_to_move();
+      bool canCastPotion = false;
+      if (pos.potions_enabled() && !(pos.must_capture() && pos.has_capture()))
+          for (int pt = 0; pt < Variant::POTION_TYPE_NB; ++pt)
+          {
+              auto potion = static_cast<Variant::PotionType>(pt);
+              if (pos.can_cast_potion(us, potion))
+              {
+                  canCastPotion = true;
+                  break;
+              }
+          }
+
+      if (!canCastPotion)
+      {
+          stage = QCHECK_INIT;
+          goto top;
+      }
+
+      ExtMove* baseEnd = generate_base(QUIETS, pos, moves);
+      cur = baseEnd;
+      endMoves = generate_potions(QUIETS, pos, moves, baseEnd);
+      if (cur == endMoves)
+      {
+          stage = QCHECK_INIT;
+          goto top;
+      }
+
+      partial_insertion_sort(cur, endMoves, PotionQsearchMinScore);
+      ++stage;
+      [[fallthrough]];
+  }
+
+  case QPOTION:
+      if (select<Next>([&](){ return cur->value >= PotionQsearchMinScore; }))
+          return *(cur - 1);
       ++stage;
       [[fallthrough]];
 

@@ -121,9 +121,6 @@ namespace {
     if (enemyRoyal != SQ_NONE && (zone & square_bb(enemyRoyal)))
         return true;
 
-    if (ourRoyal == SQ_NONE)
-        return false;
-
     if (ourRoyalAttackers && (zone & ourRoyalAttackers))
         return true;
 
@@ -131,14 +128,23 @@ namespace {
     if (!candidates)
         return false;
 
+    const Value majorThreshold = PieceValue[MG][make_piece(WHITE, ROOK)];
     Bitboard occ = pos.pieces();
     while (candidates)
     {
         Square s = pop_lsb(candidates);
-        PieceType pt = type_of(pos.piece_on(s));
+        Piece pc = pos.piece_on(s);
+        PieceType pt = type_of(pc);
         if (pt == NO_PIECE_TYPE)
             continue;
-        if (attacks_bb(them, pt, s, occ) & square_bb(ourRoyal))
+
+        // Freezing an attacked or major enemy piece is a tactical motif in spell-chess.
+        if (PieceValue[MG][pc] >= majorThreshold)
+            return true;
+        if (pos.attackers_to(s, us))
+            return true;
+
+        if (ourRoyal != SQ_NONE && (attacks_bb(them, pt, s, occ) & square_bb(ourRoyal)))
             return true;
     }
 

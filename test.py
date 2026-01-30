@@ -1037,6 +1037,42 @@ class TestPyffish(unittest.TestCase):
         moves = sf.legal_moves("spell-chess", fen, [])
         self.assertNotIn("f@b1,b2b3", moves)
 
+    def test_spell_chess_potion_consumes_hand(self):
+        start = sf.start_fen("spell-chess")
+        moves = sf.legal_moves("spell-chess", start, [])
+        freeze_moves = self._filter_potion_moves(moves, "f")
+        self.assertTrue(freeze_moves)
+
+        start_pocket = start.split()[0]
+        start_pocket = start_pocket[start_pocket.index('[') + 1:start_pocket.index(']')]
+        start_f = start_pocket.count('F')
+        start_j = start_pocket.count('J')
+        start_f_black = start_pocket.count('f')
+        start_j_black = start_pocket.count('j')
+
+        fen_after = sf.get_fen("spell-chess", start, [freeze_moves[0]])
+        after_pocket = fen_after.split()[0]
+        after_pocket = after_pocket[after_pocket.index('[') + 1:after_pocket.index(']')]
+        self.assertEqual(after_pocket.count('F'), max(start_f - 1, 0))
+        self.assertEqual(after_pocket.count('J'), start_j)
+        self.assertEqual(after_pocket.count('f'), start_f_black)
+        self.assertEqual(after_pocket.count('j'), start_j_black)
+
+    def test_spell_chess_jump_pawn_double_step(self):
+        fen = "r1b5/pp1p1k2/1qpPp1pB/8/2Bb4/2P5/PPQ2PPP/R3K2R[JJFFjjffff] {F@-:0,J@-:0,f@-:0,j@-:0} b KQ - 3 16"
+        moves = sf.legal_moves("spell-chess", fen, [])
+        self.assertIn("j@d6,d7d5", moves)
+
+    def test_spell_chess_castling_blocked_by_unfreeze(self):
+        fen = "r7/pp1b1k2/2pPp1pB/3p4/1qBP4/P7/1PQ2PPP/R3K2R[JJFjfff] {F@-:2,J@-:0,f@b2:2,j@-:0} w KQ - 1 18"
+        moves = sf.legal_moves("spell-chess", fen, [])
+        self.assertNotIn("e1g1", moves)
+
+    def test_spell_chess_jump_zone_persists_two_plies(self):
+        fen = "r4kr1/pp3p1p/3P2p1/2np4/8/5N1b/PPP2PPP/R2Q1BK1[JFFjjfff] {F@-:0,J@-:0,f@-:0,j@-:0} w - - 1 19"
+        moves = sf.legal_moves("spell-chess", fen, ["j@g2,f1h3"])
+        self.assertIn("j@g6,g8g1", moves)
+
     def test_spell_chess_freeze_zone_history_allows_mate(self):
         fen = "rnbqkbnr/pp1p1Qpp/2p5/4p3/4P3/8/PPPP1PPP/RNB1KBNR[JJFFFFjjfffff] {F@f8:2,J@-:0,f@-:0,j@-:0} b KQkq - 0 3"
         moves = sf.legal_moves("spell-chess", fen, ["d7d5"])
