@@ -1073,6 +1073,12 @@ class TestPyffish(unittest.TestCase):
         moves = sf.legal_moves("spell-chess", fen, ["j@g2,f1h3"])
         self.assertIn("j@g6,g8g1", moves)
 
+    def test_spell_chess_jump_zone_expires_after_two_plies(self):
+        fen = ("2rqk2r/pp2nppp/8/1p1nQ3/1P1nP3/3PBP2/PP3P1P/"
+               "R3K2R[JFFFjjfff] {F@-:1,J@d4:2,f@-:0,j@-:0} b KQk - 1 13")
+        moves = sf.legal_moves("spell-chess", fen, ["g7g6"])
+        self.assertIn("e3d4", moves)
+
     def test_spell_chess_freeze_zone_history_allows_mate(self):
         fen = "rnbqkbnr/pp1p1Qpp/2p5/4p3/4P3/8/PPPP1PPP/RNB1KBNR[JJFFFFjjfffff] {F@f8:2,J@-:0,f@-:0,j@-:0} b KQkq - 0 3"
         moves = sf.legal_moves("spell-chess", fen, ["d7d5"])
