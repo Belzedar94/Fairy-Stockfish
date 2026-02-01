@@ -2579,24 +2579,27 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
               else
                   st->potionZones[us][pt] = Bitboard(0);
           }
-          else if (st->potionCooldown[us][pt] > 0)
-          {
-              --st->potionCooldown[us][pt];
-              if (st->potionCooldown[us][pt] == 0
-                  || st->potionCooldown[us][pt] < zoneLifetime)
-                  st->potionZones[us][pt] = Bitboard(0);
-          }
-          else
+          else if (st->potionCooldown[us][pt] == 0)
               st->potionZones[us][pt] = Bitboard(0);
       }
 
-      if (potion_piece(Variant::POTION_JUMP) != NO_PIECE_TYPE)
+      Color opp = ~us;
+      for (int pt = 0; pt < Variant::POTION_TYPE_NB; ++pt)
       {
-          int zoneLifetime = std::max(var->potionCooldown[Variant::POTION_JUMP] - 1, 0);
-          Color opp = ~us;
-          if (st->potionZones[opp][Variant::POTION_JUMP]
-              && st->potionCooldown[opp][Variant::POTION_JUMP] == zoneLifetime)
-              st->potionZones[opp][Variant::POTION_JUMP] = Bitboard(0);
+          Variant::PotionType potion = static_cast<Variant::PotionType>(pt);
+          if (potion_piece(potion) == NO_PIECE_TYPE)
+              continue;
+
+          int zoneLifetime = std::max(var->potionCooldown[pt] - 1, 0);
+          if (st->potionCooldown[opp][pt] > 0)
+          {
+              --st->potionCooldown[opp][pt];
+              if (st->potionCooldown[opp][pt] == 0
+                  || st->potionCooldown[opp][pt] < zoneLifetime)
+                  st->potionZones[opp][pt] = Bitboard(0);
+          }
+          else
+              st->potionZones[opp][pt] = Bitboard(0);
       }
 
       togglePotionHashes(k);
