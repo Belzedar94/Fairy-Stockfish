@@ -325,12 +325,13 @@ top:
           skipQuiets
           && pos.potions_enabled()
           && pos.allow_self_check()
-          && pos.potion_zone(~us, Variant::POTION_FREEZE);
+          && (pos.potion_zone(~us, Variant::POTION_FREEZE)
+              || pos.can_cast_potion(us, Variant::POTION_FREEZE)
+              || pos.can_cast_potion(us, Variant::POTION_JUMP));
 
       if (   (skipQuiets && !allowPotionsWhenSkipping)
           || (pos.must_capture() && pos.has_capture())
-          || !pos.potions_enabled()
-          || quietStart == quietEnd)
+          || !pos.potions_enabled())
       {
           cur = moves;
           endMoves = endBadCaptures;
@@ -338,8 +339,38 @@ top:
           goto top;
       }
 
-      cur = quietEnd;
-      endMoves = generate_potions(QUIETS, pos, quietStart, quietEnd);
+      if (skipQuiets && allowPotionsWhenSkipping)
+      {
+          static thread_local ExtMove baseMoves[MAX_MOVES];
+          ExtMove* baseEnd = generate_base(QUIETS, pos, baseMoves);
+          ExtMove* potionEnd = generate_potions(QUIETS, pos, baseMoves, baseEnd);
+
+          if (potionEnd == baseEnd)
+          {
+              cur = moves;
+              endMoves = endBadCaptures;
+              stage = BAD_CAPTURE;
+              goto top;
+          }
+
+          const ptrdiff_t count = potionEnd - baseEnd;
+          std::copy(baseEnd, potionEnd, moves);
+          cur = moves;
+          endMoves = moves + count;
+      }
+      else
+      {
+          if (quietStart == quietEnd)
+          {
+              cur = moves;
+              endMoves = endBadCaptures;
+              stage = BAD_CAPTURE;
+              goto top;
+          }
+
+          cur = quietEnd;
+          endMoves = generate_potions(QUIETS, pos, quietStart, quietEnd);
+      }
 
       score<QUIETS>();
       partial_insertion_sort(cur, endMoves, -3000 * depth);
