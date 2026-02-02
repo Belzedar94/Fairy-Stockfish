@@ -1346,9 +1346,9 @@ bool Position::legal(Move m) const {
   if (gatingPotion == Variant::POTION_FREEZE && type_of(m) != DROP && (freezeBlock & from))
       return false;
 
-  Bitboard jumpMask = potions_enabled() ? jump_squares(us) : Bitboard(0);
-  if (type_of(m) != DROP && (jumpMask & to))
-      return false;
+    Bitboard jumpMask = potions_enabled() ? jump_squares(us) : Bitboard(0);
+    if (type_of(m) != DROP && (jumpMask & to) && !capture(m))
+        return false;
 
   Bitboard frozen = freeze_squares(us);
   if (type_of(m) != DROP && (frozen & from))
@@ -1686,9 +1686,9 @@ bool Position::pseudo_legal(const Move m) const {
   if (gatingPotion == Variant::POTION_FREEZE && type_of(m) != DROP && (freezeBlock & from))
       return false;
 
-  Bitboard jumpMask = potions_enabled() ? jump_squares(us) : Bitboard(0);
-  if (type_of(m) != DROP && (jumpMask & to))
-      return false;
+    Bitboard jumpMask = potions_enabled() ? jump_squares(us) : Bitboard(0);
+    if (type_of(m) != DROP && (jumpMask & to) && !capture(m))
+        return false;
 
   Bitboard frozen = freeze_squares(us);
   if (type_of(m) != DROP && (frozen & from))
