@@ -2571,7 +2571,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
 
           if (gatingPotion == potion)
           {
-              st->potionCooldown[us][pt] = zoneLifetime;
+              st->potionCooldown[us][pt] = cooldown;
               if (potion == Variant::POTION_FREEZE)
                   st->potionZones[us][pt] = freezeExtra;
               else if (potion == Variant::POTION_JUMP)
@@ -2594,8 +2594,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
           if (st->potionCooldown[opp][pt] > 0)
           {
               --st->potionCooldown[opp][pt];
-              if (st->potionCooldown[opp][pt] == 0
-                  || st->potionCooldown[opp][pt] < zoneLifetime)
+              if (st->potionCooldown[opp][pt] <= zoneLifetime)
                   st->potionZones[opp][pt] = Bitboard(0);
           }
           else

@@ -1081,10 +1081,10 @@ class TestPyffish(unittest.TestCase):
 
     def test_spell_chess_freeze_zone_expires_after_two_plies(self):
         fen = ("rnbqk2r/1pp2ppp/R4n2/1Bbpp3/4P3/2P5/PP1PQPPP/"
-               "1NB1K1NR[JFFFFjjffff] {F@-:1,J@a2:2,f@a4:2,j@-:0} w Kkq - 0 6")
+               "1NB1K1NR[JFFFFjjffff] {F@-:1,J@a2:2,f@a4:3,j@-:0} w Kkq - 0 6")
         fen_after = sf.get_fen("spell-chess", fen, ["h2h3"])
         state = fen_after[fen_after.index('{') + 1:fen_after.index('}')]
-        self.assertIn("f@-:1", state)
+        self.assertIn("f@-:2", state)
         moves = sf.legal_moves("spell-chess", fen_after, [])
         self.assertNotIn("e8g8", moves)
 
