@@ -2560,20 +2560,18 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
 
       togglePotionHashes(k);
 
-      for (int pt = 0; pt < Variant::POTION_TYPE_NB; ++pt)
-      {
-          Variant::PotionType potion = static_cast<Variant::PotionType>(pt);
-          if (potion_piece(potion) == NO_PIECE_TYPE)
-              continue;
-
-          int cooldown = var->potionCooldown[pt];
-          int zoneLifetime = std::max(cooldown - 1, 0);
-
-          if (gatingPotion == potion)
+          for (int pt = 0; pt < Variant::POTION_TYPE_NB; ++pt)
           {
-              st->potionCooldown[us][pt] = cooldown;
-              if (potion == Variant::POTION_FREEZE)
-                  st->potionZones[us][pt] = freezeExtra;
+              Variant::PotionType potion = static_cast<Variant::PotionType>(pt);
+              if (potion_piece(potion) == NO_PIECE_TYPE)
+                  continue;
+
+              int cooldown = var->potionCooldown[pt];
+              if (gatingPotion == potion)
+              {
+                  st->potionCooldown[us][pt] = cooldown;
+                  if (potion == Variant::POTION_FREEZE)
+                      st->potionZones[us][pt] = freezeExtra;
               else if (potion == Variant::POTION_JUMP)
                   st->potionZones[us][pt] = jumpRemoved;
               else
