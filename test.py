@@ -1044,6 +1044,16 @@ class TestPyffish(unittest.TestCase):
         moves = sf.legal_moves("spell-chess", fen, [])
         self.assertNotIn("f@b1,b2b3", moves)
 
+    def test_spell_chess_jump_gate_capture_allowed(self):
+        history = [
+            "e2e4", "b8c6", "f1b5", "e7e5", "f@c7,b5c6", "f@c5,f8d6", "d1h5", "e8e7",
+            "j@h7,h5h8", "j@g8,d8h8", "c6d5", "g8f6", "c2c3", "f6d5", "e4d5", "h8e8",
+            "d2d3", "f7f6", "g1f3", "f@d2,e7f8", "f@e7,f3d2", "e5e4", "e1f1",
+            "e4d3", "d2c4", "e8e2", "j@f1,h1e1"
+        ]
+        moves = sf.legal_moves("spell-chess", "startpos", history)
+        self.assertIn("e2f1", moves)
+
     def test_spell_chess_castling_illegal_while_in_check(self):
         moves = [
             "e2e4", "e7e5", "f1c4", "f8c5", "d1e2",
@@ -1100,6 +1110,16 @@ class TestPyffish(unittest.TestCase):
         fen = "2rqk2r/pp2nppp/8/1p2Q3/1P1nP3/3PBP2/PP3P1P/R3K2R[JFFFjjfff] {F@-:1,J@d4:2,f@-:0,j@-:0} w KQk - 1 14"
         moves = sf.legal_moves("spell-chess", fen, [])
         self.assertIn("e3d4", moves)
+
+    def test_spell_chess_jump_gate_capture_allowed(self):
+        history = [
+            "e2e4", "b8c6", "f1b5", "e7e5", "f@c7,b5c6", "f@c5,f8d6", "d1h5", "e8e7",
+            "j@h7,h5h8", "j@g8,d8h8", "c6d5", "g8f6", "c2c3", "f6d5", "e4d5", "h8e8",
+            "d2d3", "f7f6", "g1f3", "f@d2,e7f8", "f@e7,f3d2", "e5e4", "e1f1",
+            "e4d3", "d2c4", "e8e2", "j@f1,h1e1"
+        ]
+        moves = sf.legal_moves("spell-chess", "startpos", history)
+        self.assertIn("e2f1", moves)
 
     def test_spell_chess_freeze_zone_expires_after_two_plies(self):
         fen = ("rnbqk2r/1pp2ppp/R4n2/1Bbpp3/4P3/2P5/PP1PQPPP/"

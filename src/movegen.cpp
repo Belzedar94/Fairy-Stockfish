@@ -50,7 +50,8 @@ namespace {
   constexpr Direction RookDirections[] = {NORTH, SOUTH, EAST, WEST};
   constexpr Direction BishopDirections[] = {NORTH_EAST, SOUTH_EAST, SOUTH_WEST, NORTH_WEST};
   constexpr int PotionKingBonus = 10000;
-  constexpr int MaxFreezePotionGates = 8;
+  constexpr int PotionKingRingBonus = 50000;
+  constexpr int MaxFreezePotionGates = 12;
   constexpr int MaxJumpPotionGates = 6;
 
   void add_jump_gate_scores(const Position& pos, Color us, PieceType pt,
@@ -235,8 +236,7 @@ namespace {
     Bitboard capturable = pos.board_bb(Us, PAWN)
                         & (allowFriendlyCaptures ? (pos.pieces(Them) | friendlyCapturable)
                                                  :  pos.pieces(Them));
-    if (jumpMask)
-        capturable &= ~jumpMask;
+    // Captures onto jump squares are legal; keep them in the capture set.
 
     target = Type == EVASIONS ? target : AllSquares;
 
@@ -394,6 +394,16 @@ namespace {
         Bitboard attacks = pos.attacks_from(Us, Pt, from);
         Bitboard quiets = pos.moves_from(Us, Pt, from);
         Bitboard captureSquares = (attacks & pos.pieces()) & captureTarget;
+        if (pos.potions_enabled())
+        {
+            const Bitboard jumpMask = pos.jump_squares(Us);
+            const Bitboard jumpCapturable = jumpMask & pos.pieces();
+            if (jumpCapturable)
+            {
+                Bitboard solidAttacks = attacks_bb(Us, Pt, from, pos.pieces());
+                captureSquares |= solidAttacks & jumpCapturable & captureTarget;
+            }
+        }
         Bitboard quietSquares   = (quiets & ~pos.pieces()) & target;
         Bitboard b = captureSquares | quietSquares;
         Bitboard b1 = b;
@@ -601,6 +611,7 @@ namespace {
     const Bitboard baseFrozen = pos.freeze_squares(Us);
     const Bitboard allPieces = pos.pieces();
     const Square ksq = pos.count(Us, royal) ? pos.square(Us, royal) : SQ_NONE;
+    const Square enemyKsq = pos.count(~Us, royal) ? pos.square(~Us, royal) : SQ_NONE;
     const bool allowNonKing = Type != EVASIONS
                            || !more_than_one(pos.checkers() & ~pos.non_sliding_riders());
     bool baseMovesSorted = false;
@@ -785,6 +796,9 @@ namespace {
         {
             GateScore gateScores[SQUARE_NB];
             int gateCount = 0;
+            int ringGateCount = 0;
+            const Bitboard enemyRing = enemyKsq != SQ_NONE ? (attacks_bb<KING>(enemyKsq) | square_bb(enemyKsq))
+                                                           : Bitboard(0);
 
             if (potion == Variant::POTION_JUMP && !jumpScoresReady)
             {
@@ -850,6 +864,11 @@ namespace {
                     }
                     if (royal != NO_PIECE_TYPE && (zone & pos.pieces(~Us, royal)))
                         score += PotionKingBonus;
+                    if (enemyKsq != SQ_NONE && (zone & enemyRing))
+                    {
+                        score += PotionKingRingBonus;
+                        ++ringGateCount;
+                    }
                 }
                 else
                     score = jumpGateScores[gate];
@@ -857,6 +876,8 @@ namespace {
             }
 
             int gateLimit = potion == Variant::POTION_FREEZE ? MaxFreezePotionGates : MaxJumpPotionGates;
+            if (potion == Variant::POTION_FREEZE && ringGateCount > gateLimit)
+                gateLimit = ringGateCount;
             if (gateCount > gateLimit)
             {
                 std::partial_sort(gateScores, gateScores + gateLimit, gateScores + gateCount,
