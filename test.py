@@ -1037,6 +1037,16 @@ class TestPyffish(unittest.TestCase):
         moves = sf.legal_moves("spell-chess", fen, [])
         self.assertNotIn("f@b1,b2b3", moves)
 
+    def test_spell_chess_castling_illegal_while_in_check(self):
+        moves = [
+            "e2e4", "e7e5", "f1c4", "f8c5", "d1e2",
+            "g8f6", "c2c3", "d7d5", "f@d7,c4b5",
+            "f@a5,a7a6", "j@a2,a1a6"
+        ]
+        fen = sf.get_fen("spell-chess", "startpos", moves)
+        legal = sf.legal_moves("spell-chess", fen, [])
+        self.assertNotIn("e8g8", legal)
+
     def test_spell_chess_potion_consumes_hand(self):
         start = sf.start_fen("spell-chess")
         moves = sf.legal_moves("spell-chess", start, [])
