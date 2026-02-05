@@ -170,7 +170,7 @@ vector<string> setup_bench(const Position& current, istream& is) {
 
   auto vit = variants.find(varname);
   if (vit == variants.end())
-      varname = string(Options["UCI_Variant"]);
+      varname = varSpecified ? string("chess") : string(Options["UCI_Variant"]);
   variant = variants.find(varname)->second;
 
   if (fenFile == "default")
