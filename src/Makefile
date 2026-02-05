@@ -40,9 +40,9 @@ endif
 ### Source and object files
 SRCS = benchmark.cpp bitbase.cpp bitboard.cpp endgame.cpp evaluate.cpp main.cpp \
 	material.cpp misc.cpp movegen.cpp movepick.cpp pawns.cpp position.cpp psqt.cpp \
-	search.cpp thread.cpp timeman.cpp tt.cpp uci.cpp ucioption.cpp tune.cpp syzygy/tbprobe.cpp \
-	nnue/evaluate_nnue.cpp nnue/features/half_ka_v2.cpp \
-	partner.cpp parser.cpp piece.cpp variant.cpp xboard.cpp \
+	search.cpp thread.cpp timeman.cpp tt.cpp uci.cpp ucioption.cpp parser.cpp \
+	nnue/evaluate_nnue.cpp \
+	piece.cpp variant.cpp xboard.cpp \
 	nnue/features/half_ka_v2_variants.cpp
 
 OBJS = $(notdir $(SRCS:.cpp=.o))
