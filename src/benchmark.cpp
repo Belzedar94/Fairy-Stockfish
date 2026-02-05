@@ -112,15 +112,34 @@ vector<string> setup_bench(const Position& current, istream& is) {
 
   vector<string> fens, list;
   string go, token, varname;
+  auto is_number = [](const string& s) {
+      return !s.empty() && s.find_first_not_of("0123456789") == string::npos;
+  };
 
   streampos args = is.tellg();
   bool varSpecified = false;
   // Check whether the next token is a variant name
-  if ((is >> token) && variants.find(token) != variants.end())
+  if (is >> token)
   {
-      args = is.tellg();
-      varname = token;
-      varSpecified = true;
+      if (variants.find(token) != variants.end())
+      {
+          args = is.tellg();
+          varname = token;
+          varSpecified = true;
+      }
+      else if (!is_number(token))
+      {
+          // Treat unknown first token as a variant-like argument (e.g., legacy "xiangqi")
+          args = is.tellg();
+          varname = token;
+          varSpecified = true;
+      }
+      else
+      {
+          is.clear();
+          is.seekg(args);
+          varname = string(Options["UCI_Variant"]);
+      }
   }
   else
   {
@@ -149,6 +168,9 @@ vector<string> setup_bench(const Position& current, istream& is) {
           varname = "chess";
   }
 
+  auto vit = variants.find(varname);
+  if (vit == variants.end())
+      varname = string(Options["UCI_Variant"]);
   variant = variants.find(varname)->second;
 
   if (fenFile == "default")
