@@ -114,18 +114,21 @@ vector<string> setup_bench(const Position& current, istream& is) {
   string go, token, varname;
 
   streampos args = is.tellg();
+  bool varSpecified = false;
   // Check whether the next token is a variant name
   if ((is >> token) && variants.find(token) != variants.end())
   {
       args = is.tellg();
       varname = token;
+      varSpecified = true;
   }
   else
   {
+      is.clear();
       is.seekg(args);
       varname = string(Options["UCI_Variant"]);
   }
-  const Variant* variant = variants.find(varname)->second;
+  const Variant* variant = nullptr;
 
   // Assign default values to missing arguments
   string ttSize    = (is >> token) ? token : "16";
@@ -139,10 +142,21 @@ vector<string> setup_bench(const Position& current, istream& is) {
 
   if (fenFile == "default")
   {
-      if (varname != "chess")
-          fens.push_back(variant->startFen);
+      // For the default bench, keep the classic Stockfish position list to
+      // preserve the expected signature. Spell variants are still supported
+      // when explicitly requested.
+      if (!varSpecified && varname != "chess")
+          varname = "chess";
+  }
+
+  variant = variants.find(varname)->second;
+
+  if (fenFile == "default")
+  {
+      if (varname == "chess")
+          fens.insert(fens.end(), Defaults.begin(), Defaults.end());
       else
-          fens = Defaults;
+          fens.push_back(variant->startFen);
   }
 
   else if (fenFile == "current")
