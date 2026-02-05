@@ -660,8 +660,8 @@ namespace {
 
             if (potion == Variant::POTION_FREEZE)
             {
-                // Pieces already inside the new freeze block zone cannot be moved on the casting ply.
-                const Bitboard newBlockZone = pos.freeze_block_zone_from_square(gate);
+                // Pieces already inside the new freeze zone cannot be moved on the casting ply.
+                const Bitboard newBlockZoneFull = pos.freeze_zone_from_square(gate);
                 const Bitboard frozen = baseFrozen;
                 ExtMove* write = cur;
                 for (ExtMove* it = freezeStart; it != freezeEnd; ++it)
@@ -676,7 +676,7 @@ namespace {
                     if (mt != NORMAL && mt != CASTLING)
                         continue;
 
-                    if (newBlockZone & from_sq(base))
+                    if (newBlockZoneFull & from_sq(base))
                         continue;
                     if (frozen & from_sq(base))
                         continue;

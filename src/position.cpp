@@ -30,7 +30,6 @@
 #include "thread.h"
 #include "tt.h"
 #include "uci.h"
-#include "syzygy/tbprobe.h"
 
 using std::string;
 
@@ -204,21 +203,6 @@ std::ostream& operator<<(std::ostream& os, const Position& pos) {
   for (Bitboard b = pos.state()->chased; b; )
       os << UCI::square(pos, pop_lsb(b)) << " ";
 
-  if (    int(Tablebases::MaxCardinality) >= popcount(pos.pieces())
-      && Options["UCI_Variant"] == "chess"
-      && !pos.can_castle(ANY_CASTLING))
-  {
-      StateInfo st;
-      ASSERT_ALIGNED(&st, Eval::NNUE::CacheLineSize);
-
-      Position p;
-      p.set(pos.variant(), pos.fen(), pos.is_chess960(), &st, pos.this_thread());
-      Tablebases::ProbeState s1, s2;
-      Tablebases::WDLScore wdl = Tablebases::probe_wdl(p, &s1);
-      int dtz = Tablebases::probe_dtz(p, &s2);
-      os << "\nTablebases WDL: " << std::setw(4) << wdl << " (" << s1 << ")"
-         << "\nTablebases DTZ: " << std::setw(4) << dtz << " (" << s2 << ")";
-  }
 
   return os;
 }
@@ -908,7 +892,7 @@ Position& Position::set(const string& code, Color c, StateInfo* si) {
   string n = std::to_string(8);
   string fenStr =  sides[0] + "///////" + sides[1] + " w - - 0 10";
 
-  return set(variants.find("fairy")->second, fenStr, false, si, nullptr);
+  return set(variants.find("spell-chess")->second, fenStr, false, si, nullptr);
 }
 
 
@@ -1316,7 +1300,6 @@ bool Position::legal(Move m) const {
   Square to = to_sq(m);
 
   Bitboard freezeExtra = 0;
-  Bitboard freezeBlock = 0;
   Bitboard jumpRemoved = 0;
   Variant::PotionType gatingPotion = Variant::POTION_TYPE_NB;
   if (is_gating(m))
@@ -1327,10 +1310,7 @@ bool Position::legal(Move m) const {
           if (!can_cast_potion(us, gatingPotion))
               return false;
           if (gatingPotion == Variant::POTION_FREEZE)
-          {
               freezeExtra = freeze_zone_from_square(gating_square(m));
-              freezeBlock = freeze_block_zone_from_square(gating_square(m));
-          }
           else if (gatingPotion == Variant::POTION_JUMP)
           {
               jumpRemoved = square_bb(gating_square(m));
@@ -1343,8 +1323,10 @@ bool Position::legal(Move m) const {
   SpellContextScope spellScope(*this, freezeExtra, jumpRemoved);
   PieceType royal = royal_piece_type();
 
-  if (gatingPotion == Variant::POTION_FREEZE && type_of(m) != DROP && (freezeBlock & from))
-      return false;
+  if (gatingPotion == Variant::POTION_FREEZE && type_of(m) != DROP) {
+      if (freezeExtra & from)
+          return false;
+  }
 
     Bitboard jumpMask = potions_enabled() ? jump_squares(us) : Bitboard(0);
     if (type_of(m) != DROP && (jumpMask & to) && !capture(m))
@@ -1657,7 +1639,6 @@ bool Position::pseudo_legal(const Move m) const {
   // Use a slower but simpler function for uncommon cases
   // yet we skip the legality check of MoveList<LEGAL>().
   Bitboard freezeExtra = 0;
-  Bitboard freezeBlock = 0;
   Bitboard jumpRemoved = 0;
   Variant::PotionType gatingPotion = Variant::POTION_TYPE_NB;
   if (is_gating(m))
@@ -1668,10 +1649,7 @@ bool Position::pseudo_legal(const Move m) const {
           if (!can_cast_potion(us, gatingPotion))
               return false;
           if (gatingPotion == Variant::POTION_FREEZE)
-          {
               freezeExtra = freeze_zone_from_square(gating_square(m));
-              freezeBlock = freeze_block_zone_from_square(gating_square(m));
-          }
           else if (gatingPotion == Variant::POTION_JUMP)
           {
               jumpRemoved = square_bb(gating_square(m));
@@ -1683,8 +1661,10 @@ bool Position::pseudo_legal(const Move m) const {
 
   SpellContextScope spellScope(*this, freezeExtra, jumpRemoved);
 
-  if (gatingPotion == Variant::POTION_FREEZE && type_of(m) != DROP && (freezeBlock & from))
-      return false;
+  if (gatingPotion == Variant::POTION_FREEZE && type_of(m) != DROP) {
+      if (freezeExtra & from)
+          return false;
+  }
 
     Bitboard jumpMask = potions_enabled() ? jump_squares(us) : Bitboard(0);
     if (type_of(m) != DROP && (jumpMask & to) && !capture(m))
@@ -1836,7 +1816,6 @@ bool Position::gives_check(Move m) const {
   Square to = to_sq(m);
 
   Bitboard freezeExtra = 0;
-  Bitboard freezeBlock = 0;
   Bitboard jumpRemoved = 0;
   Variant::PotionType gatingPotion = Variant::POTION_TYPE_NB;
   if (is_gating(m))
@@ -1847,10 +1826,7 @@ bool Position::gives_check(Move m) const {
           if (!can_cast_potion(sideToMove, gatingPotion))
               return false;
           if (gatingPotion == Variant::POTION_FREEZE)
-          {
               freezeExtra = freeze_zone_from_square(gating_square(m));
-              freezeBlock = freeze_block_zone_from_square(gating_square(m));
-          }
           else if (gatingPotion == Variant::POTION_JUMP)
           {
               jumpRemoved = square_bb(gating_square(m));
@@ -1863,8 +1839,10 @@ bool Position::gives_check(Move m) const {
   SpellContextScope spellScope(*this, freezeExtra, jumpRemoved);
   PieceType royal = royal_piece_type();
 
-  if (gatingPotion == Variant::POTION_FREEZE && type_of(m) != DROP && (freezeBlock & from))
-      return false;
+  if (gatingPotion == Variant::POTION_FREEZE && type_of(m) != DROP) {
+      if (freezeExtra & from)
+          return false;
+  }
 
   Bitboard frozen = freeze_squares(sideToMove);
   if (type_of(m) != DROP && (frozen & from))
@@ -3197,7 +3175,7 @@ bool Position::is_optional_game_end(Value& result, int ply, int countStarted) co
               checkThem += bool(stp->checkersBB);
               checkUs += bool(stp->previous->checkersBB);
           }
-          offset = 2 * std::max(std::max(checkThem, checkUs) - 10, 0) + 20 * (CurrentProtocol == UCCI || CurrentProtocol == UCI_CYCLONE);
+          offset = 2 * std::max(std::max(checkThem, checkUs) - 10, 0);
       }
       if (st->rule50 - offset > (2 * n_move_rule() - 1))
       {
