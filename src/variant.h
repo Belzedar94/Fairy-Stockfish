@@ -36,7 +36,7 @@ namespace Stockfish {
 /// Variant struct stores information needed to determine the rules of a variant.
 
 struct Variant {
-  std::string variantTemplate = "fairy";
+  std::string variantTemplate = "spell-chess";
   std::string pieceToCharTable = "-";
   int pocketSize = 0;
   Rank maxRank = RANK_8;
@@ -249,8 +249,12 @@ struct Variant {
 class VariantMap : public std::map<std::string, const Variant*> {
 public:
   void init();
-  template <bool DoCheck> void parse(std::string path);
-  template <bool DoCheck> void parse_istream(std::istream& file);
+  // Spell-only build: keep parsing entry points as no-ops for link compatibility
+  // with UCI VariantPath handling in other build configurations.
+  template <bool DoCheck>
+  void parse_istream(std::istream& file);
+  template <bool DoCheck>
+  void parse(const std::string& data);
   void clear_all();
   std::vector<std::string> get_keys();
 

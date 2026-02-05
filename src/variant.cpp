@@ -86,6 +86,26 @@ void VariantMap::init() {
     add("spell-chess", spell_chess_variant());
 }
 
+// Spell-only build: keep variant parsing entry points as no-ops for link
+// compatibility with UCI VariantPath handling in other build configurations.
+template <bool DoCheck>
+void VariantMap::parse_istream(std::istream& file) {
+    (void)file;
+    // No-op: variants are hardcoded in this build.
+    // If DoCheck is true, callers expect validation side effects; none apply here.
+}
+
+template <bool DoCheck>
+void VariantMap::parse(const std::string& data) {
+    std::istringstream ss(data);
+    parse_istream<DoCheck>(ss);
+}
+
+template void VariantMap::parse_istream<true>(std::istream& file);
+template void VariantMap::parse_istream<false>(std::istream& file);
+template void VariantMap::parse<true>(const std::string& data);
+template void VariantMap::parse<false>(const std::string& data);
+
 
 // Pre-calculate derived properties
 Variant* Variant::conclude() {
