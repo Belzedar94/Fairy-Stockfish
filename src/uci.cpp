@@ -32,7 +32,6 @@
 #include "tt.h"
 #include "uci.h"
 #include "xboard.h"
-#include "syzygy/tbprobe.h"
 
 using namespace std;
 
@@ -102,9 +101,6 @@ namespace {
 
     is >> token; // Consume "name" token
 
-    if (CurrentProtocol == UCCI)
-        name = token;
-    else
     // Read option name (can contain spaces)
     while (is >> token && token != "value")
         name += (name.empty() ? "" : " ") + token;
@@ -136,18 +132,15 @@ namespace {
     limits.startTime = now(); // As early as possible!
 
     limits.banmoves = banmoves;
-    bool isUsi = CurrentProtocol == USI;
-    int secResolution = Options["usemillisec"] ? 1 : 1000;
-
     while (is >> token)
         if (token == "searchmoves") // Needs to be the last command on the line
             while (is >> token)
                 limits.searchmoves.push_back(UCI::to_move(pos, token));
 
-        else if (token == "wtime")     is >> limits.time[isUsi ? BLACK : WHITE];
-        else if (token == "btime")     is >> limits.time[isUsi ? WHITE : BLACK];
-        else if (token == "winc")      is >> limits.inc[isUsi ? BLACK : WHITE];
-        else if (token == "binc")      is >> limits.inc[isUsi ? WHITE : BLACK];
+        else if (token == "wtime")     is >> limits.time[WHITE];
+        else if (token == "btime")     is >> limits.time[BLACK];
+        else if (token == "winc")      is >> limits.inc[WHITE];
+        else if (token == "binc")      is >> limits.inc[BLACK];
         else if (token == "movestogo") is >> limits.movestogo;
         else if (token == "depth")     is >> limits.depth;
         else if (token == "nodes")     is >> limits.nodes;
@@ -156,20 +149,7 @@ namespace {
         else if (token == "perft")     is >> limits.perft;
         else if (token == "infinite")  limits.infinite = 1;
         else if (token == "ponder")    ponderMode = true;
-        // UCCI commands
-        else if (token == "time")         is >> limits.time[pos.side_to_move()], limits.time[pos.side_to_move()] *= secResolution;
-        else if (token == "opptime")      is >> limits.time[~pos.side_to_move()], limits.time[~pos.side_to_move()] *= secResolution;
-        else if (token == "increment")    is >> limits.inc[pos.side_to_move()], limits.inc[pos.side_to_move()] *= secResolution;
-        else if (token == "oppincrement") is >> limits.inc[~pos.side_to_move()], limits.inc[~pos.side_to_move()] *= secResolution;
-        // USI commands
-        else if (token == "byoyomi")
-        {
-            int byoyomi = 0;
-            is >> byoyomi;
-            limits.inc[WHITE] = limits.inc[BLACK] = byoyomi;
-            limits.time[WHITE] += byoyomi;
-            limits.time[BLACK] += byoyomi;
-        }
+        ;
 
     Threads.start_thinking(pos, states, limits, ponderMode);
   }
@@ -242,48 +222,6 @@ namespace {
      return int(0.5 + 1000 / (1 + std::exp((a - x) / b)));
   }
 
-  // load() is called when engine receives the "load" or "check" command.
-  // The function reads variant configuration files.
-
-  void load(istringstream& is, bool check = false) {
-
-    string token;
-    std::getline(is >> std::ws, token);
-
-    // The argument to load either is a here-doc or a file path
-    if (token.rfind("<<", 0) == 0)
-    {
-        // Trim the EOF marker
-        if (!(stringstream(token.substr(2)) >> token))
-            token = "";
-
-        // Parse variant config till EOF marker
-        stringstream ss;
-        std::string line;
-        while (std::getline(cin, line) && line != token)
-            ss << line << std::endl;
-        if (check)
-            variants.parse_istream<true>(ss);
-        else
-        {
-            variants.parse_istream<false>(ss);
-            Options["UCI_Variant"].set_combo(variants.get_keys());
-        }
-    }
-    else
-    {
-        // store path if non-empty after trimming
-        std::size_t end = token.find_last_not_of(' ');
-        if (end != std::string::npos)
-        {
-            if (check)
-                variants.parse<true>(token.erase(end + 1));
-            else
-                Options["VariantPath"] = token.erase(end + 1);
-        }
-    }
-  }
-
 } // namespace
 
 
@@ -315,14 +253,6 @@ void UCI::loop(int argc, char* argv[]) {
       cmd = "";
       argc = 1;
   }
-  else if (argc == 1 || !(std::strcmp(argv[1], "load") == 0))
-  {
-      // Check environment for variants.ini file
-      char *envVariantPath = std::getenv("FAIRY_STOCKFISH_VARIANT_PATH");
-      if (envVariantPath != NULL)
-          Options["VariantPath"] = std::string(envVariantPath);
-  }
-
   do {
       if (argc == 1 && !getline(cin, cmd)) // Block here waiting for input or EOF
           cmd = "quit";
@@ -343,29 +273,16 @@ void UCI::loop(int argc, char* argv[]) {
       else if (token == "ponderhit")
           Threads.main()->ponder = false; // Switch to normal search
 
-      else if (token == "uci" || token == "usi" || token == "ucci" || token == "xboard" || token == "ucicyclone")
+      else if (token == "uci" || token == "xboard")
       {
-          CurrentProtocol =  token == "uci"  ? (CurrentProtocol == UCI_CYCLONE ? UCI_CYCLONE : UCI_GENERAL)
-                           : token == "ucicyclone" ? UCI_CYCLONE
-                           : token == "usi"  ? USI
-                           : token == "ucci" ? UCCI
-                           : XBOARD;
-          string defaultVariant = string(
-#ifdef LARGEBOARDS
-                                           CurrentProtocol == USI  ? "shogi"
-                                         : CurrentProtocol == UCCI || CurrentProtocol == UCI_CYCLONE ? "xiangqi"
-#else
-                                           CurrentProtocol == USI  ? "minishogi"
-                                         : CurrentProtocol == UCCI || CurrentProtocol == UCI_CYCLONE ? "minixiangqi"
-#endif
-                                                           : "chess");
-          Options["UCI_Variant"].set_default(defaultVariant);
+          CurrentProtocol = token == "xboard" ? XBOARD : UCI_GENERAL;
+          Options["UCI_Variant"].set_default("spell-chess");
           std::istringstream ss("startpos");
           position(pos, ss, states);
-          if (is_uci_dialect(CurrentProtocol) && token != "ucicyclone")
+          if (CurrentProtocol == UCI_GENERAL)
               sync_cout << "id name " << engine_info(true)
                           << "\n" << Options
-                          << "\n" << token << "ok"  << sync_endl;
+                          << "\nuciok"  << sync_endl;
           // Allow to enforce protocol at startup
           argc = 1;
       }
@@ -374,13 +291,9 @@ void UCI::loop(int argc, char* argv[]) {
           XBoard::stateMachine->process_command(token, is);
 
       else if (token == "setoption")  setoption(is);
-      // UCCI-specific banmoves command
-      else if (token == "banmoves")
-          while (is >> token)
-              banmoves.push_back(UCI::to_move(pos, token));
       else if (token == "go")         go(pos, is, states, banmoves);
       else if (token == "position")   position(pos, is, states), banmoves.clear();
-      else if (token == "ucinewgame" || token == "usinewgame" || token == "uccinewgame") Search::clear();
+      else if (token == "ucinewgame") Search::clear();
       else if (token == "isready")    sync_cout << "readyok" << sync_endl;
 
       // Additional custom non-UCI commands, mainly for debugging.
@@ -398,18 +311,10 @@ void UCI::loop(int argc, char* argv[]) {
               filename = f;
           Eval::NNUE::save_eval(filename);
       }
-      else if (token == "load")     { load(is); argc = 1; } // continue reading stdin
-      else if (token == "check")    load(is, true);
-      // UCI-Cyclone omits the "position" keyword
+      // load/check (variant configs) removed for spell-only build
+      // Allow bare FEN/startpos lines as a convenience
       else if (token == "fen" || token == "startpos")
       {
-#ifdef LARGEBOARDS
-          if (CurrentProtocol == UCI_GENERAL && Options["UCI_Variant"] == "chess")
-          {
-              CurrentProtocol = UCI_CYCLONE;
-              Options["UCI_Variant"].set_default("xiangqi");
-          }
-#endif
           is.seekg(0);
           position(pos, is, states);
       }
@@ -439,13 +344,9 @@ string UCI::value(Value v) {
           ss << v * 100 / PawnValueEg;
       else
           ss << (v > 0 ? XBOARD_VALUE_MATE + VALUE_MATE - v + 1 : -XBOARD_VALUE_MATE - VALUE_MATE - v - 1) / 2;
-  } else
-
-  if (abs(v) < VALUE_MATE_IN_MAX_PLY)
-      ss << (CurrentProtocol == UCCI ? "" : "cp ") << v * 100 / PawnValueEg;
-  else if (CurrentProtocol == USI)
-      // In USI, mate distance is given in ply
-      ss << "mate " << (v > 0 ? VALUE_MATE - v : -VALUE_MATE - v);
+  }
+  else if (abs(v) < VALUE_MATE_IN_MAX_PLY)
+      ss << "cp " << v * 100 / PawnValueEg;
   else
       ss << "mate " << (v > 0 ? VALUE_MATE - v + 1 : -VALUE_MATE - v - 1) / 2;
 
@@ -472,21 +373,13 @@ string UCI::wdl(Value v, int ply) {
 /// UCI::square() converts a Square to a string in algebraic notation (g1, a7, etc.)
 
 std::string UCI::square(const Position& pos, Square s) {
+  (void)pos;
 #ifdef LARGEBOARDS
-  if (CurrentProtocol == USI)
-      return rank_of(s) < RANK_10 ? std::string{ char('1' + pos.max_file() - file_of(s)), char('a' + pos.max_rank() - rank_of(s)) }
-                                  : std::string{ char('0' + (pos.max_file() - file_of(s) + 1) / 10),
-                                                 char('0' + (pos.max_file() - file_of(s) + 1) % 10),
-                                                 char('a' + pos.max_rank() - rank_of(s)) };
-  else if (pos.max_rank() == RANK_10 && CurrentProtocol != UCI_GENERAL)
-      return std::string{ char('a' + file_of(s)), char('0' + rank_of(s)) };
-  else
-      return rank_of(s) < RANK_10 ? std::string{ char('a' + file_of(s)), char('1' + (rank_of(s) % 10)) }
-                                  : std::string{ char('a' + file_of(s)), char('0' + ((rank_of(s) + 1) / 10)),
-                                                 char('0' + ((rank_of(s) + 1) % 10)) };
+  return rank_of(s) < RANK_10 ? std::string{ char('a' + file_of(s)), char('1' + (rank_of(s) % 10)) }
+                              : std::string{ char('a' + file_of(s)), char('0' + ((rank_of(s) + 1) / 10)),
+                                             char('0' + ((rank_of(s) + 1) % 10)) };
 #else
-  return CurrentProtocol == USI ? std::string{ char('1' + pos.max_file() - file_of(s)), char('a' + pos.max_rank() - rank_of(s)) }
-                                : std::string{ char('a' + file_of(s)), char('1' + rank_of(s)) };
+  return std::string{ char('a' + file_of(s)), char('1' + rank_of(s)) };
 #endif
 }
 
@@ -513,7 +406,7 @@ string UCI::move(const Position& pos, Move m) {
   Square to = to_sq(m);
 
   if (m == MOVE_NONE)
-      return CurrentProtocol == USI ? "resign" : "(none)";
+      return "(none)";
 
   if (m == MOVE_NULL)
       return "0000";
@@ -547,7 +440,7 @@ string UCI::move(const Position& pos, Move m) {
           to = to_sq(m);
   }
 
-  string move = (type_of(m) == DROP ? UCI::dropped_piece(pos, m) + (CurrentProtocol == USI ? '*' : '@')
+  string move = (type_of(m) == DROP ? UCI::dropped_piece(pos, m) + '@'
                                     : UCI::square(pos, from)) + UCI::square(pos, to);
 
   // Wall square
@@ -601,30 +494,12 @@ Move UCI::to_move(const Position& pos, string& str) {
 }
 
 std::string UCI::option_name(std::string name) {
-  if (CurrentProtocol == UCCI && name == "Hash")
-      return "hashsize";
-  if (CurrentProtocol == USI)
-  {
-      if (name == "Hash" || name == "Ponder" || name == "MultiPV")
-          return "USI_" + name;
-      if (name.substr(0, 4) == "UCI_")
-          name = "USI_" + name.substr(4);
-  }
-  if (CurrentProtocol == UCCI || CurrentProtocol == USI)
-      std::replace(name.begin(), name.end(), ' ', '_');
   return name;
 }
 
 bool UCI::is_valid_option(UCI::OptionsMap& options, std::string& name) {
-  for (const auto& it : options)
-  {
-      std::string optionName = option_name(it.first);
-      if (!options.key_comp()(optionName, name) && !options.key_comp()(name, optionName))
-      {
-          name = it.first;
-          return true;
-      }
-  }
+  (void)options;
+  (void)name;
   return false;
 }
 

@@ -23,7 +23,6 @@
 #include "position.h"
 #include "psqt.h"
 #include "search.h"
-#include "syzygy/tbprobe.h"
 #include "thread.h"
 #include "tt.h"
 #include "uci.h"
@@ -43,7 +42,6 @@ int main(int argc, char* argv[]) {
   variants.init();
   CommandLine::init(argc, argv);
   UCI::init(Options);
-  Tune::init();
   PSQT::init(variants.find(Options["UCI_Variant"])->second);
   Bitboards::init();
   Position::init();

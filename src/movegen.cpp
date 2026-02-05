@@ -492,7 +492,6 @@ namespace {
     const Square ksq = pos.count(Us, royal) ? pos.square(Us, royal) : SQ_NONE;
     Bitboard target;
     Bitboard captureTarget = Type == EVASIONS ? ~pos.pieces(Us) : Bitboard(0);
-    Bitboard jumpForbidden = pos.spell_jump_removed();
 
     // Skip generating non-king moves when in double check
     if (Type != EVASIONS || !more_than_one(pos.checkers() & ~pos.non_sliding_riders()))
@@ -514,12 +513,7 @@ namespace {
 
         // Remove inaccessible squares (outside board + wall squares)
         target &= pos.board_bb();
-        if (jumpForbidden)
-            target &= ~jumpForbidden;
-
         captureTarget = target;
-        if (jumpForbidden)
-            captureTarget &= ~jumpForbidden;
         if (pos.self_capture() && (Type == NON_EVASIONS || Type == CAPTURES))
             captureTarget |= pos.pieces(Us) & ~pos.pieces(Us, royal);
 

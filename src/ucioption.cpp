@@ -30,7 +30,6 @@
 #include "tt.h"
 #include "uci.h"
 #include "variant.h"
-#include "syzygy/tbprobe.h"
 
 using std::string;
 
@@ -45,12 +44,7 @@ namespace PSQT {
 namespace UCI {
 
 // standard variants of XBoard/WinBoard
-std::set<string> standard_variants = {
-    "normal", "nocastle", "fischerandom", "knightmate", "3check", "makruk", "shatranj",
-    "asean", "seirawan", "crazyhouse", "bughouse", "suicide", "giveaway", "losers", "atomic",
-    "capablanca", "gothic", "janus", "caparandom", "grand", "shogi", "xiangqi", "duck",
-    "berolina", "spartan"
-};
+std::set<string> standard_variants = {};
 
 void init_variant(const Variant* v) {
     pieceMap.init(v);
@@ -62,20 +56,9 @@ void on_clear_hash(const Option&) { Search::clear(); }
 void on_hash_size(const Option& o) { TT.resize(size_t(o)); }
 void on_logger(const Option& o) { start_logger(o); }
 void on_threads(const Option& o) { Threads.set(size_t(o)); }
-void on_tb_path(const Option& o) { Tablebases::init(o); }
-
 void on_use_NNUE(const Option& ) { Eval::NNUE::init(); }
 void on_eval_file(const Option& ) { Eval::NNUE::init(); }
 
-void on_variant_path(const Option& o) {
-    std::stringstream ss((std::string)o);
-    std::string path;
-
-    while (std::getline(ss, path, SepChar))
-        variants.parse<false>(path);
-
-    Options["UCI_Variant"].set_combo(variants.get_keys());
-}
 void on_variant_set(const Option &o) {
     // Re-initialize NNUE
     Eval::NNUE::init();
@@ -95,18 +78,6 @@ void on_variant_change(const Option &o) {
     int pocketsize = v->pieceDrops ? (v->pocketSize ? v->pocketSize : popcount(v->pieceTypes)) : 0;
     if (CurrentProtocol == XBOARD)
     {
-        // Overwrite setup command for Janggi variants
-        auto itJanggi = variants.find("janggi");
-        if (   itJanggi != variants.end()
-            && v->variantTemplate == itJanggi->second->variantTemplate
-            && v->startFen == itJanggi->second->startFen
-            && v->pieceToCharTable == itJanggi->second->pieceToCharTable)
-        {
-            sync_cout << "setup (PH.R.AE..K.C.ph.r.ae..k.c.) 9x10+0_janggi "
-                      << "rhea1aehr/4k4/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/4K4/RHEA1AEHR w - - 0 1"
-                      << sync_endl;
-            return;
-        }
         // Send setup command
         sync_cout << "setup (" << v->pieceToCharTable << ") "
                   << v->maxFile + 1 << "x" << v->maxRank + 1
@@ -186,20 +157,12 @@ void init(OptionsMap& o) {
   o["Clear Hash"]            << Option(on_clear_hash);
   o["Ponder"]                << Option(false);
   o["MultiPV"]               << Option(1, 1, 500);
-  o["Skill Level"]           << Option(20, -20, 20);
   o["Move Overhead"]         << Option(10, 0, 5000);
   o["Slow Mover"]            << Option(100, 10, 1000);
   o["nodestime"]             << Option(0, 0, 10000);
   o["UCI_Chess960"]          << Option(false);
-  o["UCI_Variant"]           << Option("chess", variants.get_keys(), on_variant_change);
-  o["UCI_AnalyseMode"]       << Option(false);
-  o["UCI_LimitStrength"]     << Option(false);
-  o["UCI_Elo"]               << Option(1350, 500, 2850);
+  o["UCI_Variant"]           << Option("spell-chess", variants.get_keys(), on_variant_change);
   o["UCI_ShowWDL"]           << Option(false);
-  o["SyzygyPath"]            << Option("<empty>", on_tb_path);
-  o["SyzygyProbeDepth"]      << Option(1, 1, 100);
-  o["Syzygy50MoveRule"]      << Option(true);
-  o["SyzygyProbeLimit"]      << Option(7, 0, 7);
   o["Use NNUE"]              << Option(true, on_use_NNUE);
 #ifndef NNUE_EMBEDDING_OFF
   o["EvalFile"]              << Option(EvalFileDefaultName, on_eval_file);
@@ -207,8 +170,6 @@ void init(OptionsMap& o) {
   o["EvalFile"]              << Option("<empty>", on_eval_file);
 #endif
   o["TsumeMode"]             << Option(false);
-  o["VariantPath"]           << Option("<empty>", on_variant_path);
-  o["usemillisec"]           << Option(true); // time unit for UCCI
 }
 
 
@@ -253,15 +214,7 @@ std::ostream& operator<<(std::ostream& os, const OptionsMap& om) {
           if (it.second.idx == idx)
           {
               const Option& o = it.second;
-              // UCI dialects do not allow spaces
-              if (CurrentProtocol == UCCI || CurrentProtocol == USI)
-              {
-                  string name = option_name(it.first);
-                  // UCCI skips "name"
-                  os << "\noption " << (CurrentProtocol == UCCI ? "" : "name ") << name << " type " << o.type;
-              }
-              else
-                  os << "\noption name " << it.first << " type " << o.type;
+              os << "\noption name " << it.first << " type " << o.type;
 
               if (o.type == "string" || o.type == "check" || o.type == "combo")
                   os << " default " << o.defaultValue;

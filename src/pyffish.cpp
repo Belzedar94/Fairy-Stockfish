@@ -12,7 +12,6 @@
 #include "evaluate.h"
 #include "position.h"
 #include "search.h"
-#include "syzygy/tbprobe.h"
 #include "thread.h"
 #include "tt.h"
 #include "uci.h"
@@ -101,9 +100,7 @@ extern "C" PyObject* pyffish_loadVariantConfig(PyObject* self, PyObject *args) {
     const char *config;
     if (!PyArg_ParseTuple(args, "s", &config))
         return NULL;
-    std::stringstream ss(config);
-    variants.parse_istream<false>(ss);
-    Options["UCI_Variant"].set_combo(variants.get_keys());
+    (void)config;
     Py_RETURN_NONE;
 }
 

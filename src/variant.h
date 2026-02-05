@@ -262,6 +262,19 @@ private:
   void add(std::string s, Variant* v);
 };
 
+template <bool DoCheck>
+inline void VariantMap::parse_istream(std::istream& file) {
+  (void)file;
+  // No-op: variants are hardcoded in this build.
+  // If DoCheck is true, callers expect validation side effects; none apply here.
+}
+
+template <bool DoCheck>
+inline void VariantMap::parse(const std::string& data) {
+  std::istringstream ss(data);
+  parse_istream<DoCheck>(ss);
+}
+
 extern VariantMap variants;
 
 } // namespace Stockfish

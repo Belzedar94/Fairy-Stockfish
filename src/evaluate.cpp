@@ -1180,173 +1180,7 @@ namespace {
 
   template<Tracing T> template<Color Us>
   Score Evaluation<T>::variant() const {
-
-    constexpr Color Them = ~Us;
-    constexpr Direction Down = pawn_push(Them);
-
     Score score = SCORE_ZERO;
-
-    // Capture the flag
-    if (pos.flag_region(Us))
-    {
-        Bitboard ctfPieces = pos.pieces(Us, pos.flag_piece(Us));
-        Bitboard ctfTargets = pos.flag_region(Us) & pos.board_bb();
-        Bitboard onHold = 0;
-        Bitboard onHold2 = 0;
-        Bitboard processed = 0;
-        Bitboard blocked = pos.pieces(Us, PAWN) | attackedBy[Them][ALL_PIECES];
-        Bitboard doubleBlocked =  attackedBy2[Them]
-                                | (pos.pieces(Us, PAWN) & (shift<Down>(pos.pieces()) | attackedBy[Them][ALL_PIECES]))
-                                | (pos.pieces(Them) & pe->pawn_attacks(Them))
-                                | (pawn_attacks_bb<Them>(pos.pieces(Them, PAWN) & pe->pawn_attacks(Them)));
-        Bitboard inaccessible = pos.pieces(Us, PAWN) & shift<Down>(pos.pieces(Them, PAWN));
-        // Traverse all paths of the CTF pieces to the CTF targets.
-        // Put squares that are attacked or occupied on hold for one iteration.
-        // This reflects that likely a move will be needed to block or capture the attack.
-        // If all piece types are eligible, use the king path as a proxy for distance.
-        PieceType ptCtf = pos.flag_piece(Us) == ALL_PIECES ? KING : pos.flag_piece(Us);
-        for (int dist = 0; (ctfPieces || onHold || onHold2) && (ctfTargets & ~processed); dist++)
-        {
-            int wins = popcount(ctfTargets & ctfPieces);
-            if (wins)
-                score += make_score(4000, 4000) * wins / (wins + dist * dist);
-            Bitboard current = ctfPieces & ~ctfTargets;
-            processed |= ctfPieces;
-            ctfPieces = onHold & ~processed;
-            onHold = onHold2 & ~processed;
-            onHold2 = 0;
-            while (current)
-            {
-                Square s = pop_lsb(current);
-                Bitboard attacks = (  (PseudoAttacks[Us][ptCtf][s] & pos.pieces())
-                                    | (PseudoMoves[0][Us][ptCtf][s] & ~pos.pieces())) & ~processed & pos.board_bb();
-                ctfPieces |= attacks & ~blocked;
-                onHold |= attacks & ~doubleBlocked;
-                onHold2 |= attacks & ~inaccessible;
-            }
-        }
-    }
-
-    // nCheck
-    if (pos.check_counting())
-    {
-        int remainingChecks = pos.checks_remaining(Us);
-        assert(remainingChecks > 0);
-        score += make_score(3600, 1000) / (remainingChecks * remainingChecks);
-    }
-
-    // Extinction
-    if (pos.extinction_value() != VALUE_NONE)
-    {
-        for (PieceSet ps = pos.extinction_piece_types(); ps;)
-        {
-            PieceType pt = pop_lsb(ps);
-            if (pt != ALL_PIECES)
-            {
-                // Single piece type extinction bonus
-                int denom = std::max(pos.count(Us, pt) - pos.extinction_piece_count(), 1);
-                if (pos.count(Them, pt) >= pos.extinction_opponent_piece_count() || pos.two_boards())
-                    score += make_score(1000000 / (500 + PieceValue[MG][pt]),
-                                        1000000 / (500 + PieceValue[EG][pt])) / (denom * denom)
-                            * (pos.extinction_value() / VALUE_MATE);
-            }
-            else if (pos.extinction_value() == VALUE_MATE)
-            {
-                // Losing chess variant bonus
-                score += make_score(pos.non_pawn_material(Us), pos.non_pawn_material(Us)) / std::max(pos.count<ALL_PIECES>(Us), 1);
-            }
-            else if (pos.count<PAWN>(Us) == pos.count<ALL_PIECES>(Us))
-            {
-                // Pawns easy to stop/capture
-                int l = 0, m = 0, r = popcount(pos.pieces(Us, PAWN) & file_bb(FILE_A));
-                for (File f = FILE_A; f <= pos.max_file(); ++f)
-                {
-                    l = m; m = r; r = popcount(pos.pieces(Us, PAWN) & shift<EAST>(file_bb(f)));
-                    score -= make_score(80 - 10 * (edge_distance(f, pos.max_file()) % 2),
-                                        80 - 15 * (edge_distance(f, pos.max_file()) % 2)) * m / (1 + l * r);
-                }
-            }
-            else if (pos.count<PAWN>(Them) == pos.count<ALL_PIECES>(Them))
-            {
-                // Add a bonus according to how close we are to breaking through the pawn wall
-                int dist = 8;
-                Bitboard breakthroughs = attackedBy[Us][ALL_PIECES] & rank_bb(relative_rank(Us, pos.max_rank(), pos.max_rank()));
-                if (breakthroughs)
-                    dist = attackedBy[Us][QUEEN] & breakthroughs ? 0 : 1;
-                else for (File f = FILE_A; f <= pos.max_file(); ++f)
-                    dist = std::min(dist, popcount(pos.pieces(PAWN) & file_bb(f)));
-                score += make_score(70, 70) * pos.count<PAWN>(Them) / (1 + dist * dist) / (pos.pieces(Us, QUEEN) ? 2 : 4);
-            }
-        }
-    }
-
-    // Connect-n
-    if (pos.connect_n() > 0)
-    {
-        //Calculate eligible pieces for connection once.
-        //Still consider all opponent pieces as blocking.
-        Bitboard connectPiecesUs = 0;
-        for (PieceSet ps = pos.connect_piece_types(); ps;){
-            PieceType pt = pop_lsb(ps);
-            connectPiecesUs |= pos.pieces(pt);
-        };
-        connectPiecesUs &= pos.pieces(Us);
-
-        for (const Direction& d : pos.getConnectDirections())
-
-        {
-            // Find sufficiently large gaps
-            Bitboard b = pos.board_bb() & ~pos.pieces(Them);
-            for (int i = 1; i < pos.connect_n(); i++)
-                b &= shift(d, b);
-            // Count number of pieces per gap
-            while (b)
-            {
-                Square s = pop_lsb(b);
-                int c = 0;
-                for (int j = 0; j < pos.connect_n(); j++)
-                    if (connectPiecesUs & (s - j * d))
-                        c++;
-                score += make_score(200, 200)  * c / (pos.connect_n() - c) / (pos.connect_n() - c);
-            }
-        }
-    }
-
-    // Potential piece flips (Reversi)
-    if (pos.flip_enclosed_pieces())
-    {
-        // Stable pieces
-        if (pos.flip_enclosed_pieces() == REVERSI)
-        {
-            Bitboard edges = (FileABB | file_bb(pos.max_file()) | Rank1BB | rank_bb(pos.max_rank())) & pos.board_bb();
-            Bitboard edgePieces = pos.pieces(Us) & edges;
-            while (edgePieces)
-            {
-                Bitboard connectedEdge = attacks_bb(Us, ROOK, pop_lsb(edgePieces), ~(pos.pieces(Us) & edges)) & edges;
-                if (!more_than_one(connectedEdge & ~pos.pieces(Us)))
-                    score += make_score(300, 300);
-                else if (!(connectedEdge & ~pos.pieces()))
-                    score += make_score(200, 200);
-            }
-        }
-
-        // Unstable
-        Bitboard unstable = 0;
-        Bitboard drops = pos.drop_region(Them, IMMOBILE_PIECE);
-        while (drops)
-        {
-            Square s = pop_lsb(drops);
-            if (pos.flip_enclosed_pieces() == REVERSI)
-            {
-                Bitboard b = attacks_bb(Them, QUEEN, s, ~pos.pieces(Us)) & ~PseudoAttacks[Them][KING][s] & pos.pieces(Them);
-                while(b)
-                    unstable |= between_bb(s, pop_lsb(b));
-            }
-            else
-                unstable |= PseudoAttacks[Them][KING][s] & pos.pieces(Us);
-        }
-        score -= make_score(200, 200) * popcount(unstable);
-    }
 
     if (T)
         Trace::add(VARIANT, Us, score);
@@ -1504,7 +1338,7 @@ namespace {
         return abs(mg_value(score) + eg_value(score)) / 2 > lazyThreshold + pos.non_pawn_material() / 64;
     };
 
-    if (lazy_skip(LazyThreshold1) && Options["UCI_Variant"] == "chess")
+    if (lazy_skip(LazyThreshold1))
         goto make_v;
 
     // Main evaluation begins here
@@ -1536,7 +1370,7 @@ namespace {
             + passed< WHITE>() - passed< BLACK>()
             + variant<WHITE>() - variant<BLACK>();
 
-    if (lazy_skip(LazyThreshold2) && Options["UCI_Variant"] == "chess")
+    if (lazy_skip(LazyThreshold2))
         goto make_v;
 
     score +=  threats<WHITE>() - threats<BLACK>()

@@ -239,15 +239,13 @@ Entry* probe(const Position& pos) {
       {
           if (!pos.count<PAWN>(BLACK))
           {
-              assert(pos.count<PAWN>(WHITE) >= 2);
-
-              e->scalingFunction[WHITE] = &ScaleKPsK[WHITE];
+              if (pos.count<PAWN>(WHITE) >= 2)
+                  e->scalingFunction[WHITE] = &ScaleKPsK[WHITE];
           }
           else if (!pos.count<PAWN>(WHITE))
           {
-              assert(pos.count<PAWN>(BLACK) >= 2);
-
-              e->scalingFunction[BLACK] = &ScaleKPsK[BLACK];
+              if (pos.count<PAWN>(BLACK) >= 2)
+                  e->scalingFunction[BLACK] = &ScaleKPsK[BLACK];
           }
           else if (pos.count<PAWN>(WHITE) == 1 && pos.count<PAWN>(BLACK) == 1)
           {

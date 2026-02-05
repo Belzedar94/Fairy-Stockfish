@@ -26,8 +26,6 @@
 #include "../../evaluate.h"
 #include "../../misc.h"
 
-#include "half_ka_v2.h"
-
 namespace Stockfish {
   struct StateInfo;
 }

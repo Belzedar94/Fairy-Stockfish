@@ -37,6 +37,8 @@ TimeManagement Time; // Our global time management object
 
 void TimeManagement::init(const Position& pos, Search::LimitsType& limits, Color us, int ply) {
 
+  (void)pos;
+
   TimePoint moveOverhead    = TimePoint(Options["Move Overhead"]);
   TimePoint slowMover       = TimePoint(Options["Slow Mover"]);
   TimePoint npmsec          = TimePoint(Options["nodestime"]);
@@ -68,19 +70,6 @@ void TimeManagement::init(const Position& pos, Search::LimitsType& limits, Color
   // Make sure timeLeft is > 0 since we may use it as a divisor
   TimePoint timeLeft =  std::max(TimePoint(1),
       limits.time[us] + limits.inc[us] * (mtg - 1) - moveOverhead * (2 + mtg));
-
-  // Adjust time management for four-player variants
-  if (pos.two_boards())
-  {
-      if (Partner.partnerDead && Partner.opptime)
-          timeLeft -= Partner.opptime;
-      else
-      {
-          timeLeft = std::min(timeLeft, 5000 + std::min(std::abs(limits.time[us] - Partner.opptime), TimePoint(Partner.opptime)));
-          if (Partner.fast || Partner.partnerDead)
-              timeLeft /= 4;
-      }
-  }
 
   // A user may scale time usage by setting UCI option "Slow Mover"
   // Default is 100 and changing this value will probably lose elo.

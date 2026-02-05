@@ -41,6 +41,7 @@ public:
     playColor = COLOR_NB;
     ponderMove = MOVE_NONE;
     ponderHighlight = "";
+    analysisMode = false;
   }
   void go(Search::LimitsType searchLimits, bool ponder = false);
   void ponder();
@@ -60,6 +61,7 @@ private:
   Search::LimitsType limits;
   Color playColor;
   std::string ponderHighlight;
+  bool analysisMode;
 };
 
 extern StateMachine* stateMachine;
