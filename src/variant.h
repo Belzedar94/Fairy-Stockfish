@@ -249,31 +249,14 @@ struct Variant {
 class VariantMap : public std::map<std::string, const Variant*> {
 public:
   void init();
-  // Spell-only build: keep parsing entry points as no-ops for link compatibility
-  // with UCI VariantPath handling in other build configurations.
-  template <bool DoCheck>
-  void parse_istream(std::istream& file);
-  template <bool DoCheck>
-  void parse(const std::string& data);
+  template <bool DoCheck> void parse(std::string path);
+  template <bool DoCheck> void parse_istream(std::istream& file);
   void clear_all();
   std::vector<std::string> get_keys();
 
 private:
   void add(std::string s, Variant* v);
 };
-
-template <bool DoCheck>
-inline void VariantMap::parse_istream(std::istream& file) {
-  (void)file;
-  // No-op: variants are hardcoded in this build.
-  // If DoCheck is true, callers expect validation side effects; none apply here.
-}
-
-template <bool DoCheck>
-inline void VariantMap::parse(const std::string& data) {
-  std::istringstream ss(data);
-  parse_istream<DoCheck>(ss);
-}
 
 extern VariantMap variants;
 

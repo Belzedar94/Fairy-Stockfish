@@ -100,7 +100,9 @@ extern "C" PyObject* pyffish_loadVariantConfig(PyObject* self, PyObject *args) {
     const char *config;
     if (!PyArg_ParseTuple(args, "s", &config))
         return NULL;
-    (void)config;
+    std::stringstream ss(config);
+    variants.parse_istream<false>(ss);
+    Options["UCI_Variant"].set_combo(variants.get_keys());
     Py_RETURN_NONE;
 }
 

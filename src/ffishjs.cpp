@@ -480,9 +480,11 @@ namespace ffish {
   }
 
   void load_variant_config(std::string variantInitContent) {
-    (void)variantInitContent;
+    std::stringstream ss(variantInitContent);
     if (!Board::sfInitialized)
       initialize_stockfish();
+    variants.parse_istream<false>(ss);
+    Options["UCI_Variant"].set_combo(variants.get_keys());
     Board::sfInitialized = true;
   }
 
