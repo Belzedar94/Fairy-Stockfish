@@ -21,6 +21,7 @@
 
 #include "evaluate.h"
 #include "misc.h"
+#include "partner.h"
 #include "search.h"
 #include "thread.h"
 #include "types.h"
@@ -171,7 +172,9 @@ void StateMachine::process_command(std::string token, std::istringstream& is) {
   if (token == "protover")
   {
       std::string vars = "chess";
-      vars = "spell-chess";
+      for (std::string v : variants.get_keys())
+          if (v != "chess")
+              vars += "," + v;
       sync_cout << "feature setboard=1 usermove=1 time=1 memory=1 smp=1 colors=0 draw=0 "
                 << "highlight=1 name=0 sigint=0 ping=1 myname=\""
                 << engine_info(false, true) << "\" " << "variants=\"" << vars << "\""
@@ -227,6 +230,7 @@ void StateMachine::process_command(std::string token, std::istringstream& is) {
       // play second by default
       playColor = ~pos.side_to_move();
       Threads.sit = false;
+      Partner.reset();
   }
   else if (token == "variant")
   {
@@ -320,7 +324,7 @@ void StateMachine::process_command(std::string token, std::istringstream& is) {
       else
           setboard(fen);
       // Winboard sends setboard after passing moves
-      if (analysisMode)
+      if (Options["UCI_AnalyseMode"])
           go(analysisLimits);
       else if (pos.side_to_move() == playColor)
       {
@@ -358,13 +362,13 @@ void StateMachine::process_command(std::string token, std::istringstream& is) {
   else if (token == "analyze")
   {
       stop();
-      analysisMode = true;
+      Options["UCI_AnalyseMode"] = std::string("true");
       go(analysisLimits);
   }
   else if (token == "exit")
   {
       stop();
-      analysisMode = false;
+      Options["UCI_AnalyseMode"] = std::string("false");
   }
   else if (token == "undo")
   {
@@ -372,7 +376,7 @@ void StateMachine::process_command(std::string token, std::istringstream& is) {
       if (moveList.size())
       {
           undo_move();
-          if (analysisMode)
+          if (Options["UCI_AnalyseMode"])
               go(analysisLimits);
       }
   }
@@ -383,9 +387,54 @@ void StateMachine::process_command(std::string token, std::istringstream& is) {
       {
           undo_move();
           undo_move();
-          if (analysisMode)
+          if (Options["UCI_AnalyseMode"])
               go(analysisLimits);
       }
+  }
+  // Bughouse commands
+  else if (token == "partner")
+      Partner.parse_partner(is);
+  else if (token == "ptell")
+  {
+      Partner.parse_ptell(is, pos);
+      // play move requested by partner
+      // Partner.moveRequested can only be set if search was successfully aborted
+      if (moveAfterSearch && Partner.moveRequested)
+      {
+          assert(Threads.abort);
+          stop();
+          sync_cout << "move " << UCI::move(pos, Partner.moveRequested) << sync_endl;
+          do_move(Partner.moveRequested);
+          moveAfterSearch = false;
+          Partner.moveRequested = MOVE_NONE;
+      }
+  }
+  else if (token == "holding")
+  {
+      stop();
+      // holding [<white>] [<black>] <color><piece>
+      std::string white_holdings, black_holdings;
+      if (   std::getline(is, token, '[') && std::getline(is, white_holdings, ']')
+          && std::getline(is, token, '[') && std::getline(is, black_holdings, ']'))
+      {
+          std::string fen;
+          char color, pieceType;
+          // Use the obtained holding if available to avoid race conditions
+          if (is >> color && is >> pieceType)
+          {
+              fen = pos.fen();
+              fen.insert(fen.find(']'), 1, toupper(color) == 'B' ? tolower(pieceType) : toupper(pieceType));
+          }
+          else
+          {
+              std::transform(black_holdings.begin(), black_holdings.end(), black_holdings.begin(), ::tolower);
+              fen = pos.fen(false, false, 0, white_holdings + black_holdings);
+          }
+          setboard(fen);
+      }
+      // restart search
+      if (moveAfterSearch)
+          go(limits);
   }
   // Additional custom non-XBoard commands
   else if (token == "perft")
@@ -432,7 +481,7 @@ void StateMachine::process_command(std::string token, std::istringstream& is) {
           sync_cout << (isMove ? "Illegal move: " : "Error (unknown command): ") << token << sync_endl;
 
       // Restart search if applicable
-      if (analysisMode)
+      if (Options["UCI_AnalyseMode"])
           go(analysisLimits);
       else if (pos.side_to_move() == playColor)
       {

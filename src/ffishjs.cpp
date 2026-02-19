@@ -29,6 +29,7 @@
 #include "evaluate.h"
 #include "position.h"
 #include "search.h"
+#include "syzygy/tbprobe.h"
 #include "thread.h"
 #include "tt.h"
 #include "uci.h"
@@ -60,7 +61,7 @@ inline void save_pop_back(std::string& s) {
 
 const Variant* get_variant(const std::string& uciVariant) {
   if (uciVariant.size() == 0 || uciVariant == "Standard" || uciVariant == "standard")
-    return variants.find("spell-chess")->second;
+    return variants.find("chess")->second;
   return variants.find(uciVariant)->second;
 }
 
@@ -89,7 +90,7 @@ public:
   static bool sfInitialized;
 
   Board():
-    Board("spell-chess", "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR[JJFFFFFjjfffff] w KQkq - 0 1" , false) {
+    Board("chess", "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1" , false) {
   }
 
   Board(std::string uciVariant):
@@ -508,7 +509,7 @@ namespace ffish {
   }
 
   int validate_fen(std::string fen) {
-    return validate_fen(fen, "spell-chess");
+    return validate_fen(fen, "chess");
   }
 }
 
@@ -516,7 +517,7 @@ class Game {
 private:
   std::unordered_map<std::string, std::string> header;
   std::unique_ptr<Board> board;
-  std::string variant = "spell-chess";
+  std::string variant = "chess";
   std::string fen = ""; // start pos
   bool is960 = false;
   bool parsedGame = false;

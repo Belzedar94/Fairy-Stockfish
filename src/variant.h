@@ -36,7 +36,7 @@ namespace Stockfish {
 /// Variant struct stores information needed to determine the rules of a variant.
 
 struct Variant {
-  std::string variantTemplate = "spell-chess";
+  std::string variantTemplate = "fairy";
   std::string pieceToCharTable = "-";
   int pocketSize = 0;
   Rank maxRank = RANK_8;

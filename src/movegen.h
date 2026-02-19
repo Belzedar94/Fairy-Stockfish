@@ -20,8 +20,6 @@
 #define MOVEGEN_H_INCLUDED
 
 #include <algorithm>
-#include <cstdio>
-#include <cstdlib>
 
 #include "types.h"
 
