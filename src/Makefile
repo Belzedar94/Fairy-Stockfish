@@ -822,7 +822,7 @@ clean: objclean profileclean
 
 # evaluation network (nnue)
 net:
-	$(eval nnuenet := $(shell grep EvalFileDefaultName evaluate.h | grep define | sed 's/.*\(nn-[a-z0-9]\{12\}.nnue\).*/\1/'))
+	$(eval nnuenet := $(shell grep EvalFileDefaultName evaluate.h | sed -n 's/.*\(nn-[a-z0-9]\{12\}\.nnue\).*/\1/p' | head -n 1))
 	@echo "Default net: $(nnuenet)"
 	$(eval nnuedownloadurl1 := https://tests.stockfishchess.org/api/nn/$(nnuenet))
 	$(eval nnuedownloadurl2 := https://github.com/official-stockfish/networks/raw/master/$(nnuenet))

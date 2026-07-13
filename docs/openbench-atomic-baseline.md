@@ -21,6 +21,10 @@ baseline, plus `-save-temps -Wl,--no-insert-timestamp` for deterministic PE
 linking. These additions are scoped to the Windows OpenBench target; ordinary
 builds and Linux builds retain their upstream flags.
 
+The historical `net` target filters explicitly for the orthodox
+`nn-<12 lowercase hexadecimal digits>.nnue` pattern. The additional Atomic
+default branch therefore cannot alter normal NNUE download discovery.
+
 OpenBench authenticates the assigned network before invoking Make. The shim
 copies that file to Fairy-Stockfish's canonical embedded name
 `atomic_run3b_e202_l05.nnue` and calls the private optimized `all` target

@@ -92,6 +92,20 @@ class OpenBenchAtomicBaselineContractTests(unittest.TestCase):
             HARNESS,
         )
 
+    def test_normal_net_discovery_ignores_the_atomic_override(self):
+        assignment = re.search(
+            r"\$\(eval nnuenet := \$\(shell (?P<pipeline>[^\n]+)\)\)", MAKEFILE
+        )
+        self.assertIsNotNone(assignment)
+        pipeline = assignment.group("pipeline")
+        self.assertIn("grep EvalFileDefaultName evaluate.h", pipeline)
+        self.assertIn("sed -n", pipeline)
+        self.assertIn(r"nn-[a-z0-9]\{12\}\.nnue", pipeline)
+        self.assertIn("head -n 1", pipeline)
+
+        normal_names = re.findall(r"nn-[a-z0-9]{12}\.nnue", EVALUATE)
+        self.assertEqual(normal_names, ["nn-3475407dc199.nnue"])
+
     def test_harness_only_changes_missing_bench_defaults(self):
         self.assertIn(
             """#ifdef OPENBENCH_ATOMIC_BASELINE
