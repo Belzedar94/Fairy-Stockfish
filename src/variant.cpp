@@ -80,6 +80,7 @@ namespace {
         v->doubleStepRegion[BLACK] = AllSquares;
         return v;
     }
+#ifdef ALLVARS // Spell Chess requires the expanded all-variants move list.
     Variant* spell_chess_variant() {
         Variant* v = chess_variant()->init();
         v->variantTemplate = "spell-chess";
@@ -103,6 +104,7 @@ namespace {
         v->startFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR[JJFFFFFjjfffff] w KQkq - 0 1";
         return v;
     }
+#endif
     // Berolina Chess
     // https://www.chessvariants.com/dpieces.dir/berlin.html
     Variant* berolina_variant() {
@@ -1875,7 +1877,9 @@ void VariantMap::init() {
     add("nocastle", nocastle_variant());
     add("armageddon", armageddon_variant());
     add("torpedo", torpedo_variant());
+#ifdef ALLVARS
     add("spell-chess", spell_chess_variant());
+#endif
     add("berolina", berolina_variant());
     add("pawnsideways", pawnsideways_variant());
     add("pawnback", pawnback_variant());

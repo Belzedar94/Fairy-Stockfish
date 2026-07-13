@@ -21,7 +21,9 @@
 
 #include <array>
 #include <limits>
+#ifdef ALLVARS
 #include <memory>
+#endif
 #include <type_traits>
 
 #include "movegen.h"
@@ -152,8 +154,12 @@ private:
   ExtMove* end() { return endMoves; }
 
   const Position& pos;
+#ifdef ALLVARS
   std::unique_ptr<ExtMove[]> moveStorage;
   ExtMove* moves;
+#else
+  ExtMove moves[MAX_MOVES];
+#endif
   const ButterflyHistory* mainHistory;
   const GateHistory* gateHistory;
   const LowPlyHistory* lowPlyHistory;

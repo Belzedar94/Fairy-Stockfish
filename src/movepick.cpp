@@ -122,7 +122,11 @@ bool MovePicker::is_potion_move(Move m) const {
 /// MovePicker constructor for the main search
 MovePicker::MovePicker(const Position& p, Move ttm, Depth d, const ButterflyHistory* mh, const GateHistory* dh, const LowPlyHistory* lp,
                        const CapturePieceToHistory* cph, const PieceToHistory** ch, Move cm, const Move* killers, int pl)
-           : pos(p), moveStorage(new ExtMove[MAX_MOVES]), moves(moveStorage.get()), mainHistory(mh), gateHistory(dh), lowPlyHistory(lp), captureHistory(cph), continuationHistory(ch),
+           : pos(p),
+#ifdef ALLVARS
+             moveStorage(new ExtMove[MAX_MOVES]), moves(moveStorage.get()),
+#endif
+             mainHistory(mh), gateHistory(dh), lowPlyHistory(lp), captureHistory(cph), continuationHistory(ch),
              ttMove(ttm), refutations{{killers[0], 0}, {killers[1], 0}, {cm, 0}}, quietStart(moves), quietEnd(moves), depth(d), ply(pl) {
 
   assert(d > 0);
@@ -135,7 +139,11 @@ MovePicker::MovePicker(const Position& p, Move ttm, Depth d, const ButterflyHist
 /// MovePicker constructor for quiescence search
 MovePicker::MovePicker(const Position& p, Move ttm, Depth d, const ButterflyHistory* mh, const GateHistory* dh,
                        const CapturePieceToHistory* cph, const PieceToHistory** ch, Square rs)
-           : pos(p), moveStorage(new ExtMove[MAX_MOVES]), moves(moveStorage.get()), mainHistory(mh), gateHistory(dh), captureHistory(cph), continuationHistory(ch), ttMove(ttm), quietStart(moves), quietEnd(moves), recaptureSquare(rs), depth(d) {
+           : pos(p),
+#ifdef ALLVARS
+             moveStorage(new ExtMove[MAX_MOVES]), moves(moveStorage.get()),
+#endif
+             mainHistory(mh), gateHistory(dh), captureHistory(cph), continuationHistory(ch), ttMove(ttm), quietStart(moves), quietEnd(moves), recaptureSquare(rs), depth(d) {
 
   assert(d <= 0);
 
@@ -149,7 +157,11 @@ MovePicker::MovePicker(const Position& p, Move ttm, Depth d, const ButterflyHist
 /// MovePicker constructor for ProbCut: we generate captures with SEE greater
 /// than or equal to the given threshold.
 MovePicker::MovePicker(const Position& p, Move ttm, Value th, const GateHistory* dh, const CapturePieceToHistory* cph)
-           : pos(p), moveStorage(new ExtMove[MAX_MOVES]), moves(moveStorage.get()), gateHistory(dh), captureHistory(cph), ttMove(ttm), quietStart(moves), quietEnd(moves), threshold(th) {
+           : pos(p),
+#ifdef ALLVARS
+             moveStorage(new ExtMove[MAX_MOVES]), moves(moveStorage.get()),
+#endif
+             gateHistory(dh), captureHistory(cph), ttMove(ttm), quietStart(moves), quietEnd(moves), threshold(th) {
 
   assert(!pos.checkers() || pos.allow_self_check());
 

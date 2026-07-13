@@ -1,5 +1,8 @@
 # Spell-chess perf ideas log
 Date: 2026-01-17
+Build requirement: Spell Chess is available only in an `all=yes` build, which
+uses the expanded 16384-move list. For example: `cd src && make -j build
+ARCH=x86-64-modern all=yes`.
 Baseline: spell/nnue-potions (post-v2 merge), bench uses UCI_Variant=spell-chess,
 Use NNUE=true, EvalFile=spell-chess_run1test_e4_l05.nnue.
 Perft: startpos depth1=1814, depth2=3007820, branching=1658.11.
