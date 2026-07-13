@@ -1017,6 +1017,7 @@ else
 	@test -f "$(EVALFILE)" || { echo "ERROR: OpenBench EVALFILE does not exist: $(EVALFILE)" >&2; exit 2; }
 	@cp "$(EVALFILE)" "$(OPENBENCH_ATOMIC_NET).tmp"
 	@mv "$(OPENBENCH_ATOMIC_NET).tmp" "$(OPENBENCH_ATOMIC_NET)"
+	+$(MAKE) objclean EXE="$(EXE)"
 	+$(MAKE) all EXE="$(EXE)" CXX="$(CXX)" \
 		ARCH=x86-64-bmi2 COMP=$(OPENBENCH_ATOMIC_COMP) \
 		all=no largeboards=no nnue=yes \

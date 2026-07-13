@@ -70,6 +70,11 @@ class OpenBenchAtomicBaselineContractTests(unittest.TestCase):
         )
         self.assertIn("-DOPENBENCH_ATOMIC_BASELINE", HARNESS)
 
+    def test_public_build_cleans_stale_objects_before_embedding_the_net(self):
+        clean = HARNESS.index('+$(MAKE) objclean EXE="$(EXE)"')
+        build = HARNESS.index('+$(MAKE) all EXE="$(EXE)" CXX="$(CXX)"')
+        self.assertLess(clean, build)
+
     def test_authenticated_network_uses_fairys_canonical_embedded_name(self):
         self.assertRegex(
             EVALUATE,
