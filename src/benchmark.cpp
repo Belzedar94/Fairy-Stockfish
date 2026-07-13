@@ -123,7 +123,13 @@ vector<string> setup_bench(const Position& current, istream& is) {
   else
   {
       is.seekg(args);
+#ifdef OPENBENCH_ATOMIC_BASELINE
+      // The frozen OpenBench harness must validate the same Atomic NNUE path
+      // used by its games. Explicit benchmark arguments remain unchanged.
+      varname = "atomic";
+#else
       varname = string(Options["UCI_Variant"]);
+#endif
   }
   const Variant* variant = variants.find(varname)->second;
 
@@ -133,7 +139,12 @@ vector<string> setup_bench(const Position& current, istream& is) {
   string limit     = (is >> token) ? token : "13";
   string fenFile   = (is >> token) ? token : "default";
   string limitType = (is >> token) ? token : "depth";
-  string evalType  = (is >> token) ? token : "mixed";
+  string evalType  = (is >> token) ? token
+#ifdef OPENBENCH_ATOMIC_BASELINE
+                                   : "NNUE";
+#else
+                                   : "mixed";
+#endif
 
   go = limitType == "eval" ? "eval" : "go " + limitType + " " + limit;
 
