@@ -1751,6 +1751,12 @@ bool Position::pseudo_legal(const Move m) const {
           return false;
   }
 
+  // Spell Chess uses a capturable royal.  Its ordinary adjacent moves must
+  // not be filtered through the orthodox king-attack path below: in
+  // particular, it may capture an attacker after a jump potion opened a line.
+  if (potions_enabled() && allow_self_check() && type_of(pc) == royal)
+      return PseudoAttacks[WHITE][KING][from] & to;
+
   Piece captured = NO_PIECE;
   if (capture(m))
   {

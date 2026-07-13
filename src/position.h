@@ -957,9 +957,7 @@ inline Bitboard Position::freeze_zone_from_square(Square s) const {
 }
 
 inline Bitboard Position::freeze_block_zone_from_square(Square s) const {
-  Bitboard zone = square_bb(s);
-  zone |= shift<NORTH>(zone) | shift<SOUTH>(zone) | shift<EAST>(zone) | shift<WEST>(zone);
-  return zone & board_bb();
+  return freeze_zone_from_square(s);
 }
 
 inline bool Position::gating() const {

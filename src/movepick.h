@@ -21,6 +21,7 @@
 
 #include <array>
 #include <limits>
+#include <memory>
 #include <type_traits>
 
 #include "movegen.h"
@@ -151,6 +152,8 @@ private:
   ExtMove* end() { return endMoves; }
 
   const Position& pos;
+  std::unique_ptr<ExtMove[]> moveStorage;
+  ExtMove* moves;
   const ButterflyHistory* mainHistory;
   const GateHistory* gateHistory;
   const LowPlyHistory* lowPlyHistory;
@@ -163,7 +166,6 @@ private:
   Value threshold;
   Depth depth;
   int ply;
-  ExtMove moves[MAX_MOVES];
 };
 
 } // namespace Stockfish

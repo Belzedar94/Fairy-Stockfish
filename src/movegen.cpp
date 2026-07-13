@@ -578,6 +578,12 @@ namespace {
     {
         Bitboard kingAttacks = pos.attacks_from(Us, royal, ksq) & pos.pieces();
         Bitboard kingMoves   = pos.moves_from  (Us, royal, ksq) & ~pos.pieces();
+        if (pos.potions_enabled() && pos.allow_self_check())
+        {
+            Bitboard adjacent = PseudoAttacks[WHITE][KING][ksq];
+            kingAttacks = adjacent & pos.pieces();
+            kingMoves = adjacent & ~pos.pieces();
+        }
         Bitboard kingCaptureMask = Type == EVASIONS ? ~pos.pieces(Us) : captureTarget;
         if (Type == EVASIONS && pos.self_capture())
             kingCaptureMask |= pos.pieces(Us) & ~pos.pieces(Us, royal);
@@ -1037,7 +1043,13 @@ template ExtMove* generate<NON_EVASIONS>(const Position&, ExtMove*);
 template<>
 ExtMove* generate<LEGAL>(const Position& pos, ExtMove* moveList) {
 
-  if (pos.is_immediate_game_end())
+  if (pos.potions_enabled())
+  {
+      PieceType royal = pos.royal_piece_type();
+      if (!pos.count(WHITE, royal) || !pos.count(BLACK, royal))
+          return moveList;
+  }
+  else if (pos.is_immediate_game_end())
       return moveList;
 
   ExtMove* cur = moveList;
@@ -1050,6 +1062,38 @@ ExtMove* generate<LEGAL>(const Position& pos, ExtMove* moveList) {
           *cur = (--end)->move;
       else
           ++cur;
+
+  // The Spell Chess royal is capturable.  Keep its ordinary adjacent moves in
+  // the legal list even when the generic king path classifies the position as
+  // checked; that path is for orthodox evasion rules.
+  if (pos.potions_enabled())
+  {
+      Color us = pos.side_to_move();
+      PieceType royal = pos.royal_piece_type();
+      if (pos.count(us, royal))
+      {
+          Square from = pos.square(us, royal);
+          if (!(pos.freeze_squares(us) & from))
+              for (Bitboard b = PseudoAttacks[WHITE][KING][from]; b; )
+              {
+                  Square to = pop_lsb(b);
+                  if (pos.pieces(us) & to)
+                      continue;
+                  if ((pos.jump_squares(us) & to) && !(pos.pieces(~us) & to))
+                      continue;
+                  Move m = make<NORMAL>(from, to);
+                  bool exists = false;
+                  for (ExtMove* scan = moveList; scan != end; ++scan)
+                      if (scan->move == m)
+                      {
+                          exists = true;
+                          break;
+                      }
+                  if (!exists)
+                      *end++ = m;
+              }
+      }
+  }
 
   // Add potion moves, filtering by legality and avoiding duplicates.
   if (pos.potions_enabled())

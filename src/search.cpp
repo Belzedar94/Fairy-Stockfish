@@ -1011,6 +1011,9 @@ namespace {
     // Step 8. Null move search with verification search (~40 Elo)
     if (   !PvNode
         && !ss->inCheck
+        // Extinction variants can allow the royal piece to remain attacked, so
+        // ss->inCheck may be false while a null move would still be invalid.
+        && !pos.checkers()
         && (ss-1)->currentMove != MOVE_NULL
         && (ss-1)->statScore < 23767
         &&  eval >= beta
