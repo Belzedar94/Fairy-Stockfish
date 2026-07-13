@@ -38,10 +38,16 @@ namespace Eval {
   extern bool useNNUE;
   extern std::string eval_file_loaded;
 
-  // The default net name MUST follow the format nn-[SHA256 first 12 digits].nnue
-  // for the build process (profile-build and fishtest) to work. Do not change the
-  // name of the macro, as it is used in the Makefile.
+  // The normal default net name MUST follow the format
+  // nn-[SHA256 first 12 digits].nnue for profile-build and fishtest. The frozen
+  // OpenBench harness bypasses the downloader and embeds its authenticated
+  // variant net under an Atomic-prefixed name so NNUE variant selection accepts
+  // it. Do not change the macro name; the Makefile consumes it.
+  #ifdef OPENBENCH_ATOMIC_BASELINE
+  #define EvalFileDefaultName   "atomic_run3b_e202_l05.nnue"
+  #else
   #define EvalFileDefaultName   "nn-3475407dc199.nnue"
+  #endif
 
   namespace NNUE {
 

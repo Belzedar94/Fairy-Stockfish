@@ -822,7 +822,7 @@ clean: objclean profileclean
 
 # evaluation network (nnue)
 net:
-	$(eval nnuenet := $(shell grep EvalFileDefaultName evaluate.h | grep define | sed 's/.*\(nn-[a-z0-9]\{12\}.nnue\).*/\1/'))
+	$(eval nnuenet := $(shell grep EvalFileDefaultName evaluate.h | sed -n 's/.*\(nn-[a-z0-9]\{12\}\.nnue\).*/\1/p' | head -n 1))
 	@echo "Default net: $(nnuenet)"
 	$(eval nnuedownloadurl1 := https://tests.stockfishchess.org/api/nn/$(nnuenet))
 	$(eval nnuedownloadurl2 := https://github.com/official-stockfish/networks/raw/master/$(nnuenet))
@@ -980,3 +980,51 @@ icc-profile-use:
 	-@$(CXX) $(DEPENDFLAGS) -MM $(SRCS) > $@ 2> /dev/null
 
 -include .depend
+
+### ==========================================================================
+### Section 6. Frozen Atomic OpenBench harness
+### ==========================================================================
+# OpenBench builds public engines from src/ with a bare
+#
+#   make -j EXE=<output> CXX=<compiler> EVALFILE=<network>
+#
+# Do not use the regular `build nnue=yes` target here: its `net` prerequisite
+# validates the orthodox network filename hash. Instead copy OpenBench's
+# authenticated Atomic network to Fairy-Stockfish's canonical embedded name
+# and invoke the optimized private target directly.
+
+OPENBENCH_ATOMIC_NET = atomic_run3b_e202_l05.nnue
+
+ifeq ($(OS),Windows_NT)
+    OPENBENCH_ATOMIC_COMP = mingw
+    # Fairy's historical MinGW path enables O3 but only enables LTO when
+    # cross-compiling from Linux. Match the frozen native-Windows baseline's
+    # explicit O3+LTO and deterministic PE link flags.
+    OPENBENCH_ATOMIC_CXXFLAGS = -flto -flto-partition=one
+    OPENBENCH_ATOMIC_LDFLAGS = -flto -flto-partition=one -save-temps -Wl,--no-insert-timestamp
+else
+    OPENBENCH_ATOMIC_COMP = gcc
+    OPENBENCH_ATOMIC_CXXFLAGS =
+    OPENBENCH_ATOMIC_LDFLAGS =
+endif
+
+.PHONY: openbench-atomic-baseline
+openbench-atomic-baseline:
+ifndef EVALFILE
+	@echo "ERROR: the frozen Atomic baseline requires EVALFILE=<Legacy Atomic V1 network>." >&2
+	@exit 2
+else
+	@test -f "$(EVALFILE)" || { echo "ERROR: OpenBench EVALFILE does not exist: $(EVALFILE)" >&2; exit 2; }
+	@cp "$(EVALFILE)" "$(OPENBENCH_ATOMIC_NET).tmp"
+	@mv "$(OPENBENCH_ATOMIC_NET).tmp" "$(OPENBENCH_ATOMIC_NET)"
+	+$(MAKE) objclean EXE="$(EXE)"
+	+$(MAKE) all EXE="$(EXE)" CXX="$(CXX)" \
+		ARCH=x86-64-bmi2 COMP=$(OPENBENCH_ATOMIC_COMP) \
+		all=no largeboards=no nnue=yes \
+		EXTRACXXFLAGS='$(EXTRACXXFLAGS) $(OPENBENCH_ATOMIC_CXXFLAGS) -DOPENBENCH_ATOMIC_BASELINE' \
+		EXTRALDFLAGS='$(EXTRALDFLAGS) $(OPENBENCH_ATOMIC_LDFLAGS)'
+endif
+
+ifneq ($(strip $(EVALFILE)),)
+.DEFAULT_GOAL := openbench-atomic-baseline
+endif
