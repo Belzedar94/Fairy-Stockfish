@@ -1039,6 +1039,13 @@ class TestPyffish(unittest.TestCase):
         result = sf.game_result("spell-chess", fen, ["f@g7,d1h5", "a7a6", "h5f7"])
         self.assertGreaterEqual(result, sf.VALUE_MATE)
 
+    def test_spell_chess_freeze_zone_blocks_diagonal(self):
+        # Full 3x3 caster block (chess.com-verified 2026-07-14): a piece
+        # DIAGONAL to the new gate cannot make the accompanying move
+        moves = sf.legal_moves("spell-chess", sf.start_fen("spell-chess"), [])
+        self.assertNotIn("f@a1,b2b3", moves)
+        self.assertNotIn("f@c3,d2d4", moves)
+
     def test_spell_chess_freeze_zone_blocks_starting_inside(self):
         fen = "r3kbnr/pp1n1ppp/2p1p3/3pP1B1/3P4/1Q3N2/PqP2PPP/RN3RK1[JJFFFFjjffff] {F@-:0,J@-:0,f@-:0,j@-:0} b kq - 1 9"
         moves = sf.legal_moves("spell-chess", fen, [])
