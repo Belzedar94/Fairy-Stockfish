@@ -679,7 +679,7 @@ namespace {
                         continue;
 
                     MoveType mt = type_of(base);
-                    if (mt != NORMAL && mt != CASTLING)
+                    if (mt != NORMAL && mt != CASTLING && mt != EN_PASSANT)
                         continue;
 
                     if (newBlockZone & from_sq(base))
@@ -691,7 +691,9 @@ namespace {
 
                     Move gatingMove = mt == NORMAL
                                       ? make_gating<NORMAL>(from_sq(base), to_sq(base), potionPiece, gate)
-                                      : make_gating<CASTLING>(from_sq(base), to_sq(base), potionPiece, gate);
+                                      : mt == CASTLING
+                                          ? make_gating<CASTLING>(from_sq(base), to_sq(base), potionPiece, gate)
+                                          : make_gating<EN_PASSANT>(from_sq(base), to_sq(base), potionPiece, gate);
 
                     write->move = gatingMove;
                     write->value = gateScore;
@@ -712,7 +714,7 @@ namespace {
                     continue;
 
                 MoveType mt = type_of(base);
-                if (mt != NORMAL && mt != CASTLING)
+                if (mt != NORMAL && mt != CASTLING && mt != EN_PASSANT)
                     continue;
 
                 if (to_sq(base) == gate)
@@ -720,7 +722,9 @@ namespace {
 
                 Move gatingMove = mt == NORMAL
                                   ? make_gating<NORMAL>(from_sq(base), to_sq(base), potionPiece, gate)
-                                  : make_gating<CASTLING>(from_sq(base), to_sq(base), potionPiece, gate);
+                                  : mt == CASTLING
+                                      ? make_gating<CASTLING>(from_sq(base), to_sq(base), potionPiece, gate)
+                                      : make_gating<EN_PASSANT>(from_sq(base), to_sq(base), potionPiece, gate);
 
                 write->move = gatingMove;
                 write->value = gateScore;
