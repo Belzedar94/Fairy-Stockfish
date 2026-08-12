@@ -51,6 +51,10 @@ Clock adjudication precedes board progress: a move classified as out of time
 after clock and lag handling is a time loss, and its board transition is not
 committed as the game result.
 
+Certified local matches use the exact `KOTH_CLOCK_V1` profile in
+[`CLOCK_PROFILE.md`](CLOCK_PROFILE.md). Online-server lag compensation is
+evidence about Lichess operation, not an implicit input to local adjudication.
+
 ## Loaded positions
 
 FEN does not encode which player made the preceding move or authenticate a

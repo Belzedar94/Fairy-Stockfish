@@ -20,6 +20,10 @@ The complete versioned contract, including terminal ordering, draw handling,
 loaded-position policy, notation, and persistence requirements, is in
 [`docs/koth/RULE_PROFILE.md`](docs/koth/RULE_PROFILE.md).
 
+The certified-match clock boundary is a separate, deterministic contract in
+[`docs/koth/CLOCK_PROFILE.md`](docs/koth/CLOCK_PROFILE.md). It intentionally
+does not emulate network lag compensation from an online server.
+
 ## Legacy network
 
 The official legacy compatibility network is an external asset identified by
@@ -37,6 +41,10 @@ current compatibility status.
 The public engineering state and gate boundary are recorded in
 [`docs/koth/STATUS.md`](docs/koth/STATUS.md). Results from smoke tests, canaries,
 or short matches are not promoted to Elo, correctness, or release evidence.
+
+The independent executable rules reference is documented in
+[`docs/koth/REFERENCE.md`](docs/koth/REFERENCE.md). It is a comparator under
+test, not an engine implementation or a release referee.
 
 ## Build
 
