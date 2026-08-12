@@ -1,0 +1,17 @@
+{
+  "schema": "koth-stockfish-network-manifest-v1",
+  "profile": "KOTH_LICHESS_V1",
+  "networks": [
+    {
+      "role": "official_legacy_compatibility",
+      "historic_filename": "kingofthehill-978b86d0e6a4.nnue",
+      "reserved_alias": "KOTH_v1.nnue",
+      "size_bytes": 47721371,
+      "sha256": "978B86D0E6A45E05F9F1375DCED129CEA0ACEA13041EA65960691632EDC47AF7",
+      "default": false,
+      "bytes_in_repository": false,
+      "distribution": "external_no_public_license_recorded",
+      "loader_certification": "pending_fail_closed_implementation"
+    }
+  ]
+}

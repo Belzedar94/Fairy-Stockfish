@@ -1,1 +1,13 @@
-README.md merge=ours
+* text=auto
+/.gitattributes text eol=lf
+/.gitignore text eol=lf
+*.md text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.sh text eol=lf
+*.cpp text eol=lf
+*.h text eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.nnue binary
