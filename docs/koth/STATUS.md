@@ -21,7 +21,8 @@ strength claim exists.
 | Gate | State | Meaning |
 | --- | --- | --- |
 | Discovery | Passed for engineering | Primary rule and source identities are frozen. |
-| Source/build | In progress | Reproducible project builds and deterministic digests are not yet certified. |
+| Authority freeze | In progress | The independent reference and deterministic clock profile are implemented but not yet certified. |
+| Source/build | Not started | Reproducible project builds and deterministic digests are not yet certified. |
 | Referee | Open | The unmodified tournament referee has known result and notation conflicts. |
 | Network loader | Failing diagnostic | Alias routing and full-byte authentication require engineering. |
 | CI/artifacts | Open | No project artifact is currently a release candidate. |
