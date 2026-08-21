@@ -1,0 +1,102 @@
+# Spell-chess perf ideas log
+Date: 2026-01-17
+Baseline: spell/nnue-potions (post-v2 merge), bench uses UCI_Variant=spell-chess,
+Use NNUE=true, EvalFile=spell-chess_run1test_e4_l05.nnue.
+Perft: startpos depth1=1814, depth2=3007820, branching=1658.11.
+Bench notes: default `bench` uses evalType=mixed; for spell-chess it disables NNUE on the single position.
+Use `bench spell-chess 16 1 13 default depth NNUE` and a Windows path (`C:/...`) for EvalFile.
+
+Idea v1: freeze potion movegen optimization (initial big speedup)
+- Bench baseline: not recorded (prior run)
+- Bench new: ~+45% speedup (per user test)
+- Perft startpos: unchanged
+- Status: accepted
+
+Idea v2: jump potion movegen reuse (reuse base moves; recompute rider deltas only)
+- Bench baseline: 99175 NPS
+- Bench new: 100405 NPS (+1.24%)
+- Perft startpos: depth1 1814, depth2 3007820, branching 1658.11 (unchanged)
+- Status: accepted (user: ~+5 Elo)
+
+Idea v3: potion move ordering boost (history/continuation bonus when potion affects path)
+- Bench baseline: 99175 NPS
+- Bench new: 92262 NPS (-6.97%)
+- Perft startpos: depth1 1814, depth2 3007820, branching 1658.11 (unchanged)
+- Status: discarded (no Elo gain)
+
+Idea v4: potion LMR tuning (lighter for potion checks/captures, heavier for weak quiets)
+- Bench baseline: 99175 NPS
+- Bench new: 92861 NPS (-6.37%)
+- Perft startpos: depth1 1814, depth2 3007820, branching 1658.11 (unchanged)
+- Status: discarded (no Elo gain)
+
+Idea v8: potion gate progressive pruning in QUIETS (topK gates by impact)
+- Bench baseline: 31353 NPS
+- Bench new: 67646 NPS (+115.8%)
+- Perft startpos: depth1 1814, depth2 3007820, branching 1658.11 (unchanged)
+- Status: accepted (user: ~+80 Elo)
+
+Idea v9: potion LMP pruning in search (non-PV, quiet potion moves)
+- Bench baseline: 137793 NPS
+- Bench new: 135998 NPS (-1.30%)
+- Perft startpos: unchanged (search-only change)
+- Status: discarded (no Elo gain)
+
+Idea v10: lazy potion generation in MovePicker (generate potions only after quiets)
+- Bench baseline: 137402 NPS
+- Bench new: 172862 NPS (+25.8%)
+- Perft startpos: unchanged (generation-order change)
+- Status: accepted (user: big Elo gain)
+
+Idea v11: potion gate impact scoring for move ordering (propagate gate score into MovePicker)
+- Bench baseline: 78286 NPS
+- Bench new: 136600 NPS (+74.5%)
+- Perft startpos: unchanged (move ordering only)
+- Status: pending (needs Elo test)
+
+Idea v12: potion base move limiting in MovePicker (top-N quiets feed potion generation)
+- Bench baseline: 61666 NPS
+- Bench new: 81438 NPS (+32.1%)
+- Perft startpos: depth1 1814, depth2 3007820, branching 1658.11 (unchanged)
+- Status: pending (needs Elo test)
+
+Update v12: discarded (user: ~-200 Elo)
+
+Idea v13: threat-aware search_in_check for ignoreChecks (treat attacked royal as in-check for pruning)
+- Bench baseline: 99511 NPS
+- Bench new: 327849 NPS (+229.4%)
+- Perft startpos: unchanged (search-only change)
+- Status: pending (needs Elo test)
+
+Update v13: discarded (user: ~-20 to -30 Elo)
+
+Idea v14: add potion-induced check moves to qsearch (quiet potions that give check)
+- Bench baseline: 209327 NPS
+- Bench new: 192440 NPS (-8.07%)
+- Perft startpos: unchanged (search-only change)
+- Status: pending (needs Elo test)
+
+Update v14: discarded (user: ~-10 Elo)
+
+Idea v15: prioritize royal captures (move ordering + SEE/pruning guard)
+- Bench baseline: 220995 NPS
+- Bench new: 214518 NPS (-2.93%)
+- Perft startpos: unchanged (search-only change)
+- Status: pending (needs Elo test)
+
+Update v15: discarded (user: strength drop)
+
+Idea v16: royal threat pruning guard (checkless extinction variants)
+- Bench baseline: not measured (baseline binary not present)
+- Bench new: 110781 NPS (spell-chess bench; output said "classical evaluation enabled")
+- Perft startpos: unchanged (search-only change)
+- Status: pending (needs Elo test)
+
+Update v11: accepted (user: +100 Elo, baseline is v11)
+Update v16: discarded (user: v16 discarded)
+
+Idea v17: freeze threat-aware gate scoring (prioritize freezing attackers)
+- Bench baseline (v11): 192611 NPS (bench spell-chess 16 1 13 default depth NNUE)
+- Bench new (v17): 171498 NPS (-10.96%, NNUE enabled)
+- Perft startpos: unchanged (move ordering only)
+- Status: pending (needs Elo test)

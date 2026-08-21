@@ -875,6 +875,80 @@ inline Validation check_pocket_info(const std::string& fenBoard, int nbRanks, co
     return NOK;
 }
 
+inline Validation check_potion_square(const std::string& squareToken, const Variant* v) {
+    if (squareToken == "-")
+        return OK;
+    if (squareToken.size() < 2)
+        return NOK;
+    char fileChar = squareToken[0];
+    if (!isalpha(fileChar))
+        return NOK;
+    int fileIndex = tolower(fileChar) - 'a';
+    if (fileIndex < 0 || fileIndex > v->maxFile)
+        return NOK;
+    int rankIndex = 0;
+    for (size_t i = 1; i < squareToken.size(); ++i)
+    {
+        if (!isdigit(squareToken[i]))
+            return NOK;
+        rankIndex = rankIndex * 10 + (squareToken[i] - '0');
+    }
+    if (rankIndex < 1 || rankIndex > v->maxRank + 1)
+        return NOK;
+    return OK;
+}
+
+inline Validation check_potion_info(const std::string& potionField, const Variant* v) {
+    if (potionField.size() < 2 || potionField.front() != '{' || potionField.back() != '}')
+        return NOK;
+    std::string state = potionField.substr(1, potionField.size() - 2);
+    if (state.empty())
+        return OK;
+    size_t start = 0;
+    while (start < state.size())
+    {
+        size_t end = state.find(',', start);
+        std::string entry = state.substr(start, end == std::string::npos ? end : end - start);
+        if (entry.size() < 4)
+            return NOK;
+        char pieceChar = entry[0];
+        if (!isalpha(pieceChar))
+            return NOK;
+        bool isPotionPiece = false;
+        for (int pt = 0; pt < Variant::POTION_TYPE_NB; ++pt)
+        {
+            PieceType potionPiece = v->potionPiece[pt];
+            if (potionPiece == NO_PIECE_TYPE)
+                continue;
+            char expected = v->pieceToChar[make_piece(WHITE, potionPiece)];
+            if (tolower(expected) == tolower(pieceChar))
+            {
+                isPotionPiece = true;
+                break;
+            }
+        }
+        if (!isPotionPiece)
+            return NOK;
+        size_t at = entry.find('@', 1);
+        size_t colon = entry.find(':', at == std::string::npos ? 0 : at + 1);
+        if (at == std::string::npos || colon == std::string::npos || at + 1 > colon)
+            return NOK;
+        std::string squareToken = entry.substr(at + 1, colon - at - 1);
+        if (check_potion_square(squareToken, v) == NOK)
+            return NOK;
+        std::string cooldownToken = entry.substr(colon + 1);
+        if (cooldownToken.empty())
+            return NOK;
+        for (char c : cooldownToken)
+            if (!isdigit(c))
+                return NOK;
+        if (end == std::string::npos)
+            break;
+        start = end + 1;
+    }
+    return OK;
+}
+
 inline int piece_count(const std::string& fenBoard, Color c, PieceType pt, const Variant* v) {
     return std::count(fenBoard.begin(), fenBoard.end(), v->pieceToChar[make_piece(c, pt)]);
 }
@@ -1002,6 +1076,13 @@ inline FenValidation validate_fen(const std::string& fen, const Variant* v, bool
 
     std::vector<std::string> fenParts = get_fen_parts(fen, ' ');
     std::vector<std::string> startFenParts = get_fen_parts(v->startFen, ' ');
+
+    if (v->potions && fenParts.size() >= 2 && fenParts[1].size() >= 2 && fenParts[1].front() == '{' && fenParts[1].back() == '}')
+    {
+        if (check_potion_info(fenParts[1], v) == NOK)
+            return FEN_INVALID_CHAR;
+        fenParts.erase(fenParts.begin() + 1);
+    }
 
     // check for number of parts
     const unsigned int maxNumberFenParts = 6 + v->checkCounting;

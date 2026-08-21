@@ -157,13 +157,16 @@ public:
   PieceType castling_king_piece(Color c) const;
   PieceSet castling_rook_pieces(Color c) const;
   PieceType king_type() const;
+  PieceType royal_piece_type() const;
   PieceType nnue_king() const;
   Square nnue_king_square(Color c) const;
-  bool nnue_use_pockets() const;
-  bool nnue_applicable() const;
-  int nnue_piece_square_index(Color perspective, Piece pc) const;
-  int nnue_piece_hand_index(Color perspective, Piece pc) const;
-  int nnue_king_square_index(Square ksq) const;
+    bool nnue_use_pockets() const;
+    bool nnue_applicable() const;
+    int nnue_piece_square_index(Color perspective, Piece pc) const;
+    int nnue_piece_hand_index(Color perspective, Piece pc) const;
+    int nnue_king_square_index(Square ksq) const;
+    int nnue_potion_zone_index_base() const;
+    int nnue_potion_cooldown_index_base() const;
   bool free_drops() const;
   void set_spell_context(Bitboard freezeExtra, Bitboard jumpRemoved) const;
   void clear_spell_context() const;
@@ -172,6 +175,7 @@ public:
   bool fast_attacks() const;
   bool fast_attacks2() const;
   bool checking_permitted() const;
+  bool allow_self_check() const;
   bool drop_checks() const;
   bool self_capture() const;
   bool must_capture() const;
@@ -201,6 +205,7 @@ public:
   Bitboard freeze_squares(Color c) const;
   Bitboard jump_squares(Color c) const;
   Bitboard freeze_zone_from_square(Square s) const;
+  Bitboard freeze_block_zone_from_square(Square s) const;
   bool gating() const;
   bool walling() const;
   WallingRule walling_rule() const;
@@ -603,6 +608,11 @@ inline PieceType Position::king_type() const {
   return var->kingType;
 }
 
+inline PieceType Position::royal_piece_type() const {
+  assert(var != nullptr);
+  return var->royalPiece;
+}
+
 inline PieceType Position::nnue_king() const {
   assert(var != nullptr);
   return var->nnueKing;
@@ -632,10 +642,20 @@ inline int Position::nnue_piece_hand_index(Color perspective, Piece pc) const {
   return var->pieceHandIndex[perspective][pc];
 }
 
-inline int Position::nnue_king_square_index(Square ksq) const {
-  assert(var != nullptr);
-  return var->kingSquareIndex[ksq];
-}
+  inline int Position::nnue_king_square_index(Square ksq) const {
+    assert(var != nullptr);
+    return var->kingSquareIndex[ksq];
+  }
+
+  inline int Position::nnue_potion_zone_index_base() const {
+    assert(var != nullptr);
+    return var->nnuePotionZoneIndexBase;
+  }
+
+  inline int Position::nnue_potion_cooldown_index_base() const {
+    assert(var != nullptr);
+    return var->nnuePotionCooldownIndexBase;
+  }
 
 inline bool Position::checking_permitted() const {
   assert(var != nullptr);
@@ -912,8 +932,9 @@ inline bool Position::can_cast_potion(Color c, Variant::PotionType type) const {
 }
 
 inline Bitboard Position::freeze_squares(Color c) const {
-  Bitboard mask = st->potionZones[c][Variant::POTION_FREEZE];
-  if (spellContextActive)
+  // Freeze zones affect the opponent only; map to squares frozen for color c.
+  Bitboard mask = st->potionZones[~c][Variant::POTION_FREEZE];
+  if (spellContextActive && c == ~sideToMove)
       mask |= spellExtraFrozen;
   return mask;
 }
@@ -923,14 +944,24 @@ inline Bitboard Position::freeze_squares() const {
 }
 
 inline Bitboard Position::jump_squares(Color c) const {
-  Bitboard mask = st->potionZones[c][Variant::POTION_JUMP];
-  if (spellContextActive && c == sideToMove)
+  (void)c;
+  Bitboard mask = st->potionZones[WHITE][Variant::POTION_JUMP]
+                | st->potionZones[BLACK][Variant::POTION_JUMP];
+  if (spellContextActive)
       mask |= spellJumpRemoved;
   return mask;
 }
 
 inline Bitboard Position::freeze_zone_from_square(Square s) const {
   return (PseudoAttacks[WHITE][KING][s] | square_bb(s)) & board_bb();
+}
+
+inline Bitboard Position::freeze_block_zone_from_square(Square s) const {
+  // Full 3x3: the caster's own pieces anywhere in the NEW freeze zone are
+  // unavailable for the accompanying move. Verified on chess.com 2026-07-14
+  // (analysis board: diagonal neighbors blocked, origin-based); the
+  // orthogonal-only relaxation (5264a3f7) was a misreading of the rule.
+  return freeze_zone_from_square(s);
 }
 
 inline bool Position::gating() const {
@@ -1131,6 +1162,13 @@ inline int Position::extinction_opponent_piece_count() const {
 inline bool Position::extinction_pseudo_royal() const {
   assert(var != nullptr);
   return var->extinctionPseudoRoyal;
+}
+
+inline bool Position::allow_self_check() const {
+  PieceType royal = royal_piece_type();
+  return   extinction_value() != VALUE_NONE
+        && (extinction_piece_types() & royal)
+        && !extinction_pseudo_royal();
 }
 
 inline PieceType Position::flag_piece(Color c) const {
@@ -1378,8 +1416,8 @@ inline Square Position::castling_rook_square(CastlingRights cr) const {
 
 inline Bitboard Position::attacks_from(Color c, PieceType pt, Square s) const {
   Bitboard occupancy = byTypeBB[ALL_PIECES];
-  if (spellContextActive && c == sideToMove)
-      occupancy &= ~spellJumpRemoved;
+  if (potions_enabled())
+      occupancy &= ~jump_squares(c);
 
   if (var->fastAttacks || var->fastAttacks2)
       return attacks_bb(c, pt, s, occupancy) & board_bb();
@@ -1412,8 +1450,8 @@ inline Bitboard Position::attacks_from(Color c, PieceType pt, Square s) const {
 
 inline Bitboard Position::moves_from(Color c, PieceType pt, Square s) const {
   Bitboard occupancy = byTypeBB[ALL_PIECES];
-  if (spellContextActive && c == sideToMove)
-      occupancy &= ~spellJumpRemoved;
+  if (potions_enabled())
+      occupancy &= ~jump_squares(c);
 
   if (var->fastAttacks || var->fastAttacks2)
       return moves_bb(c, pt, s, occupancy) & board_bb();

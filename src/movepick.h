@@ -145,6 +145,7 @@ public:
 private:
   template<PickType T, typename Pred> Move select(Pred);
   template<GenType> void score();
+  bool is_potion_move(Move m) const;
   bool is_useless_potion(Move m) const;
   ExtMove* begin() { return cur; }
   ExtMove* end() { return endMoves; }
@@ -156,7 +157,7 @@ private:
   const CapturePieceToHistory* captureHistory;
   const PieceToHistory** continuationHistory;
   Move ttMove;
-  ExtMove refutations[3], *cur, *endMoves, *endBadCaptures;
+  ExtMove refutations[3], *cur, *endMoves, *endBadCaptures, *quietStart, *quietEnd;
   int stage;
   Square recaptureSquare;
   Value threshold;

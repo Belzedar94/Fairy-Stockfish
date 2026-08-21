@@ -55,6 +55,9 @@ inline bool operator<(const ExtMove& f, const ExtMove& s) {
 template<GenType>
 ExtMove* generate(const Position& pos, ExtMove* moveList);
 
+ExtMove* generate_base(GenType Type, const Position& pos, ExtMove* moveList);
+ExtMove* generate_potions(GenType Type, const Position& pos, ExtMove* baseStart, ExtMove* baseEnd);
+
 constexpr size_t moveListSize = sizeof(ExtMove) * MAX_MOVES;
 
 /// The MoveList struct is a simple wrapper around generate(). It sometimes comes

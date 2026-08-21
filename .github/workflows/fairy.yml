@@ -1,9 +1,7 @@
 name: fairy
 on:
   push:
-
   pull_request:
-
 jobs:
   fairy:
     name: ${{ matrix.config.name }}

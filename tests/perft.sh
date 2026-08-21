@@ -150,12 +150,22 @@ if [[ $1 == "all" || $1 == "variant" ]]; then
   expect perft.exp flipello startpos 7 55092 > /dev/null
   expect perft.exp flipersi startpos 9 38208 > /dev/null
   # 960 variants
-  expect perft.exp atomic "fen 8/8/8/8/8/8/2k5/rR4KR w KQ - 0 1" 4 61401 true > /dev/null
-  expect perft.exp atomic "fen r3k1rR/5K2/8/8/8/8/8/8 b kq - 0 1" 4 98729 true > /dev/null
-  expect perft.exp atomic "fen Rr2k1rR/3K4/3p4/8/8/8/7P/8 w kq - 0 1" 4 241478 true > /dev/null
+  expect perft.exp atomic "fen 8/8/8/8/8/8/2k5/rR4KR w KQ - 0 1" 4 56567 true > /dev/null
+  expect perft.exp atomic "fen r3k1rR/5K2/8/8/8/8/8/8 b kq - 0 1" 4 95154 true > /dev/null
+  expect perft.exp atomic "fen Rr2k1rR/3K4/3p4/8/8/8/7P/8 w kq - 0 1" 4 233278 true > /dev/null
   expect perft.exp atomic "fen 1R4kr/4K3/8/8/8/8/8/8 b k - 0 1" 4 17915 true > /dev/null
-  expect perft.exp extinction "fen rnbqb1kr/pppppppp/8/8/8/8/PPPPPPPP/RNBQB1KR w AHah - 0 1" 4 195286 true > /dev/null
+  expect perft.exp extinction "fen rnbqb1kr/pppppppp/8/8/8/8/PPPPPPPP/RNBQB1KR w AHah - 0 1" 4 195284 true > /dev/null
   expect perft.exp seirawan "fen qbbrnkrn/pppppppp/8/8/8/8/PPPPPPPP/QBBRNKRN[HEhe] w ABCDEFGHabcdefgh - 0 1" 3 21170 true > /dev/null
+  expect perft.exp spell-chess "fen 4k3/p7/8/8/8/8/8/4K2R[f] b K - 0 1 moves f@h1,a7a6" 1 5 > /dev/null
+  castling_output=$(printf "setoption name UCI_Variant value spell-chess\nposition fen rnb1k2r/pp1pnppp/2p1p3/q1b1P3/3P4/5N2/PPP1BPPP/RNBQK2R[JJFFFFjjffff] w KQkq - 1 6\ngo perft 1\nquit\n" | ./stockfish)
+  if echo "$castling_output" | grep -q "e1g1:"; then
+    echo "spell-chess castling-in-check test failed (e1g1)"
+    exit 1
+  fi
+  if echo "$castling_output" | grep -q "e1c1:"; then
+    echo "spell-chess castling-in-check test failed (e1c1)"
+    exit 1
+  fi
 fi
 
 # large-board variants

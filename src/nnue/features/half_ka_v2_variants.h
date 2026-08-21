@@ -44,25 +44,50 @@ namespace Stockfish::Eval::NNUE::Features {
     // Index of a feature for a given king position and another piece on some square
     static IndexType make_index(Color perspective, Square s, Piece pc, Square ksq, const Position& pos);
 
-    // Index of a feature for a given king position and another piece in hand
+    // Index of a feature for a given king position and another piece in hand   
     static IndexType make_index(Color perspective, int handCount, Piece pc, Square ksq, const Position& pos);
+
+    // Index of a feature for a given king position and potion zone square
+    static IndexType make_potion_zone_index(Color perspective, Color potionColor,
+                                            Variant::PotionType potion, Square s,
+                                            Square ksq, const Position& pos);
+
+    // Index of a feature for a given king position and potion cooldown bit
+    static IndexType make_potion_cooldown_index(Color perspective, Color potionColor,
+                                                Variant::PotionType potion, int bit,
+                                                Square ksq, const Position& pos);
 
    public:
     // Feature name
     static constexpr const char* Name = "HalfKAv2(Friend)";
 
     // Hash value embedded in the evaluation file
-    static constexpr std::uint32_t HashValue = 0x5f234cb8u;
+    static constexpr std::uint32_t HashValueNoPotions = 0x5f234cb8u;
+    static constexpr std::uint32_t HashValueWithPotions = 0x6a8f3c12u;
+
+    static std::uint32_t get_hash_value() {
+      return currentNnueVariant && currentNnueVariant->nnuePotionZoneIndexBase >= 0
+             ? HashValueWithPotions
+             : HashValueNoPotions;
+    }
 
     // Number of feature dimensions
-    static constexpr IndexType Dimensions = static_cast<IndexType>(SQUARE_NB) * static_cast<IndexType>(SQUARE_NB) * 19;
+    static constexpr IndexType PotionZonePlanes =
+        COLOR_NB * Variant::POTION_TYPE_NB;
+    static constexpr IndexType PotionCooldownFeatures =
+        COLOR_NB * Variant::POTION_TYPE_NB * POTION_COOLDOWN_BITS;
+    static constexpr IndexType Dimensions =
+        static_cast<IndexType>(SQUARE_NB)
+        * (static_cast<IndexType>(SQUARE_NB) * (19 + PotionZonePlanes)
+           + PotionCooldownFeatures);
 
     static IndexType get_dimensions() {
       return currentNnueVariant->nnueDimensions;
     }
 
     // Maximum number of simultaneously active features.
-    static constexpr IndexType MaxActiveDimensions = 128;
+    static constexpr IndexType MaxActiveDimensions =
+        4 * static_cast<IndexType>(SQUARE_NB);
 
     // Get a list of indices for active features
     static void append_active_indices(

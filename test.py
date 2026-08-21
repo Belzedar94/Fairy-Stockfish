@@ -1004,6 +1004,155 @@ class TestPyffish(unittest.TestCase):
         self.assertNotEqual(result, sf.VALUE_MATE)
         self.assertNotEqual(result, -sf.VALUE_MATE)
 
+    def test_spell_chess_freeze_check_has_evasion(self):
+        fen = "rnbqkbnr/pp1p1ppp/2p1p3/8/4P3/5Q2/PPPP1PPP/RNB1KBNR[JJFFFFFjjfffff] {F@-:0,J@-:0,f@-:0,j@-:0} w KQkq - 0 3"
+        moves = sf.legal_moves("spell-chess", fen, ["f@d7,f3f7"])
+        self.assertIn("f@f7,g8h6", moves)
+
+    def test_spell_chess_freeze_check_blocks_frozen_knight(self):
+        fen = "rnbqkbnr/pp1p1Qpp/2p1p3/8/4P3/8/PPPP1PPP/RNB1KBNR[JJFFFFjjfffff] {F@f8:2,J@-:0,f@-:0,j@-:0} b KQkq - 0 3"
+        moves = sf.legal_moves("spell-chess", fen, [])
+        self.assertNotIn("g8h6", moves)
+
+    def test_spell_chess_freeze_zone_does_not_force_mate(self):
+        fen = "rnbqkbnr/pp1p1Qpp/2p1p3/8/4P3/8/PPPP1PPP/RNB1KBNR[JJFFFFjjfffff] {F@e8:2,J@-:0,f@-:0,j@-:0} b KQkq - 0 3"
+        moves = sf.legal_moves("spell-chess", fen, [])
+        self.assertIn("g8h6", moves)
+        self.assertIn("f@f7,g8h6", moves)
+        result = sf.game_result("spell-chess", fen, [])
+        self.assertNotEqual(result, sf.VALUE_MATE)
+        self.assertNotEqual(result, -sf.VALUE_MATE)
+
+    def test_spell_chess_freeze_zone_defense_prevents_mate(self):
+        fen = "rnbqkbnr/pp1p1Qpp/2p5/4p3/4P3/8/PPPP1PPP/RNB1KBNR[JJFFFFjjfffff] {F@f7:2,J@-:0,f@-:0,j@-:0} b KQkq - 0 3"
+        moves = sf.legal_moves("spell-chess", fen, [])
+        self.assertNotIn("g8h6", moves)
+        self.assertIn("f@f6,d8f6", moves)
+        result = sf.game_result("spell-chess", fen, [])
+        self.assertNotEqual(result, sf.VALUE_MATE)
+        self.assertNotEqual(result, -sf.VALUE_MATE)
+
+    def test_spell_chess_freeze_mate_in_two_threat(self):
+        fen = "rnbqkb1r/pppppppp/8/1n2P3/8/8/PPPP1PPP/R1BQK1NR[JJFFFFFjjffff] {F@-:0,J@-:0,f@-:2,j@-:0} w KQkq - 0 5"
+        moves = sf.legal_moves("spell-chess", fen, [])
+        self.assertIn("f@g7,d1h5", moves)
+        result = sf.game_result("spell-chess", fen, ["f@g7,d1h5", "a7a6", "h5f7"])
+        self.assertGreaterEqual(result, sf.VALUE_MATE)
+
+    def test_spell_chess_freeze_zone_blocks_diagonal(self):
+        # Full 3x3 caster block (chess.com-verified 2026-07-14): a piece
+        # DIAGONAL to the new gate cannot make the accompanying move
+        moves = sf.legal_moves("spell-chess", sf.start_fen("spell-chess"), [])
+        self.assertNotIn("f@a1,b2b3", moves)
+        self.assertNotIn("f@c3,d2d4", moves)
+
+    def test_spell_chess_freeze_zone_blocks_starting_inside(self):
+        fen = "r3kbnr/pp1n1ppp/2p1p3/3pP1B1/3P4/1Q3N2/PqP2PPP/RN3RK1[JJFFFFjjffff] {F@-:0,J@-:0,f@-:0,j@-:0} b kq - 1 9"
+        moves = sf.legal_moves("spell-chess", fen, [])
+        self.assertNotIn("f@b1,b2b3", moves)
+
+    def test_spell_chess_jump_gate_capture_allowed(self):
+        history = [
+            "e2e4", "b8c6", "f1b5", "e7e5", "f@c7,b5c6", "f@c5,f8d6", "d1h5", "e8e7",
+            "j@h7,h5h8", "j@g8,d8h8", "c6d5", "g8f6", "c2c3", "f6d5", "e4d5", "h8e8",
+            "d2d3", "f7f6", "g1f3", "f@d2,e7f8", "f@e7,f3d2", "e5e4", "e1f1",
+            "e4d3", "d2c4", "e8e2", "j@f1,h1e1"
+        ]
+        moves = sf.legal_moves("spell-chess", "startpos", history)
+        self.assertIn("e2f1", moves)
+
+    def test_spell_chess_castling_illegal_while_in_check(self):
+        moves = [
+            "e2e4", "e7e5", "f1c4", "f8c5", "d1e2",
+            "g8f6", "c2c3", "d7d5", "f@d7,c4b5",
+            "f@a5,a7a6", "j@a2,a1a6"
+        ]
+        fen = sf.get_fen("spell-chess", "startpos", moves)
+        legal = sf.legal_moves("spell-chess", fen, [])
+        self.assertNotIn("e8g8", legal)
+
+    def test_spell_chess_potion_consumes_hand(self):
+        start = sf.start_fen("spell-chess")
+        moves = sf.legal_moves("spell-chess", start, [])
+        freeze_moves = self._filter_potion_moves(moves, "f")
+        self.assertTrue(freeze_moves)
+
+        start_pocket = start.split()[0]
+        start_pocket = start_pocket[start_pocket.index('[') + 1:start_pocket.index(']')]
+        start_f = start_pocket.count('F')
+        start_j = start_pocket.count('J')
+        start_f_black = start_pocket.count('f')
+        start_j_black = start_pocket.count('j')
+
+        fen_after = sf.get_fen("spell-chess", start, [freeze_moves[0]])
+        after_pocket = fen_after.split()[0]
+        after_pocket = after_pocket[after_pocket.index('[') + 1:after_pocket.index(']')]
+        self.assertEqual(after_pocket.count('F'), max(start_f - 1, 0))
+        self.assertEqual(after_pocket.count('J'), start_j)
+        self.assertEqual(after_pocket.count('f'), start_f_black)
+        self.assertEqual(after_pocket.count('j'), start_j_black)
+
+    def test_spell_chess_jump_pawn_double_step(self):
+        fen = "r1b5/pp1p1k2/1qpPp1pB/8/2Bb4/2P5/PPQ2PPP/R3K2R[JJFFjjffff] {F@-:0,J@-:0,f@-:0,j@-:0} b KQ - 3 16"
+        moves = sf.legal_moves("spell-chess", fen, [])
+        self.assertIn("j@d6,d7d5", moves)
+
+    def test_spell_chess_castling_blocked_by_unfreeze(self):
+        fen = "r7/pp1b1k2/2pPp1pB/3p4/1qBP4/P7/1PQ2PPP/R3K2R[JJFjfff] {F@-:2,J@-:0,f@b2:2,j@-:0} w KQ - 1 18"
+        moves = sf.legal_moves("spell-chess", fen, [])
+        self.assertNotIn("e1g1", moves)
+
+    def test_spell_chess_jump_zone_persists_two_plies(self):
+        fen = "r4kr1/pp3p1p/3P2p1/2np4/8/5N1b/PPP2PPP/R2Q1BK1[JFFjjfff] {F@-:0,J@-:0,f@-:0,j@-:0} w - - 1 19"
+        moves = sf.legal_moves("spell-chess", fen, ["j@g2,f1h3"])
+        self.assertIn("j@g6,g8g1", moves)
+
+    def test_spell_chess_jump_zone_expires_after_two_plies(self):
+        fen = ("2rqk2r/pp2nppp/8/1p1nQ3/1P1nP3/3PBP2/PP3P1P/"
+               "R3K2R[JFFFjjfff] {F@-:1,J@d4:2,f@-:0,j@-:0} b KQk - 1 13")
+        moves = sf.legal_moves("spell-chess", fen, ["g7g6"])
+        self.assertIn("e3d4", moves)
+
+    def test_spell_chess_jump_zone_expired_allows_capture(self):
+        fen = "2rqk2r/pp2nppp/8/1p2Q3/1P1nP3/3PBP2/PP3P1P/R3K2R[JFFFjjfff] {F@-:1,J@d4:2,f@-:0,j@-:0} w KQk - 1 14"
+        moves = sf.legal_moves("spell-chess", fen, [])
+        self.assertIn("e3d4", moves)
+
+    def test_spell_chess_jump_gate_capture_allowed(self):
+        history = [
+            "e2e4", "b8c6", "f1b5", "e7e5", "f@c7,b5c6", "f@c5,f8d6", "d1h5", "e8e7",
+            "j@h7,h5h8", "j@g8,d8h8", "c6d5", "g8f6", "c2c3", "f6d5", "e4d5", "h8e8",
+            "d2d3", "f7f6", "g1f3", "f@d2,e7f8", "f@e7,f3d2", "e5e4", "e1f1",
+            "e4d3", "d2c4", "e8e2", "j@f1,h1e1"
+        ]
+        moves = sf.legal_moves("spell-chess", "startpos", history)
+        self.assertIn("e2f1", moves)
+
+    def test_spell_chess_freeze_zone_expires_after_two_plies(self):
+        fen = ("rnbqk2r/1pp2ppp/R4n2/1Bbpp3/4P3/2P5/PP1PQPPP/"
+               "1NB1K1NR[JFFFFjjffff] {F@-:1,J@a2:2,f@a4:3,j@-:0} w Kkq - 0 6")
+        fen_after = sf.get_fen("spell-chess", fen, ["h2h3"])
+        state = fen_after[fen_after.index('{') + 1:fen_after.index('}')]
+        self.assertIn("f@-:2", state)
+        moves = sf.legal_moves("spell-chess", fen_after, [])
+        self.assertNotIn("e8g8", moves)
+
+    def test_spell_chess_freeze_zone_history_allows_mate(self):
+        fen = "rnbqkbnr/pp1p1Qpp/2p5/4p3/4P3/8/PPPP1PPP/RNB1KBNR[JJFFFFjjfffff] {F@f8:2,J@-:0,f@-:0,j@-:0} b KQkq - 0 3"
+        moves = sf.legal_moves("spell-chess", fen, ["d7d5"])
+        self.assertIn("f7e8", moves)
+        result = sf.game_result("spell-chess", fen, ["d7d5", "f7e8"])
+        self.assertEqual(result, -sf.VALUE_MATE)
+
+    def test_spell_chess_capture_commoner_in_check(self):
+        fen = "4k3/4b3/8/8/8/8/4R3/4K3[JJFFFFjjffff] b - - 0 1"
+        moves = sf.legal_moves("spell-chess", fen, [])
+        self.assertIn("e7b4", moves)
+        moves = sf.legal_moves("spell-chess", fen, ["e7b4"])
+        self.assertIn("e2e8", moves)
+        result = sf.game_result("spell-chess", fen, ["e7b4", "e2e8"])
+        self.assertEqual(result, -sf.VALUE_MATE)
+
     def test_get_san(self):
         fen = "4k3/8/3R4/8/1R3R2/8/3R4/4K3 w - - 0 1"
         result = sf.get_san("chess", fen, "b4d4")

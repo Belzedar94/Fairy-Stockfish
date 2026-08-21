@@ -88,6 +88,69 @@ namespace {
     return d > 14 ? 73 : 6 * d * d + 229 * d - 215;
   }
 
+  Variant::PotionType potion_type_from_gating_piece(const Position& pos, PieceType gatingPiece) {
+    for (int idx = 0; idx < Variant::POTION_TYPE_NB; ++idx)
+    {
+        auto potion = static_cast<Variant::PotionType>(idx);
+        if (pos.potion_piece(potion) == gatingPiece)
+            return potion;
+    }
+    return Variant::POTION_TYPE_NB;
+  }
+
+  bool is_potion_gating_move(const Position& pos, Move m) {
+
+    if (!pos.potions_enabled() || !is_gating(m))
+        return false;
+
+    return potion_type_from_gating_piece(pos, gating_type(m)) != Variant::POTION_TYPE_NB;
+  }
+
+  bool is_tactical_potion(const Position& pos, Move m, Bitboard ourRoyalAttackers, Square enemyRoyal, Square ourRoyal) {
+
+    if (!pos.potions_enabled() || !is_gating(m))
+        return false;
+
+    Variant::PotionType potion = potion_type_from_gating_piece(pos, gating_type(m));
+    if (potion != Variant::POTION_FREEZE)
+        return false;
+
+    Color us = pos.side_to_move();
+    Color them = ~us;
+    Bitboard zone = pos.freeze_zone_from_square(gating_square(m));
+    if (enemyRoyal != SQ_NONE && (zone & square_bb(enemyRoyal)))
+        return true;
+
+    if (ourRoyalAttackers && (zone & ourRoyalAttackers))
+        return true;
+
+    Bitboard candidates = zone & pos.pieces(them);
+    if (!candidates)
+        return false;
+
+    const Value majorThreshold = PieceValue[MG][make_piece(WHITE, ROOK)];
+    Bitboard occ = pos.pieces();
+    while (candidates)
+    {
+        Square s = pop_lsb(candidates);
+        Piece pc = pos.piece_on(s);
+        PieceType pt = type_of(pc);
+        if (pt == NO_PIECE_TYPE)
+            continue;
+
+        // Freezing an attacked or major enemy piece is a tactical motif in spell-chess.
+        if (PieceValue[MG][pc] >= majorThreshold)
+            return true;
+        if (pos.attackers_to(s, us))
+            return true;
+
+        if (ourRoyal != SQ_NONE && (attacks_bb(them, pt, s, occ) & square_bb(ourRoyal)))
+            return true;
+    }
+
+    return false;
+  }
+
   // Add a small random component to draw evaluations to avoid 3-fold blindness
   Value value_draw(Thread* thisThread) {
     return VALUE_DRAW + Value(2 * (thisThread->nodes & 1) - 1);
@@ -695,12 +758,26 @@ namespace {
 
     // Step 1. Initialize node
     Thread* thisThread = pos.this_thread();
-    ss->inCheck        = pos.checkers();
+    ss->inCheck        = pos.checkers() && !pos.allow_self_check();
     priorCapture       = pos.captured_piece();
     Color us           = pos.side_to_move();
     moveCount          = captureCount = quietCount = ss->moveCount = 0;
     bestValue          = -VALUE_INFINITE;
     maxValue           = VALUE_INFINITE;
+    Bitboard ourRoyalAttackers = 0;
+    Square enemyRoyal = SQ_NONE;
+    Square ourRoyal = SQ_NONE;
+    if (pos.potions_enabled())
+    {
+        PieceType royal = pos.royal_piece_type();
+        if (pos.count(us, royal))
+        {
+            ourRoyal = pos.square(us, royal);
+            ourRoyalAttackers = pos.attackers_to(ourRoyal, ~us);
+        }
+        if (pos.count(~us, royal))
+            enemyRoyal = pos.square(~us, royal);
+    }
 
     // Check for the available remaining time
     if (thisThread == Threads.main())
@@ -925,6 +1002,7 @@ namespace {
 
     // Step 7. Futility pruning: child node (~50 Elo)
     if (   !PvNode
+        && !ss->inCheck
         &&  depth < 9 - 3 * pos.blast_on_capture()
         &&  eval - futility_margin(depth, improving) * (1 + pos.check_counting() + 2 * pos.must_capture() + pos.extinction_single_piece() + !pos.checking_permitted()) >= beta
         &&  eval < VALUE_KNOWN_WIN) // Do not return unproven wins
@@ -932,6 +1010,7 @@ namespace {
 
     // Step 8. Null move search with verification search (~40 Elo)
     if (   !PvNode
+        && !ss->inCheck
         && (ss-1)->currentMove != MOVE_NULL
         && (ss-1)->statScore < 23767
         &&  eval >= beta
@@ -1098,7 +1177,6 @@ moves_loop: // When in check, search starts from here
                          && ttMove
                          && (tte->bound() & BOUND_UPPER)
                          && tte->depth() >= depth;
-
     // Step 12. Loop through all pseudo-legal moves until no moves remain
     // or a beta cutoff occurs.
     while ((move = mp.next_move(moveCountPruning)) != MOVE_NONE)
@@ -1133,6 +1211,7 @@ moves_loop: // When in check, search starts from here
       captureOrPromotion = pos.capture_or_promotion(move);
       movedPiece = pos.moved_piece(move);
       givesCheck = pos.gives_check(move);
+      const bool tacticalPotion = is_tactical_potion(pos, move, ourRoyalAttackers, enemyRoyal, ourRoyal);
 
       // Calculate new depth for this move
       newDepth = depth - 1;
@@ -1151,12 +1230,13 @@ moves_loop: // When in check, search starts from here
           if (pos.must_capture() && pos.attackers_to(to_sq(move), ~us))
           {}
           else
-
           if (   captureOrPromotion
-              || givesCheck)
+              || givesCheck
+              || tacticalPotion)
           {
               // Capture history based pruning when the move doesn't give check
               if (   !givesCheck
+                  && !tacticalPotion
                   && lmrDepth < 1
                   && captureHistory[movedPiece][to_sq(move)][type_of(pos.piece_on(to_sq(move)))] < 0)
                   continue;
@@ -1165,7 +1245,7 @@ moves_loop: // When in check, search starts from here
               if (!pos.see_ge(move, Value(-218 - 120 * pos.captures_to_hand()) * depth)) // (~25 Elo)
                   continue;
           }
-          else
+          else if (!tacticalPotion)
           {
               // Continuation history based pruning (~20 Elo)
               if (   lmrDepth < 5
@@ -1248,7 +1328,7 @@ moves_loop: // When in check, search starts from here
                   return beta;
           }
       }
-      else if (   givesCheck
+      else if (   (givesCheck || tacticalPotion)
                && depth > 6
                && abs(ss->staticEval) > Value(100))
           extension = 1;
@@ -1261,6 +1341,8 @@ moves_loop: // When in check, search starts from here
 
       // Add extension to new depth
       newDepth += extension;
+      if (is_potion_gating_move(pos, move) && depth >= 3)
+          newDepth = std::max(newDepth - (givesCheck || captureOrPromotion || tacticalPotion ? 1 : 2), 0);
       ss->doubleExtensions = (ss-1)->doubleExtensions + (extension == 2);
 
       // Speculative prefetch as early as possible
@@ -1316,9 +1398,9 @@ moves_loop: // When in check, search starts from here
 
           // Increase reduction for cut nodes (~3 Elo)
           if (cutNode)
-              r += 1 + !captureOrPromotion;
+              r += 1 + (!captureOrPromotion && !tacticalPotion);
 
-          if (!captureOrPromotion)
+          if (!captureOrPromotion && !tacticalPotion)
           {
               // Increase reduction if ttMove is a capture (~3 Elo)
               if (ttCapture)
@@ -1335,6 +1417,8 @@ moves_loop: // When in check, search starts from here
               if (!ss->inCheck)
                   r -= ss->statScore / (14721 - 4434 * pos.captures_to_hand());
           }
+          else if (tacticalPotion)
+              r -= 1;
 
           // In general we want to cap the LMR depth search at newDepth. But if
           // reductions are really negative and movecount is low, we allow this move
@@ -1541,7 +1625,7 @@ moves_loop: // When in check, search starts from here
 
     Thread* thisThread = pos.this_thread();
     bestMove = MOVE_NONE;
-    ss->inCheck = pos.checkers();
+    ss->inCheck = pos.checkers() && !pos.allow_self_check();
     moveCount = 0;
 
     Value gameResult;

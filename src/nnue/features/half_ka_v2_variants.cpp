@@ -46,6 +46,30 @@ namespace Stockfish::Eval::NNUE::Features {
     return IndexType(handCount + pos.nnue_piece_hand_index(perspective, pc) + pos.nnue_king_square_index(ksq));
   }
 
+  inline IndexType HalfKAv2Variants::make_potion_zone_index(Color perspective, Color potionColor,
+                                                            Variant::PotionType potion, Square s,
+                                                            Square ksq, const Position& pos) {
+    const int relativeColor = static_cast<int>(potionColor != perspective);
+    const int potionIndex = static_cast<int>(potion)
+                            + Variant::POTION_TYPE_NB * relativeColor;
+    return IndexType(orient(perspective, s, pos)
+                     + pos.nnue_potion_zone_index_base()
+                     + potionIndex * (pos.max_file() + 1) * (pos.max_rank() + 1)
+                     + pos.nnue_king_square_index(ksq));
+  }
+
+  inline IndexType HalfKAv2Variants::make_potion_cooldown_index(Color perspective, Color potionColor,
+                                                                Variant::PotionType potion, int bit,
+                                                                Square ksq, const Position& pos) {
+    const int relativeColor = static_cast<int>(potionColor != perspective);
+    const int potionIndex = static_cast<int>(potion)
+                            + Variant::POTION_TYPE_NB * relativeColor;
+    return IndexType(bit
+                     + pos.nnue_potion_cooldown_index_base()
+                     + potionIndex * POTION_COOLDOWN_BITS
+                     + pos.nnue_king_square_index(ksq));
+  }
+
   // Get a list of indices for active features
   void HalfKAv2Variants::append_active_indices(
     const Position& pos,
@@ -58,6 +82,27 @@ namespace Stockfish::Eval::NNUE::Features {
     {
       Square s = pop_lsb(bb);
       active.push_back(make_index(perspective, s, pos.piece_on(s), oriented_ksq, pos));
+    }
+
+    if (pos.nnue_potion_zone_index_base() >= 0)
+    {
+      for (Color c : {WHITE, BLACK})
+          for (int pt = 0; pt < Variant::POTION_TYPE_NB; ++pt)
+          {
+              Variant::PotionType potion = static_cast<Variant::PotionType>(pt);
+              if (pos.potion_piece(potion) == NO_PIECE_TYPE)
+                  continue;
+              Bitboard zone = pos.potion_zone(c, potion);
+              while (zone)
+              {
+                  Square s = pop_lsb(zone);
+                  active.push_back(make_potion_zone_index(perspective, c, potion, s, oriented_ksq, pos));
+              }
+              unsigned int cooldown = static_cast<unsigned int>(pos.potion_cooldown(c, potion));
+              for (int bit = 0; bit < POTION_COOLDOWN_BITS; ++bit)
+                  if (cooldown & (1u << bit))
+                      active.push_back(make_potion_cooldown_index(perspective, c, potion, bit, oriented_ksq, pos));
+          }
     }
 
     // Indices for pieces in hand
@@ -95,14 +140,74 @@ namespace Stockfish::Eval::NNUE::Features {
       else if (dp.handPiece[i] != NO_PIECE)
         added.push_back(make_index(perspective, dp.handCount[i] - 1, dp.handPiece[i], oriented_ksq, pos));
     }
+
+    if (pos.nnue_potion_zone_index_base() >= 0)
+    {
+      for (Color c : {WHITE, BLACK})
+          for (int pt = 0; pt < Variant::POTION_TYPE_NB; ++pt)
+          {
+              Variant::PotionType potion = static_cast<Variant::PotionType>(pt);
+              if (pos.potion_piece(potion) == NO_PIECE_TYPE)
+                  continue;
+              Bitboard prevZone = st->previous ? st->previous->potionZones[c][pt] : Bitboard(0);
+              Bitboard curZone = st->potionZones[c][pt];
+              Bitboard removedZones = prevZone & ~curZone;
+              Bitboard addedZones = curZone & ~prevZone;
+              while (removedZones)
+                  removed.push_back(make_potion_zone_index(perspective, c, potion, pop_lsb(removedZones), oriented_ksq, pos));
+              while (addedZones)
+                  added.push_back(make_potion_zone_index(perspective, c, potion, pop_lsb(addedZones), oriented_ksq, pos));
+
+              unsigned int prevCooldown = static_cast<unsigned int>(st->previous ? st->previous->potionCooldown[c][pt] : 0);
+              unsigned int curCooldown = static_cast<unsigned int>(st->potionCooldown[c][pt]);
+              unsigned int diff = prevCooldown ^ curCooldown;
+              for (int bit = 0; bit < POTION_COOLDOWN_BITS; ++bit)
+              {
+                  if (!(diff & (1u << bit)))
+                      continue;
+                  if (prevCooldown & (1u << bit))
+                      removed.push_back(make_potion_cooldown_index(perspective, c, potion, bit, oriented_ksq, pos));
+                  else
+                      added.push_back(make_potion_cooldown_index(perspective, c, potion, bit, oriented_ksq, pos));
+              }
+          }
+    }
   }
 
   int HalfKAv2Variants::update_cost(StateInfo* st) {
-    return st->dirtyPiece.dirty_num;
+    int cost = st->dirtyPiece.dirty_num;
+    if (!currentNnueVariant || currentNnueVariant->nnuePotionZoneIndexBase < 0)
+      return cost;
+    for (Color c : {WHITE, BLACK})
+        for (int pt = 0; pt < Variant::POTION_TYPE_NB; ++pt)
+        {
+            if (currentNnueVariant->potionPiece[pt] == NO_PIECE_TYPE)
+                continue;
+            Bitboard prevZone = st->previous ? st->previous->potionZones[c][pt] : Bitboard(0);
+            Bitboard diffZone = st->potionZones[c][pt] ^ prevZone;
+            cost += popcount(diffZone);
+
+            unsigned int prevCooldown = static_cast<unsigned int>(st->previous ? st->previous->potionCooldown[c][pt] : 0);
+            unsigned int curCooldown = static_cast<unsigned int>(st->potionCooldown[c][pt]);
+            cost += popcount(Bitboard(prevCooldown ^ curCooldown));
+        }
+    return cost;
   }
 
   int HalfKAv2Variants::refresh_cost(const Position& pos) {
-    return pos.count<ALL_PIECES>();
+    int cost = pos.count<ALL_PIECES>();
+    if (pos.nnue_potion_zone_index_base() < 0)
+      return cost;
+    for (Color c : {WHITE, BLACK})
+        for (int pt = 0; pt < Variant::POTION_TYPE_NB; ++pt)
+        {
+            Variant::PotionType potion = static_cast<Variant::PotionType>(pt);
+            if (pos.potion_piece(potion) == NO_PIECE_TYPE)
+                continue;
+            cost += popcount(pos.potion_zone(c, potion));
+            cost += popcount(Bitboard(pos.potion_cooldown(c, potion)));
+        }
+    return cost;
   }
 
   bool HalfKAv2Variants::requires_refresh(StateInfo* st, Color perspective, const Position& pos) {

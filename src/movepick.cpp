@@ -32,15 +32,15 @@ int history_slot(Piece pc) {
 namespace {
 
   enum Stages {
-    MAIN_TT, CAPTURE_INIT, GOOD_CAPTURE, REFUTATION, QUIET_INIT, QUIET, BAD_CAPTURE,
+    MAIN_TT, CAPTURE_INIT, GOOD_CAPTURE, REFUTATION, QUIET_INIT, QUIET, POTION_INIT, POTION, BAD_CAPTURE,
     EVASION_TT, EVASION_INIT, EVASION,
     PROBCUT_TT, PROBCUT_INIT, PROBCUT,
-    QSEARCH_TT, QCAPTURE_INIT, QCAPTURE, QCHECK_INIT, QCHECK
+    QSEARCH_TT, QCAPTURE_INIT, QCAPTURE, QPOTION_INIT, QPOTION, QCHECK_INIT, QCHECK
   };
 
   // partial_insertion_sort() sorts moves in descending order up to and including
   // a given limit. The order of moves smaller than the limit is left unspecified.
-  void partial_insertion_sort(ExtMove* begin, ExtMove* end, int limit) {
+  void partial_insertion_sort(ExtMove* begin, ExtMove* end, int limit) {        
 
     for (ExtMove *sortedEnd = begin, *p = begin + 1; p < end; ++p)
         if (p->value >= limit)
@@ -53,6 +53,13 @@ namespace {
         }
   }
 
+  constexpr int PotionPenalty = 1 << 28;
+  constexpr int PotionGateScale = 4;
+  constexpr int PotionGateMid = 1200;
+  constexpr int PotionGateHigh = 6000;
+  constexpr int PotionPenaltyMid = PotionPenalty / 2;
+  constexpr int PotionPenaltyHigh = PotionPenalty / 8;
+  constexpr int PotionQsearchMinScore = PotionGateMid;
 } // namespace
 
 
@@ -93,6 +100,18 @@ bool MovePicker::is_useless_potion(Move m) const {
   return false;
 }
 
+bool MovePicker::is_potion_move(Move m) const {
+
+  if (!pos.potions_enabled() || !is_gating(m))
+      return false;
+
+  PieceType gatingPiece = gating_type(m);
+  for (int idx = 0; idx < Variant::POTION_TYPE_NB; ++idx)
+      if (pos.potion_piece(static_cast<Variant::PotionType>(idx)) == gatingPiece)
+          return true;
+
+  return false;
+}
 
 /// Constructors of the MovePicker class. As arguments we pass information
 /// to help it to return the (presumably) good moves first, to decide which
@@ -104,33 +123,35 @@ bool MovePicker::is_useless_potion(Move m) const {
 MovePicker::MovePicker(const Position& p, Move ttm, Depth d, const ButterflyHistory* mh, const GateHistory* dh, const LowPlyHistory* lp,
                        const CapturePieceToHistory* cph, const PieceToHistory** ch, Move cm, const Move* killers, int pl)
            : pos(p), mainHistory(mh), gateHistory(dh), lowPlyHistory(lp), captureHistory(cph), continuationHistory(ch),
-             ttMove(ttm), refutations{{killers[0], 0}, {killers[1], 0}, {cm, 0}}, depth(d), ply(pl) {
+             ttMove(ttm), refutations{{killers[0], 0}, {killers[1], 0}, {cm, 0}}, quietStart(moves), quietEnd(moves), depth(d), ply(pl) {
 
   assert(d > 0);
 
-  stage = (pos.checkers() ? EVASION_TT : MAIN_TT) +
+  bool needsEvasion = pos.checkers() && !pos.allow_self_check();
+  stage = (needsEvasion ? EVASION_TT : MAIN_TT) +
           !(ttm && pos.pseudo_legal(ttm));
 }
 
 /// MovePicker constructor for quiescence search
 MovePicker::MovePicker(const Position& p, Move ttm, Depth d, const ButterflyHistory* mh, const GateHistory* dh,
                        const CapturePieceToHistory* cph, const PieceToHistory** ch, Square rs)
-           : pos(p), mainHistory(mh), gateHistory(dh), captureHistory(cph), continuationHistory(ch), ttMove(ttm), recaptureSquare(rs), depth(d) {
+           : pos(p), mainHistory(mh), gateHistory(dh), captureHistory(cph), continuationHistory(ch), ttMove(ttm), quietStart(moves), quietEnd(moves), recaptureSquare(rs), depth(d) {
 
   assert(d <= 0);
 
-  stage = (pos.checkers() ? EVASION_TT : QSEARCH_TT) +
+  bool needsEvasion = pos.checkers() && !pos.allow_self_check();
+  stage = (needsEvasion ? EVASION_TT : QSEARCH_TT) +
           !(   ttm
-            && (pos.checkers() || depth > DEPTH_QS_RECAPTURES || to_sq(ttm) == recaptureSquare)
+            && (needsEvasion || depth > DEPTH_QS_RECAPTURES || to_sq(ttm) == recaptureSquare)
             && pos.pseudo_legal(ttm));
 }
 
 /// MovePicker constructor for ProbCut: we generate captures with SEE greater
 /// than or equal to the given threshold.
 MovePicker::MovePicker(const Position& p, Move ttm, Value th, const GateHistory* dh, const CapturePieceToHistory* cph)
-           : pos(p), gateHistory(dh), captureHistory(cph), ttMove(ttm), threshold(th) {
+           : pos(p), gateHistory(dh), captureHistory(cph), ttMove(ttm), quietStart(moves), quietEnd(moves), threshold(th) {
 
-  assert(!pos.checkers());
+  assert(!pos.checkers() || pos.allow_self_check());
 
   stage = PROBCUT_TT + !(ttm && pos.capture(ttm)
                              && pos.pseudo_legal(ttm)
@@ -146,14 +167,18 @@ void MovePicker::score() {
   static_assert(Type == CAPTURES || Type == QUIETS || Type == EVASIONS, "Wrong type");
 
   for (auto& m : *this)
+  {
+      const bool potionMove = is_potion_move(m);
+      const int gateBonus = potionMove ? m.value : 0;
+
       if constexpr (Type == CAPTURES)
           m.value =  int(PieceValue[MG][pos.piece_on(to_sq(m))]) * 6
-                   + (*gateHistory)[pos.side_to_move()][gating_square(m)]
+                   + (*gateHistory)[pos.side_to_move()][gating_square(m)]       
                    + (*captureHistory)[pos.moved_piece(m)][to_sq(m)][type_of(pos.piece_on(to_sq(m)))];
 
       else if constexpr (Type == QUIETS)
           m.value =      (*mainHistory)[pos.side_to_move()][from_to(m)]
-                   +     (*gateHistory)[pos.side_to_move()][gating_square(m)]
+                   +     (*gateHistory)[pos.side_to_move()][gating_square(m)]   
                    + 2 * (*continuationHistory[0])[history_slot(pos.moved_piece(m))][to_sq(m)]
                    +     (*continuationHistory[1])[history_slot(pos.moved_piece(m))][to_sq(m)]
                    +     (*continuationHistory[3])[history_slot(pos.moved_piece(m))][to_sq(m)]
@@ -166,10 +191,27 @@ void MovePicker::score() {
               m.value =  PieceValue[MG][pos.piece_on(to_sq(m))]
                        - Value(type_of(pos.moved_piece(m)));
           else
-              m.value =      (*mainHistory)[pos.side_to_move()][from_to(m)]
+              m.value =      (*mainHistory)[pos.side_to_move()][from_to(m)]     
                        + 2 * (*continuationHistory[0])[history_slot(pos.moved_piece(m))][to_sq(m)]
                        - (1 << 28);
       }
+
+      if constexpr (Type == CAPTURES)
+      {
+          if (potionMove)
+              m.value += gateBonus;
+      }
+      else if constexpr (Type == QUIETS)
+      {
+          if (potionMove)
+          {
+              m.value += gateBonus * PotionGateScale;
+              m.value -= gateBonus >= PotionGateHigh ? PotionPenaltyHigh
+                       : gateBonus >= PotionGateMid ? PotionPenaltyMid
+                                                    : PotionPenalty;
+          }
+      }
+  }
 }
 
 /// MovePicker::select() returns the next move satisfying a predicate function.
@@ -253,12 +295,16 @@ top:
   case QUIET_INIT:
       if (!skipQuiets && !(pos.must_capture() && pos.has_capture()))
       {
-          cur = endBadCaptures;
-          endMoves = generate<QUIETS>(pos, cur);
+          quietStart = endBadCaptures;
+          quietEnd = generate_base(QUIETS, pos, quietStart);
+          cur = quietStart;
+          endMoves = quietEnd;
 
           score<QUIETS>();
           partial_insertion_sort(cur, endMoves, -3000 * depth);
       }
+      else
+          quietStart = quietEnd = endBadCaptures;
 
       ++stage;
       [[fallthrough]];
@@ -268,6 +314,73 @@ top:
           && select<Next>([&](){return   *cur != refutations[0].move
                                       && *cur != refutations[1].move
                                       && *cur != refutations[2].move;}))
+          return *(cur - 1);
+
+      ++stage;
+      [[fallthrough]];
+
+  case POTION_INIT: {
+      const Color us = pos.side_to_move();
+      const bool allowPotionsWhenSkipping =
+          skipQuiets
+          && pos.potions_enabled()
+          && pos.allow_self_check()
+          && (pos.potion_zone(~us, Variant::POTION_FREEZE)
+              || pos.can_cast_potion(us, Variant::POTION_FREEZE)
+              || pos.can_cast_potion(us, Variant::POTION_JUMP));
+
+      if (   (skipQuiets && !allowPotionsWhenSkipping)
+          || (pos.must_capture() && pos.has_capture())
+          || !pos.potions_enabled())
+      {
+          cur = moves;
+          endMoves = endBadCaptures;
+          stage = BAD_CAPTURE;
+          goto top;
+      }
+
+      if (skipQuiets && allowPotionsWhenSkipping)
+      {
+          static thread_local ExtMove baseMoves[MAX_MOVES];
+          ExtMove* baseEnd = generate_base(QUIETS, pos, baseMoves);
+          ExtMove* potionEnd = generate_potions(QUIETS, pos, baseMoves, baseEnd);
+
+          if (potionEnd == baseEnd)
+          {
+              cur = moves;
+              endMoves = endBadCaptures;
+              stage = BAD_CAPTURE;
+              goto top;
+          }
+
+          const ptrdiff_t count = potionEnd - baseEnd;
+          std::copy(baseEnd, potionEnd, moves);
+          cur = moves;
+          endMoves = moves + count;
+      }
+      else
+      {
+          if (quietStart == quietEnd)
+          {
+              cur = moves;
+              endMoves = endBadCaptures;
+              stage = BAD_CAPTURE;
+              goto top;
+          }
+
+          cur = quietEnd;
+          endMoves = generate_potions(QUIETS, pos, quietStart, quietEnd);
+      }
+
+      score<QUIETS>();
+      partial_insertion_sort(cur, endMoves, -3000 * depth);
+
+      ++stage;
+      [[fallthrough]];
+  }
+
+  case POTION:
+      if (select<Next>([&](){return true;}))
           return *(cur - 1);
 
       // Prepare the pointers to loop over the bad captures
@@ -303,6 +416,46 @@ top:
       if (depth != DEPTH_QS_CHECKS)
           return MOVE_NONE;
 
+      ++stage;
+      [[fallthrough]];
+
+  case QPOTION_INIT: {
+      const Color us = pos.side_to_move();
+      bool canCastPotion = false;
+      if (pos.potions_enabled() && !(pos.must_capture() && pos.has_capture()))
+          for (int pt = 0; pt < Variant::POTION_TYPE_NB; ++pt)
+          {
+              auto potion = static_cast<Variant::PotionType>(pt);
+              if (pos.can_cast_potion(us, potion))
+              {
+                  canCastPotion = true;
+                  break;
+              }
+          }
+
+      if (!canCastPotion)
+      {
+          stage = QCHECK_INIT;
+          goto top;
+      }
+
+      ExtMove* baseEnd = generate_base(QUIETS, pos, moves);
+      cur = baseEnd;
+      endMoves = generate_potions(QUIETS, pos, moves, baseEnd);
+      if (cur == endMoves)
+      {
+          stage = QCHECK_INIT;
+          goto top;
+      }
+
+      partial_insertion_sort(cur, endMoves, PotionQsearchMinScore);
+      ++stage;
+      [[fallthrough]];
+  }
+
+  case QPOTION:
+      if (select<Next>([&](){ return cur->value >= PotionQsearchMinScore; }))
+          return *(cur - 1);
       ++stage;
       [[fallthrough]];
 
