@@ -621,7 +621,8 @@ namespace {
                                   && pos.allow_self_check()
                                   && ksq != SQ_NONE
                                   && pos.attackers_to(ksq, ~Us);
-    const bool enemyFreezeActive = pos.potion_zone(~Us, Variant::POTION_FREEZE);
+    const Bitboard enemyFreezeZone = pos.potion_zone(~Us, Variant::POTION_FREEZE);
+    const bool enemyFreezeActive = enemyFreezeZone;
     const bool limitPotionGates = Type == QUIETS && !urgentPotionDefense && !enemyFreezeActive;
     int jumpGateScores[SQUARE_NB];
     bool jumpScoresReady = false;
@@ -660,6 +661,15 @@ namespace {
 
             if (potion == Variant::POTION_FREEZE)
             {
+                // The exact center of a live enemy freeze zone is not a legal gate
+                // (chess.com, verified 2026-08-21): after 1.freeze@e6 e4 black may not
+                // answer freeze@e6, but freeze@d6 overlapping 6 of the 9 squares is fine.
+                // The center is the unique square whose clipped 3x3 zone equals the
+                // stored zone. Only the enemy zone can be live here: a caster's own zone
+                // expires during the reply, one ply before their cooldown reaches 0.
+                if (enemyFreezeZone && pos.freeze_zone_from_square(gate) == enemyFreezeZone)
+                    return;
+
                 // Pieces already inside the new freeze block zone cannot be moved on the casting ply.
                 const Bitboard newBlockZone = pos.freeze_block_zone_from_square(gate);
                 const Bitboard frozen = baseFrozen;
@@ -673,7 +683,7 @@ namespace {
                         continue;
 
                     MoveType mt = type_of(base);
-                    if (mt != NORMAL && mt != CASTLING)
+                    if (mt != NORMAL && mt != CASTLING && mt != EN_PASSANT)
                         continue;
 
                     if (newBlockZone & from_sq(base))
@@ -685,7 +695,9 @@ namespace {
 
                     Move gatingMove = mt == NORMAL
                                       ? make_gating<NORMAL>(from_sq(base), to_sq(base), potionPiece, gate)
-                                      : make_gating<CASTLING>(from_sq(base), to_sq(base), potionPiece, gate);
+                                      : mt == CASTLING
+                                          ? make_gating<CASTLING>(from_sq(base), to_sq(base), potionPiece, gate)
+                                          : make_gating<EN_PASSANT>(from_sq(base), to_sq(base), potionPiece, gate);
 
                     write->move = gatingMove;
                     write->value = gateScore;
@@ -706,7 +718,7 @@ namespace {
                     continue;
 
                 MoveType mt = type_of(base);
-                if (mt != NORMAL && mt != CASTLING)
+                if (mt != NORMAL && mt != CASTLING && mt != EN_PASSANT)
                     continue;
 
                 if (to_sq(base) == gate)
@@ -714,7 +726,9 @@ namespace {
 
                 Move gatingMove = mt == NORMAL
                                   ? make_gating<NORMAL>(from_sq(base), to_sq(base), potionPiece, gate)
-                                  : make_gating<CASTLING>(from_sq(base), to_sq(base), potionPiece, gate);
+                                  : mt == CASTLING
+                                      ? make_gating<CASTLING>(from_sq(base), to_sq(base), potionPiece, gate)
+                                      : make_gating<EN_PASSANT>(from_sq(base), to_sq(base), potionPiece, gate);
 
                 write->move = gatingMove;
                 write->value = gateScore;

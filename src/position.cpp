@@ -1671,6 +1671,11 @@ bool Position::pseudo_legal(const Move m) const {
           {
               freezeExtra = freeze_zone_from_square(gating_square(m));
               freezeBlock = freeze_block_zone_from_square(gating_square(m));
+              // The exact center of a live enemy freeze zone is not a legal gate;
+              // overlapping zones stay legal.
+              Bitboard enemyFreezeZone = potion_zone(~us, Variant::POTION_FREEZE);
+              if (enemyFreezeZone && freezeExtra == enemyFreezeZone)
+                  return false;
           }
           else if (gatingPotion == Variant::POTION_JUMP)
           {
