@@ -244,6 +244,15 @@ constexpr int MAX_PLY = 246;
 #endif
 /// endif ALLVARS
 
+// Spell chess outgrows MAX_MOVES: a potion in hand multiplies every base move by
+// the gate squares it can be cast on, so the move universe scales with material
+// rather than with the board. The sampled parity suite already peaks at 4563 and
+// a side with heavy promoted material reaches 11618, above both the 4096 and the
+// 8192 setting. Move generation buffers are sized by this constant instead, and
+// MAX_MOVES is left alone because MovePicker embeds one MAX_MOVES array per
+// search ply on the stack, where a 32768 bound would not fit.
+constexpr int MAX_GEN_MOVES = 32768;
+
 /// A move needs 16 bits to be stored
 ///
 /// bit  0- 5: destination square (from 0 to 63)
