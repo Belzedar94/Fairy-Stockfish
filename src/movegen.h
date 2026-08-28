@@ -58,7 +58,7 @@ ExtMove* generate(const Position& pos, ExtMove* moveList);
 ExtMove* generate_base(GenType Type, const Position& pos, ExtMove* moveList);
 ExtMove* generate_potions(GenType Type, const Position& pos, ExtMove* baseStart, ExtMove* baseEnd);
 
-constexpr size_t moveListSize = sizeof(ExtMove) * MAX_MOVES;
+constexpr size_t moveListSize = sizeof(ExtMove) * MAX_GEN_MOVES;
 
 /// The MoveList struct is a simple wrapper around generate(). It sometimes comes
 /// in handy to use this class instead of the low level generate() function.
@@ -101,7 +101,7 @@ private:
 #ifdef USE_HEAP_INSTEAD_OF_STACK_FOR_MOVE_LIST
     ExtMove* moveList = 0;
 #else
-    ExtMove moveList[MAX_MOVES];
+    ExtMove moveList[MAX_GEN_MOVES];
 #endif
 };
 

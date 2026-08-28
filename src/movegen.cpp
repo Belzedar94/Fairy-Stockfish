@@ -615,7 +615,7 @@ namespace {
     const bool allowNonKing = Type != EVASIONS
                            || !more_than_one(pos.checkers() & ~pos.non_sliding_riders());
     bool baseMovesSorted = false;
-    Move baseMoves[MAX_MOVES];
+    Move baseMoves[MAX_GEN_MOVES];
     int baseCount = 0;
     const bool urgentPotionDefense = Type == QUIETS
                                   && pos.allow_self_check()
@@ -647,7 +647,7 @@ namespace {
 
         ExtMove* freezeStart = baseStart;
         ExtMove* freezeEnd = baseEnd;
-        static thread_local ExtMove freezeMoves[MAX_MOVES];
+        static thread_local ExtMove freezeMoves[MAX_GEN_MOVES];
         if (Type == EVASIONS && potion == Variant::POTION_FREEZE)
         {
             freezeStart = freezeMoves;
@@ -773,7 +773,7 @@ namespace {
             if (pos.self_capture() && (Type == NON_EVASIONS || Type == CAPTURES))
                 captureTarget |= pos.pieces(Us) & ~pos.pieces(Us, royal);
 
-            static thread_local ExtMove extraMoves[MAX_MOVES];
+            static thread_local ExtMove extraMoves[MAX_GEN_MOVES];
             ExtMove* extraEnd = extraMoves;
             for (PieceSet ps = pos.piece_types() & ~(piece_set(PAWN) | royal); ps;)
             {
@@ -951,7 +951,7 @@ ExtMove* generate(const Position& pos, ExtMove* moveList) {
   if constexpr (Type == EVASIONS)
       if (pos.potions_enabled())
       {
-          static thread_local ExtMove baseMoves[MAX_MOVES];
+          static thread_local ExtMove baseMoves[MAX_GEN_MOVES];
           ExtMove* baseEnd = generate_base(NON_EVASIONS, pos, baseMoves);
           ExtMove* potionEnd = generate_potions(NON_EVASIONS, pos, baseMoves, baseEnd);
 
@@ -1068,7 +1068,7 @@ ExtMove* generate<LEGAL>(const Position& pos, ExtMove* moveList) {
   // Add potion moves, filtering by legality and avoiding duplicates.
   if (pos.potions_enabled())
   {
-      static thread_local ExtMove baseMoves[MAX_MOVES];
+      static thread_local ExtMove baseMoves[MAX_GEN_MOVES];
       ExtMove* baseEnd = generate_base(NON_EVASIONS, pos, baseMoves);
       ExtMove* potionEnd = generate_potions(NON_EVASIONS, pos, baseMoves, baseEnd);
 
