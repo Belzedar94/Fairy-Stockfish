@@ -24,6 +24,12 @@ jobs:
       KOTH_ENGINE_SOURCE_COMMIT: 43e92e6de02cbd25779d0cea8bd2a7d0a05ace96
       KOTH_ENGINE_SOURCE_TREE: aa6b9c01b1113da0bfe260376ab894650fe09b00
       KOTH_ENGINE_SOURCE_DATE_EPOCH: 1788187875
+      KOTH_ENGINE_BYTES: 4110970
+      KOTH_ENGINE_SHA256: 2BEC2A11FE253957F6FFD0F2E120A2E7500A9D112975139ECF7736368A6D95B5
+      KOTH_GCC_PACKAGE: mingw-w64-x86_64-gcc 16.1.0-5
+      KOTH_GXX_SHA256: C2CA27DE1A97C077CAAD452318711D5DC95F43CC5E30FA81DD52C4BDD9DB3ABB
+      KOTH_MAKE_PACKAGE: make 4.4.1-2
+      KOTH_MAKE_SHA256: 2D3B9FCA575BE8E93C10AB74348055FA127A65CF628D52E9218AC76065CC6D22
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -34,7 +40,16 @@ jobs:
       - uses: msys2/setup-msys2@e9898307ac31d1a803454791be09ab9973336e1c # v2.31.1
         with:
           msystem: MINGW64
+          update: true
           install: mingw-w64-x86_64-gcc make
+
+      - name: Authenticate compiler and make identities
+        shell: msys2 {0}
+        run: |
+          test "$(pacman -Q mingw-w64-x86_64-gcc)" = "$KOTH_GCC_PACKAGE"
+          test "$(sha256sum /mingw64/bin/g++.exe | cut -d ' ' -f 1 | tr '[:lower:]' '[:upper:]')" = "$KOTH_GXX_SHA256"
+          test "$(pacman -Q make)" = "$KOTH_MAKE_PACKAGE"
+          test "$(sha256sum /usr/bin/make.exe | cut -d ' ' -f 1 | tr '[:lower:]' '[:upper:]')" = "$KOTH_MAKE_SHA256"
 
       - name: Authenticate external legacy network input
         shell: pwsh
@@ -65,7 +80,9 @@ jobs:
           export SOURCE_DATE_EPOCH="$KOTH_ENGINE_SOURCE_DATE_EPOCH"
           export TZ=UTC
           export LC_ALL=C
-          make -j2 build ARCH=x86-64 COMP=mingw
+          make -j1 build ARCH=x86-64 COMP=mingw
+          test "$(stat -c '%s' stockfish.exe)" = "$KOTH_ENGINE_BYTES"
+          test "$(sha256sum stockfish.exe | cut -d ' ' -f 1 | tr '[:lower:]' '[:upper:]')" = "$KOTH_ENGINE_SHA256"
 
       - name: Run rule, referee, evaluator, and search contracts
         shell: pwsh
