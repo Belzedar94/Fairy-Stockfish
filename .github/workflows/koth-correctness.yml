@@ -1,6 +1,9 @@
 name: KOTH Correctness
 
 on:
+  push:
+    branches:
+      - feature/koth-search-t0
   workflow_dispatch:
 
 permissions:
