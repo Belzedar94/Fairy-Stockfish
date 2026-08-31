@@ -83,7 +83,7 @@ UCIEngine::UCIEngine(CommandLine cli_) :
 void UCIEngine::init_search_update_listeners() {
     engine.set_on_iter([](const auto& i) { on_iter(i); });
     engine.set_on_update_no_moves([](const auto& i) { on_update_no_moves(i); });
-    engine.set_on_update_full([this](const auto& i) { on_update_full(i, false); });
+    engine.set_on_update_full([](const auto& i) { on_update_full(i, false); });
     engine.set_on_start([]() {});
     engine.set_on_bestmove([](const auto& bm, const auto& p) { on_bestmove(bm, p); });
     engine.set_on_verify_network([](const auto& s) { print_info_string(s); });
@@ -303,7 +303,7 @@ void UCIEngine::bench(std::istream& args) {
               << "\nNodes/second    : " << 1000 * nodes / elapsed << std::endl;
 
     // reset callback, to not capture a dangling reference to nodesSearched
-    engine.set_on_update_full([&](const auto& i) { on_update_full(i, false); });
+    engine.set_on_update_full([](const auto& i) { on_update_full(i, false); });
 }
 
 void UCIEngine::benchmark(std::istream& args) {
