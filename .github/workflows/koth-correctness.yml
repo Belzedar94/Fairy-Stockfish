@@ -21,6 +21,9 @@ jobs:
       KOTH_NET_URL: ${{ secrets.KOTH_LEGACY_NNUE_URL }}
       KOTH_NET_PATH: ${{ github.workspace }}\ci-input\kingofthehill-978b86d0e6a4.nnue
       KOTH_NET_SHA256: 978B86D0E6A45E05F9F1375DCED129CEA0ACEA13041EA65960691632EDC47AF7
+      KOTH_ENGINE_SOURCE_COMMIT: 43e92e6de02cbd25779d0cea8bd2a7d0a05ace96
+      KOTH_ENGINE_SOURCE_TREE: aa6b9c01b1113da0bfe260376ab894650fe09b00
+      KOTH_ENGINE_SOURCE_DATE_EPOCH: 1788187875
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -59,7 +62,7 @@ jobs:
         shell: msys2 {0}
         working-directory: src
         run: |
-          export SOURCE_DATE_EPOCH=$(git show -s --format=%ct HEAD)
+          export SOURCE_DATE_EPOCH="$KOTH_ENGINE_SOURCE_DATE_EPOCH"
           export TZ=UTC
           export LC_ALL=C
           make -j2 build ARCH=x86-64 COMP=mingw
@@ -82,19 +85,27 @@ jobs:
           New-Item -ItemType Directory -Path artifacts | Out-Null
           python tools/koth_bench.py src/stockfish.exe $env:KOTH_NET_PATH --runs 3 `
             --output artifacts/koth-bench.json
-          $commit = git rev-parse HEAD
-          $tree = git rev-parse 'HEAD^{tree}'
-          $epoch = git show -s --format=%ct HEAD
+          $authenticatedEngineTree = git rev-parse "$env:KOTH_ENGINE_SOURCE_COMMIT^{tree}"
+          if ($authenticatedEngineTree -ne $env:KOTH_ENGINE_SOURCE_TREE) {
+            throw "engine source tree identity mismatch"
+          }
+          git diff --quiet $env:KOTH_ENGINE_SOURCE_COMMIT HEAD -- src
+          if ($LASTEXITCODE -ne 0) {
+            throw "src changed after the authenticated engine source commit"
+          }
+          $packageCommit = git rev-parse HEAD
+          $packageTree = git rev-parse 'HEAD^{tree}'
+          $packageEpoch = git show -s --format=%ct HEAD
           python tools/package_koth.py `
             --engine src/stockfish.exe `
             --source-root . `
             --output artifacts/KOTH-Stockfish-windows-x86-64.zip `
-            --engine-source-commit $commit `
-            --engine-source-tree $tree `
-            --package-source-commit $commit `
-            --package-source-tree $tree `
-            --engine-source-date-epoch $epoch `
-            --package-source-date-epoch $epoch
+            --engine-source-commit $env:KOTH_ENGINE_SOURCE_COMMIT `
+            --engine-source-tree $env:KOTH_ENGINE_SOURCE_TREE `
+            --package-source-commit $packageCommit `
+            --package-source-tree $packageTree `
+            --engine-source-date-epoch $env:KOTH_ENGINE_SOURCE_DATE_EPOCH `
+            --package-source-date-epoch $packageEpoch
           python tests/koth/test_package.py `
             artifacts/KOTH-Stockfish-windows-x86-64.zip $env:KOTH_NET_PATH
 
