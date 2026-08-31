@@ -86,7 +86,8 @@ jobs:
             --engine-source-tree $tree `
             --package-source-commit $commit `
             --package-source-tree $tree `
-            --source-date-epoch $epoch
+            --engine-source-date-epoch $epoch `
+            --package-source-date-epoch $epoch
           python tests/koth/test_package.py `
             artifacts/KOTH-Stockfish-windows-x86-64.zip $env:KOTH_NET_PATH
 

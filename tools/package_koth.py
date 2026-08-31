@@ -63,7 +63,8 @@ def main() -> int:
     parser.add_argument("--engine-source-tree", required=True)
     parser.add_argument("--package-source-commit", required=True)
     parser.add_argument("--package-source-tree", required=True)
-    parser.add_argument("--source-date-epoch", type=int, required=True)
+    parser.add_argument("--engine-source-date-epoch", type=int, required=True)
+    parser.add_argument("--package-source-date-epoch", type=int, required=True)
     args = parser.parse_args()
 
     engine = args.engine.resolve()
@@ -110,7 +111,8 @@ def main() -> int:
             "engine_tree": args.engine_source_tree,
             "package_commit": args.package_source_commit,
             "package_tree": args.package_source_tree,
-            "source_date_epoch": args.source_date_epoch,
+            "engine_source_date_epoch": args.engine_source_date_epoch,
+            "package_source_date_epoch": args.package_source_date_epoch,
         },
         "engine": {
             "path": "KOTH-Stockfish.exe",
@@ -159,7 +161,7 @@ def main() -> int:
             archive.writestr(
                 zip_info(
                     f"{PACKAGE_ROOT}/{name}",
-                    args.source_date_epoch,
+                    args.package_source_date_epoch,
                     executable=name.endswith(".exe") or name.endswith(".py"),
                 ),
                 data,
