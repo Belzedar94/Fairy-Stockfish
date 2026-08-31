@@ -374,17 +374,23 @@ class Suite:
             self.joined(start_perft),
         )
 
-        blocked_search = self.engine.transact("go depth 1")
+        unsupported_mate_limit = self.engine.transact("go mate 1")
         self.check(
-            any("code=KOTH_SEARCH_NOT_CERTIFIED" in line for line in blocked_search),
-            self.joined(blocked_search),
+            any(
+                "code=UNSUPPORTED_KOTH_GO_LIMIT limit=mate" in line
+                for line in unsupported_mate_limit
+            ),
+            self.joined(unsupported_mate_limit),
         )
-        self.check("bestmove (none)" in blocked_search, self.joined(blocked_search))
+        self.check(
+            "bestmove (none)" in unsupported_mate_limit,
+            self.joined(unsupported_mate_limit),
+        )
 
         for command in ("bench", "speedtest"):
             blocked = self.engine.transact(command)
             self.check(
-                any("code=KOTH_SEARCH_NOT_CERTIFIED" in line for line in blocked),
+                any("code=UNSUPPORTED_KOTH_COMMAND" in line for line in blocked),
                 f"unsafe command was not blocked: {command}\n{self.joined(blocked)}",
             )
 

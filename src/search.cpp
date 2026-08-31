@@ -26,6 +26,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
+#include <deque>
 #include <initializer_list>
 #include <iostream>
 #include <list>
@@ -36,6 +37,7 @@
 #include "bitboard.h"
 #include "evaluate.h"
 #include "history.h"
+#include "koth.h"
 #include "misc.h"
 #include "movegen.h"
 #include "movepick.h"
@@ -68,7 +70,8 @@ using namespace Search;
 
 namespace {
 
-constexpr u64 NODES_LIMIT_OUTPUT = 10'000'000;
+constexpr u64  NODES_LIMIT_OUTPUT = 10'000'000;
+constexpr bool KothSyzygyEnabled  = false;
 
 constexpr int SEARCHEDLIST_CAPACITY = 32;
 using SearchedList                  = ValueList<Move, SEARCHEDLIST_CAPACITY>;
@@ -132,6 +135,57 @@ void update_correction_history(const Position& pos,
 
 // Add a small random component to draw evaluations to avoid 3-fold blindness
 Value value_draw(usize nodes) { return VALUE_DRAW - 1 + Value(nodes & 0x2); }
+
+Koth::GameStatus koth_search_status(const Position& pos) {
+    return Koth::classify(pos, pos.transition().kind == Koth::TransitionKind::SEARCH_NULL
+                                 ? Koth::AdjudicationContext::SEARCH_NULL
+                                 : Koth::AdjudicationContext::ACCEPTED_TRAJECTORY);
+}
+
+struct KothPvReplay {
+    std::string moves;
+    std::string terminalStatus;
+};
+
+KothPvReplay replay_koth_pv(const Position& root, RootPVMoves& pv) {
+    Position  replay;
+    StateInfo rootState;
+    replay.clone_from(root, rootState);
+
+    std::deque<StateInfo> states;
+    KothPvReplay          result;
+    usize                 accepted = 0;
+
+    for (Move move : pv)
+    {
+        const auto legal = Koth::game_moves(replay);
+        if (std::find(legal.begin(), legal.end(), move) == legal.end())
+        {
+            result.terminalStatus = "error code=KOTH_INVALID_PV index=" + std::to_string(accepted);
+            break;
+        }
+
+        if (!result.moves.empty())
+            result.moves += ' ';
+        result.moves += UCIEngine::move(move, replay.is_chess960());
+
+        states.emplace_back();
+        replay.do_move(move, states.back());
+        ++accepted;
+
+        if (const auto status = Koth::classify(replay); status.terminal())
+        {
+            result.terminalStatus = Koth::serialize(status);
+            break;
+        }
+    }
+
+    if (accepted < pv.size())
+        pv.resize(accepted);
+
+    return result;
+}
+
 Value value_to_tt(Value v, int ply);
 Value value_from_tt(Value v, int ply, int r50c);
 void  update_continuation_histories(Stack* ss, Piece pc, Square to, int bonus);
@@ -246,6 +300,10 @@ void Search::Worker::start_searching() {
 
     main_manager()->bestPreviousScore        = bestThread->rootMoves[0].score;
     main_manager()->bestPreviousAverageScore = bestThread->rootMoves[0].averageScore;
+
+    // A PV is game-domain data. Truncate it at the first terminal transition
+    // before deriving or printing a ponder move.
+    (void) replay_koth_pv(bestThread->rootPos, bestThread->rootMoves[0].pv);
 
     if (bestThread->rootMoves[0].pv.size() == 1
         && bestThread->rootMoves[0].extract_ponder_from_tt(tt, rootPos))
@@ -685,6 +743,33 @@ void Search::Worker::undo_move(Position& pos, const Move move) {
 
 void Search::Worker::undo_null_move(Position& pos) { pos.undo_null_move(); }
 
+std::optional<Value>
+Search::Worker::immediate_hill_win(Position& pos, Stack* ss, Move excludedMove) {
+    for (Move move : Koth::immediate_hill_moves(pos))
+    {
+        if (move == excludedMove)
+            continue;
+
+        StateInfo st;
+        do_move(pos, move, st, ss);
+        const auto status = Koth::classify(pos);
+        if (!status.terminal() || !status.has(Koth::TerminalPredicate::HILL) || !status.winner
+            || *status.winner == pos.side_to_move())
+        {
+            undo_move(pos, move);
+            std::abort();
+        }
+        undo_move(pos, move);
+
+        if (ss->pv)
+            ss->pv->update(move, nullptr);
+
+        return mate_in(ss->ply + 1);
+    }
+
+    return std::nullopt;
+}
+
 
 // Reset histories, usually before a new game
 void Search::Worker::clear() {
@@ -726,20 +811,28 @@ Value Search::Worker::search(
     const bool     allNode  = !(PvNode || cutNode);
     const bool     seekMate = rootDepth >= 16 && std::abs(rootMoves[pvIdx].score) >= 2000;
 
+    // KOTH terminal state is authoritative before depth transfer, stop checks,
+    // TT, evaluation, pruning, or any other search shortcut.
+    ss->inCheck = pos.checkers();
+    if (const auto status = koth_search_status(pos); status.terminal())
+    {
+        assert(!status.winner || *status.winner != pos.side_to_move());
+        return status.winner ? mated_in(ss->ply) : value_draw(nodes);
+    }
+
+    // A legal king entry onto the hill is a one-ply win. Search it before any
+    // cutoff or pruning, while respecting singular-search exclusion. Root
+    // filtering is handled by the ordinary unpruned root loop below.
+    if (!rootNode)
+        if (auto value = immediate_hill_win(pos, ss, ss->excludedMove))
+            return *value;
+
     // Dive into quiescence search when the depth reaches zero
     if (depth <= 0)
         return qsearch<PvNode ? PV : NonPV>(pos, ss, alpha, beta);
 
     // Limit the depth if extensions made it too large
     depth = std::min(depth, MAX_PLY - 1);
-
-    // Check if we have an upcoming move that draws by repetition
-    if (!rootNode && alpha < VALUE_DRAW && pos.upcoming_repetition(ss->ply))
-    {
-        alpha = value_draw(nodes);
-        if (alpha >= beta)
-            return alpha;
-    }
 
     assert(-VALUE_INFINITE <= alpha && alpha < beta && beta <= VALUE_INFINITE);
     assert(PvNode || (alpha == beta - 1));
@@ -784,9 +877,9 @@ Value Search::Worker::search(
 
     if (!rootNode)
     {
-        // Step 2. Check for aborted search or immediate draw
-        if (threads.stop.load(std::memory_order_relaxed) || pos.is_draw(ss->ply)
-            || ss->ply >= MAX_PLY)
+        // Step 2. Check for aborted search or maximum ply. Authoritative KOTH
+        // draws and decisive terminals were already handled above.
+        if (threads.stop.load(std::memory_order_relaxed) || ss->ply >= MAX_PLY)
             return (ss->ply >= MAX_PLY && !ss->inCheck) ? evaluate(pos) : value_draw(nodes);
 
         // Step 3. Mate distance pruning. Even if we mate at the next move our score
@@ -920,57 +1013,58 @@ Value Search::Worker::search(
     }
 
     // Step 7. Tablebases probe
-    if (!rootNode && !excludedMove && tbConfig.cardinality)
-    {
-        int piecesCount = pos.count<ALL_PIECES>();
-
-        if (piecesCount <= tbConfig.cardinality
-            && (piecesCount < tbConfig.cardinality || depth >= tbConfig.probeDepth)
-            && pos.rule50_count() == 0 && !pos.can_castle(ANY_CASTLING))
+    if constexpr (KothSyzygyEnabled)
+        if (!rootNode && !excludedMove && tbConfig.cardinality)
         {
-            TB::ProbeState err;
-            TB::WDLScore   wdl = TB::probe_wdl(pos, &err);
+            int piecesCount = pos.count<ALL_PIECES>();
 
-            // Force check of time on the next occasion
-            if (is_mainthread())
-                main_manager()->callsCnt = 0;
-
-            if (err != TB::ProbeState::FAIL)
+            if (piecesCount <= tbConfig.cardinality
+                && (piecesCount < tbConfig.cardinality || depth >= tbConfig.probeDepth)
+                && pos.rule50_count() == 0 && !pos.can_castle(ANY_CASTLING))
             {
-                ++tbHits;
+                TB::ProbeState err;
+                TB::WDLScore   wdl = TB::probe_wdl(pos, &err);
 
-                int drawScore = tbConfig.useRule50 ? 1 : 0;
+                // Force check of time on the next occasion
+                if (is_mainthread())
+                    main_manager()->callsCnt = 0;
 
-                Value tbValue = VALUE_TB - ss->ply;
-
-                // Use the range VALUE_TB to VALUE_TB_WIN_IN_MAX_PLY to score
-                value = wdl < -drawScore ? -tbValue
-                      : wdl > drawScore  ? tbValue
-                                         : VALUE_DRAW + 2 * wdl * drawScore;
-
-                Bound b = wdl < -drawScore ? BOUND_UPPER
-                        : wdl > drawScore  ? BOUND_LOWER
-                                           : BOUND_EXACT;
-
-                if (b == BOUND_EXACT || (b == BOUND_LOWER ? value >= beta : value <= alpha))
+                if (err != TB::ProbeState::FAIL)
                 {
-                    ttWriter.write(posKey, value_to_tt(value, ss->ply), ss->ttPv, b,
-                                   std::min(MAX_PLY - 1, depth + 6), Move::none(), VALUE_NONE,
-                                   tt.generation());
+                    ++tbHits;
 
-                    return value;
-                }
+                    int drawScore = tbConfig.useRule50 ? 1 : 0;
 
-                if (PvNode)
-                {
-                    if (b == BOUND_LOWER)
-                        bestValue = value, alpha = std::max(alpha, bestValue);
-                    else
-                        maxValue = value;
+                    Value tbValue = VALUE_TB - ss->ply;
+
+                    // Use the range VALUE_TB to VALUE_TB_WIN_IN_MAX_PLY to score
+                    value = wdl < -drawScore ? -tbValue
+                          : wdl > drawScore  ? tbValue
+                                             : VALUE_DRAW + 2 * wdl * drawScore;
+
+                    Bound b = wdl < -drawScore ? BOUND_UPPER
+                            : wdl > drawScore  ? BOUND_LOWER
+                                               : BOUND_EXACT;
+
+                    if (b == BOUND_EXACT || (b == BOUND_LOWER ? value >= beta : value <= alpha))
+                    {
+                        ttWriter.write(posKey, value_to_tt(value, ss->ply), ss->ttPv, b,
+                                       std::min(MAX_PLY - 1, depth + 6), Move::none(), VALUE_NONE,
+                                       tt.generation());
+
+                        return value;
+                    }
+
+                    if (PvNode)
+                    {
+                        if (b == BOUND_LOWER)
+                            bestValue = value, alpha = std::max(alpha, bestValue);
+                        else
+                            maxValue = value;
+                    }
                 }
             }
         }
-    }
 
     if (ss->inCheck)
         goto moves_loop;
@@ -1658,15 +1752,23 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
     assert(alpha >= -VALUE_INFINITE && alpha < beta && beta <= VALUE_INFINITE);
     assert(PvNode || (alpha == beta - 1));
 
-    // Check if we have an upcoming move that draws by repetition
-    if (alpha < VALUE_DRAW && pos.upcoming_repetition(ss->ply))
+    PVMoves pv;
+    if (PvNode)
     {
-        alpha = value_draw(nodes);
-        if (alpha >= beta)
-            return alpha;
+        (ss + 1)->pv = &pv;
+        ss->pv->clear();
     }
 
-    PVMoves   pv;
+    ss->inCheck = pos.checkers();
+    if (const auto status = koth_search_status(pos); status.terminal())
+    {
+        assert(!status.winner || *status.winner != pos.side_to_move());
+        return status.winner ? mated_in(ss->ply) : value_draw(nodes);
+    }
+
+    if (auto value = immediate_hill_win(pos, ss, ss->excludedMove))
+        return *value;
+
     StateInfo st;
 
     Key   posKey;
@@ -1676,22 +1778,16 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
     int   moveCount;
 
     // Step 1. Initialize node
-    if (PvNode)
-    {
-        (ss + 1)->pv = &pv;
-        ss->pv->clear();
-    }
-
-    bestMove    = Move::none();
-    ss->inCheck = pos.checkers();
-    moveCount   = 0;
+    bestMove  = Move::none();
+    moveCount = 0;
 
     // Used to send selDepth info to GUI (selDepth counts from 1, ply from 0)
     if (PvNode && selDepth < ss->ply + 1)
         selDepth = ss->ply + 1;
 
-    // Step 2. Check for an immediate draw or maximum ply reached
-    if (pos.is_draw(ss->ply) || ss->ply >= MAX_PLY)
+    // Step 2. Check for maximum ply. Authoritative KOTH terminal state was
+    // already handled before the immediate-hill stage.
+    if (ss->ply >= MAX_PLY)
         return (ss->ply >= MAX_PLY && !ss->inCheck) ? evaluate(pos) : VALUE_DRAW;
 
     assert(0 <= ss->ply && ss->ply < MAX_PLY);
@@ -1899,6 +1995,7 @@ TimePoint Search::Worker::elapsed() const {
 // Evaluate the current position of the game tree, from the point of view of
 // the side to move.
 Value Search::Worker::evaluate(const Position& pos) {
+    assert(!koth_search_status(pos).terminal());
     return Eval::evaluate(network[numaAccessToken], pos, accumulatorStack, refreshTable,
                           optimism[pos.side_to_move()]);
 }
@@ -2297,13 +2394,8 @@ void SearchManager::output_pv(Search::Worker&           worker,
         bool isTBScore = worker.tbConfig.rootInTB && !is_mate_or_mated(v);
         v              = isTBScore ? rootMoves[i].tbScore : v;
 
-        std::string pv;
-        for (Move m : usePreviousScore ? rootMoves[i].previousPV : rootMoves[i].pv)
-            pv += UCIEngine::move(m, pos.is_chess960()) + " ";
-
-        // Remove last whitespace
-        if (!pv.empty())
-            pv.pop_back();
+        auto& line   = usePreviousScore ? rootMoves[i].previousPV : rootMoves[i].pv;
+        auto  replay = replay_koth_pv(pos, line);
 
         auto wdl = std::string{};
 
@@ -2325,13 +2417,14 @@ void SearchManager::output_pv(Search::Worker&           worker,
         if (!(isTBScore || usePreviousScore))
             info.bound = bound;
 
-        TimePoint time = std::max(TimePoint(1), tm.elapsed_time());
-        info.timeMs    = time;
-        info.nodes     = nodes;
-        info.nps       = nodes * 1000 / time;
-        info.tbHits    = tbHits;
-        info.pv        = pv;
-        info.hashfull  = tt.hashfull();
+        TimePoint time      = std::max(TimePoint(1), tm.elapsed_time());
+        info.timeMs         = time;
+        info.nodes          = nodes;
+        info.nps            = nodes * 1000 / time;
+        info.tbHits         = tbHits;
+        info.pv             = replay.moves;
+        info.hashfull       = tt.hashfull();
+        info.terminalStatus = std::move(replay.terminalStatus);
 
         updates.onUpdateFull(info);
     }
@@ -2348,10 +2441,11 @@ bool RootMove::extract_ponder_from_tt(const TranspositionTable& tt, Position& po
     StateInfo st;
     pos.do_move(pv[0], st, &tt);
 
-    if (!pos.is_draw(1))
+    if (!Koth::classify(pos).terminal())
     {
         auto [ttHit, ttData, ttWriter] = tt.probe(pos.key());
-        if (ttHit && MoveList<LEGAL>(pos).contains(ttData.move))
+        const auto gameMoves           = Koth::game_moves(pos);
+        if (ttHit && std::find(gameMoves.begin(), gameMoves.end(), ttData.move) != gameMoves.end())
             pv.push_back(ttData.move);
     }
 

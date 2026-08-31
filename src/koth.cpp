@@ -211,6 +211,27 @@ std::vector<Move> game_moves(const Position& position) {
     return physical_moves(position);
 }
 
+bool is_immediate_hill_move(const Position& position, Move move) {
+    return move.is_ok() && move.type_of() != CASTLING && type_of(position.moved_piece(move)) == KING
+        && !is_hill(move.from_sq()) && is_hill(move.to_sq());
+}
+
+std::vector<Move> immediate_hill_moves(const Position& position) {
+    std::vector<Move> moves;
+
+    const auto context = position.transition().kind == TransitionKind::SEARCH_NULL
+                         ? AdjudicationContext::SEARCH_NULL
+                         : AdjudicationContext::ACCEPTED_TRAJECTORY;
+    if (classify(position, context).terminal())
+        return moves;
+
+    for (Move move : MoveList<LEGAL>(position))
+        if (is_immediate_hill_move(position, move))
+            moves.push_back(move);
+
+    return moves;
+}
+
 std::string primary_reason_name(PrimaryReason reason) {
     switch (reason)
     {

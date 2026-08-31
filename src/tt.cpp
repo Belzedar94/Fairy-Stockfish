@@ -138,10 +138,14 @@ TTWriter::TTWriter(TTEntry* tte) :
 
 void TTWriter::write(
   Key k, Value v, bool pv, Bound b, Depth d, Move m, Value ev, u8 curr_generation) {
-    entry->save(k, v, pv, b, d, m, ev, curr_generation);
+    if (entry)
+        entry->save(k, v, pv, b, d, m, ev, curr_generation);
 }
 
 void TTWriter::penalize(int penalty) {
+    if (!entry)
+        return;
+
     // guard against racy underflows, default to "unoccupied"
     entry->depth8 = std::max(int(entry->depth8) - penalty, 0);
 }
@@ -227,6 +231,9 @@ void TranspositionTable::clear(ThreadPool& threads) {
 // occupation during a search. The hash is x permill full, as per UCI protocol.
 // Only counts entries which are younger than maxAge.
 int TranspositionTable::hashfull(int maxAge) const {
+    if constexpr (!KothEntriesEnabled)
+        return 0;
+
     int cnt = 0;
     for (int i = 0; i < 1000; ++i)
         for (int j = 0; j < ClusterSize; ++j)
@@ -238,6 +245,9 @@ int TranspositionTable::hashfull(int maxAge) const {
 
 
 void TranspositionTable::new_search() {
+    if constexpr (!KothEntriesEnabled)
+        return;
+
     ++generation8;
     // Don't overflow into the other bits of TTEntry::genBound8
     generation8 &= GENERATION_MASK;
@@ -252,6 +262,10 @@ u8 TranspositionTable::generation() const { return generation8; }
 // Otherwise, it returns false and a pointer to an empty or least valuable TTEntry
 // to be replaced later. The value of an entry is its depth minus 8 times its relative age.
 std::tuple<bool, TTData, TTWriter> TranspositionTable::probe(const Key key) const {
+
+    if constexpr (!KothEntriesEnabled)
+        return {false, TTData{Move::none(), VALUE_NONE, VALUE_NONE, DEPTH_NONE, BOUND_NONE, false},
+                TTWriter(nullptr)};
 
     TTEntry* const tte   = first_entry(key);
     const u16      key16 = u16(key);  // Use the low 16 bits as key inside the cluster

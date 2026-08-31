@@ -33,6 +33,7 @@
 
 #include "bitboard.h"
 #include "history.h"
+#include "koth.h"
 #include "memory.h"
 #include "movegen.h"
 #include "search.h"
@@ -318,8 +319,8 @@ void ThreadPool::start_thinking(const OptionsMap&  options,
             rootMoves.emplace_back(move);
     }
 
-    if (rootMoves.empty())
-        for (const auto& m : MoveList<LEGAL>(pos))
+    if (rootMoves.empty() && limits.searchmoves.empty())
+        for (const auto& m : Koth::game_moves(pos))
             rootMoves.emplace_back(m);
 
     Tablebases::Config tbConfig{};

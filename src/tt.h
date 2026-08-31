@@ -79,6 +79,10 @@ struct TTWriter {
 class TranspositionTable {
 
    public:
+    // KOTH T0 correctness phase: no value, evaluation, move-ordering probe, or
+    // write is authoritative until the history-sensitive TT contract is proven.
+    static constexpr bool KothEntriesEnabled = false;
+
     ~TranspositionTable() { aligned_large_pages_free(table); }
 
     void resize(usize mbSize, ThreadPool& threads);  // Set TT size in MiB

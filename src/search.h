@@ -26,6 +26,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -60,7 +61,6 @@ class Network;
 
 namespace Search {
 
-// syzygy_extend_pv() may lead to PVs longer than MAX_PLY
 struct RootPVMoves: public std::vector<Move> {
     RootPVMoves() { reserve(MAX_PLY); }
 };
@@ -236,6 +236,7 @@ struct InfoFull: InfoShort {
     usize            tbHits;
     std::string_view pv;
     int              hashfull;
+    std::string      terminalStatus;
 };
 
 struct InfoIteration {
@@ -373,6 +374,9 @@ class Worker {
     // Quiescence search function, which is called by the main search
     template<NodeType nodeType>
     Value qsearch(Position& pos, Stack* ss, Value alpha, Value beta);
+
+    std::optional<Value>
+    immediate_hill_win(Position& pos, Stack* ss, Move excludedMove = Move::none());
 
     int reduction(bool i, Depth d, int mn, int delta) const;
 

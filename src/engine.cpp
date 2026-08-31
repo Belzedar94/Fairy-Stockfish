@@ -200,18 +200,31 @@ std::variant<u64, PositionSetError> Engine::perft(Depth depth, bool gameDomain) 
 }
 
 void Engine::go(Search::LimitsType& limits) {
-    (void) limits;
     assert(limits.perft == 0);
 
-    verify_network();
-
     const auto status = Koth::classify(pos);
-    if (onVerifyNetwork)
-        onVerifyNetwork(status.terminal() ? "koth " + Koth::serialize(status)
-                                          : "error code=KOTH_SEARCH_NOT_CERTIFIED command=go");
+    if (status.terminal())
+    {
+        if (onVerifyNetwork)
+            onVerifyNetwork("koth " + Koth::serialize(status));
 
-    if (updateContext.onBestmove)
-        updateContext.onBestmove(UCIEngine::move(Move::none()), "");
+        if (updateContext.onBestmove)
+            updateContext.onBestmove(UCIEngine::move(Move::none()), "");
+        return;
+    }
+
+    if (limits.mate)
+    {
+        if (onVerifyNetwork)
+            onVerifyNetwork("error code=UNSUPPORTED_KOTH_GO_LIMIT limit=mate");
+
+        if (updateContext.onBestmove)
+            updateContext.onBestmove(UCIEngine::move(Move::none()), "");
+        return;
+    }
+
+    verify_network();
+    threads.start_thinking(options, pos, states, limits);
 }
 void Engine::stop() { threads.stop = true; }
 

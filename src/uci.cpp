@@ -152,9 +152,9 @@ void UCIEngine::loop() {
                 print_info_string("error " + std::string(err->what()));
         }
         else if (token == "bench")
-            print_info_string("error code=KOTH_SEARCH_NOT_CERTIFIED command=bench");
+            print_info_string("error code=UNSUPPORTED_KOTH_COMMAND command=bench");
         else if (token == BenchmarkCommand)
-            print_info_string("error code=KOTH_SEARCH_NOT_CERTIFIED command=speedtest");
+            print_info_string("error code=UNSUPPORTED_KOTH_COMMAND command=speedtest");
         else if (token == "d")
             sync_cout << engine.visualize() << sync_endl;
         else if (token == "kothstatus")
@@ -683,6 +683,9 @@ void UCIEngine::on_update_no_moves(const Engine::InfoShort& info) {
 
 void UCIEngine::on_update_full(const Engine::InfoFull& info, bool showWDL) {
     std::stringstream ss;
+
+    if (!info.terminalStatus.empty())
+        sync_cout << "info string koth pv_terminal " << info.terminalStatus << sync_endl;
 
     ss << "info";
     ss << " depth " << info.depth                 //

@@ -87,6 +87,8 @@ GameStatus classify(const Position&     position,
 
 std::vector<Move> physical_moves(const Position& position);
 std::vector<Move> game_moves(const Position& position);
+bool              is_immediate_hill_move(const Position& position, Move move);
+std::vector<Move> immediate_hill_moves(const Position& position);
 
 std::string primary_reason_name(PrimaryReason reason);
 std::string serialize(const GameStatus& status);
