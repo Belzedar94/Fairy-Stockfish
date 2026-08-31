@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Callable
 
 import koth_referee as referee_module
+import koth_book
 
 
 class RunnerFailure(RuntimeError):
@@ -193,6 +194,7 @@ def run_game(
     increment_ms: int,
     max_plies: int,
     require_terminal: bool,
+    book: dict[str, object] | None,
 ) -> dict[str, object]:
     referee = referee_module.Referee(
         root_fen, referee_module.ClockConfig(initial_ms, increment_ms)
@@ -248,6 +250,7 @@ def run_game(
         "initial_ms": initial_ms,
         "increment_ms": increment_ms,
         "max_plies": max_plies,
+        "book": book,
         "engines": {"white": white.identity(), "black": black.identity()},
         "events": events,
         "referee": referee.record(),
@@ -262,7 +265,10 @@ def main() -> int:
     parser.add_argument("--black-engine", type=Path, required=True)
     parser.add_argument("--white-network", type=Path, required=True)
     parser.add_argument("--black-network", type=Path, required=True)
-    parser.add_argument("--root-fen", required=True)
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--root-fen")
+    source.add_argument("--book", type=Path)
+    parser.add_argument("--book-index", type=int, default=0)
     parser.add_argument("--initial-ms", type=int, default=5_000)
     parser.add_argument("--increment-ms", type=int, default=0)
     parser.add_argument("--max-plies", type=int, default=256)
@@ -281,6 +287,33 @@ def main() -> int:
     if args.initial_ms <= 0 or args.increment_ms < 0 or args.max_plies <= 0:
         raise RunnerFailure("invalid clock or ply limit")
 
+    book_context = None
+    if args.book is None:
+        root_fen = args.root_fen
+        assert root_fen is not None
+    else:
+        book_path = args.book.resolve()
+        if not book_path.is_file():
+            raise RunnerFailure(f"book not found: {book_path}")
+        book_manifest = koth_book.load_book(book_path)
+        records = book_manifest["records"]
+        assert isinstance(records, list)
+        if args.book_index < 0 or args.book_index >= len(records):
+            raise RunnerFailure(f"book index out of range: {args.book_index}")
+        entry = records[args.book_index]
+        assert isinstance(entry, dict)
+        root_fen = str(entry["fen"])
+        book_context = {
+            "basename": book_path.name,
+            "bytes": book_manifest["bytes"],
+            "sha256": book_manifest["sha256"],
+            "role": book_manifest["role"],
+            "strength_book": book_manifest["strength_book"],
+            "pairing_contract": book_manifest["pairing_contract"],
+            "index": args.book_index,
+            "record_id": entry["id"],
+        }
+
     white = UciEngine(paths[0], paths[2], "candidate-white")
     try:
         black = UciEngine(paths[1], paths[3], "comparator-black")
@@ -288,11 +321,12 @@ def main() -> int:
             result = run_game(
                 white,
                 black,
-                args.root_fen,
+                root_fen,
                 args.initial_ms,
                 args.increment_ms,
                 args.max_plies,
                 args.require_terminal,
+                book_context,
             )
         finally:
             black.close()

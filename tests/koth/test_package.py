@@ -19,12 +19,14 @@ from test_search import EngineSession, SearchFailure
 NETWORK_SHA256 = "978B86D0E6A45E05F9F1375DCED129CEA0ACEA13041EA65960691632EDC47AF7"
 EXPECTED_FILES = {
     "AUTHORS",
+    "books/koth-runner-canary-v1.epd",
     "Copying.txt",
     "KOTH-RUNTIME.md",
     "KOTH-Stockfish.exe",
     "manifest.json",
     "SHA256SUMS",
     "tools/koth_bench.py",
+    "tools/koth_book.py",
     "tools/koth_referee.py",
     "tools/koth-referee-requirements.txt",
     "tools/koth_runner.py",
@@ -198,8 +200,10 @@ class Suite:
                 str(self.network),
                 "--black-network",
                 str(self.network),
-                "--root-fen",
-                "7k/8/8/8/8/2K5/8/8 w - - 0 1",
+                "--book",
+                str(root / "books" / "koth-runner-canary-v1.epd"),
+                "--book-index",
+                "0",
                 "--initial-ms",
                 "5000",
                 "--max-plies",
@@ -220,6 +224,11 @@ class Suite:
         self.check(runner.returncode == 0, runner.stderr)
         runner_record = json.loads(runner_output.read_text(encoding="utf-8"))
         self.check(runner_record["strength_claim"] is False, str(runner_record))
+        self.check(runner_record["book"]["strength_book"] is False, str(runner_record))
+        self.check(
+            runner_record["book"]["record_id"] == "KOTH-CANARY-GOAL-W-D4",
+            str(runner_record),
+        )
         self.check(runner_record["referee"]["result"] == "1-0", str(runner_record))
         self.check(
             runner_record["referee"]["board_status"]["primary"] == "HILL",

@@ -53,6 +53,11 @@ engine and network identities, options, clocks, raw per-move UCI output, the
 referee record, and PGN. Its canary or smoke output is engineering evidence;
 it is not a strength result.
 
+The bundled `books/koth-runner-canary-v1.epd` is a project-owned 16-record
+correctness corpus covering every legal and attacked goal entry for both sides.
+It must be paired with engine colors swapped. It is not a strength opening book
+and must not be used to infer Elo.
+
 ## T0 engineering scope
 
 The T0 search baseline disables transposition-table authority and makes Syzygy
