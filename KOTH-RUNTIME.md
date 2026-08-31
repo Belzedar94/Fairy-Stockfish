@@ -48,6 +48,11 @@ for the fixed-work semantic digest. The certified independent referee is
 python -m pip install -r tools/koth-referee-requirements.txt
 ```
 
+`tools/koth_runner.py` is the strict two-engine UCI runner. It records exact
+engine and network identities, options, clocks, raw per-move UCI output, the
+referee record, and PGN. Its canary or smoke output is engineering evidence;
+it is not a strength result.
+
 ## T0 engineering scope
 
 The T0 search baseline disables transposition-table authority and makes Syzygy

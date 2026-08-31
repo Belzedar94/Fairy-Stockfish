@@ -68,6 +68,8 @@ jobs:
           python tests/koth/test_referee.py src/stockfish.exe $env:KOTH_NET_PATH
           python tests/koth/test_legacy_nnue.py src/stockfish.exe $env:KOTH_NET_PATH
           python tests/koth/test_search.py src/stockfish.exe $env:KOTH_NET_PATH
+          python tests/koth/test_runner.py `
+            tools/koth_runner.py src/stockfish.exe $env:KOTH_NET_PATH
 
       - name: Produce deterministic bench and network-free package
         shell: pwsh

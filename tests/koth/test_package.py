@@ -27,6 +27,7 @@ EXPECTED_FILES = {
     "tools/koth_bench.py",
     "tools/koth_referee.py",
     "tools/koth-referee-requirements.txt",
+    "tools/koth_runner.py",
 }
 
 
@@ -182,6 +183,47 @@ class Suite:
             bench_record["semantic_digest"]
             == "9A66D1BAE80FF3B81B3254D18A1E82BC0202BDA49BEE080307136D1A976280CC",
             bench.stdout,
+        )
+
+        runner_output = root / "runner-smoke.json"
+        runner = subprocess.run(
+            [
+                sys.executable,
+                str(root / "tools" / "koth_runner.py"),
+                "--white-engine",
+                str(executable),
+                "--black-engine",
+                str(executable),
+                "--white-network",
+                str(self.network),
+                "--black-network",
+                str(self.network),
+                "--root-fen",
+                "7k/8/8/8/8/2K5/8/8 w - - 0 1",
+                "--initial-ms",
+                "5000",
+                "--max-plies",
+                "1",
+                "--require-terminal",
+                "--output",
+                str(runner_output),
+            ],
+            cwd=root,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=30,
+            check=False,
+        )
+        self.check(runner.returncode == 0, runner.stderr)
+        runner_record = json.loads(runner_output.read_text(encoding="utf-8"))
+        self.check(runner_record["strength_claim"] is False, str(runner_record))
+        self.check(runner_record["referee"]["result"] == "1-0", str(runner_record))
+        self.check(
+            runner_record["referee"]["board_status"]["primary"] == "HILL",
+            str(runner_record),
         )
 
         payload = {

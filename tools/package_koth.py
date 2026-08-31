@@ -23,6 +23,7 @@ PAYLOAD_SOURCES = {
     "tools/koth_bench.py": "tools/koth_bench.py",
     "tools/koth_referee.py": "tools/koth_referee.py",
     "tools/koth-referee-requirements.txt": "tools/koth-referee-requirements.txt",
+    "tools/koth_runner.py": "tools/koth_runner.py",
 }
 
 
@@ -144,6 +145,7 @@ def main() -> int:
             "path": "tools/koth_referee.py",
             "requirements": "tools/koth-referee-requirements.txt",
         },
+        "runner": {"path": "tools/koth_runner.py", "threads_per_engine": 1},
     }
     payload["manifest.json"] = (
         json.dumps(manifest, indent=2, sort_keys=True) + "\n"
