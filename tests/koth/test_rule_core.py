@@ -356,6 +356,17 @@ class Suite:
         )
         self.check("bestmove (none)" in blocked_search, self.joined(blocked_search))
 
+        for command in ("bench", "speedtest", "eval", "export_net", "flip"):
+            blocked = self.engine.transact(command)
+            self.check(
+                any(
+                    "code=KOTH_EVALUATOR_NOT_AUTHENTICATED" in line
+                    or "code=UNSUPPORTED_KOTH_COMMAND" in line
+                    for line in blocked
+                ),
+                f"unsafe command was not blocked: {command}\n{self.joined(blocked)}",
+            )
+
 
 def main() -> int:
     parser = argparse.ArgumentParser()

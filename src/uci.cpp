@@ -149,9 +149,9 @@ void UCIEngine::loop() {
                 print_info_string("error " + std::string(err->what()));
         }
         else if (token == "bench")
-            bench(is);
+            print_info_string("error code=KOTH_EVALUATOR_NOT_AUTHENTICATED command=bench");
         else if (token == BenchmarkCommand)
-            benchmark(is);
+            print_info_string("error code=KOTH_EVALUATOR_NOT_AUTHENTICATED command=speedtest");
         else if (token == "d")
             sync_cout << engine.visualize() << sync_endl;
         else if (token == "kothstatus")
