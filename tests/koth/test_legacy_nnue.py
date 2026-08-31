@@ -92,6 +92,13 @@ class EngineSession:
             [f"setoption name EvalFile value {network}", "isready"], "readyok"
         )
         check("network loaded=true" in "\n".join(loaded), "network did not load")
+        replicated = self.transact(
+            ["setoption name Threads value 2", "isready"], "readyok"
+        )
+        check(
+            "network loaded=true" in "\n".join(replicated),
+            "two-thread network replication did not reverify",
+        )
 
     def transact(self, commands: list[str], terminal: str) -> list[str]:
         for command in commands:
