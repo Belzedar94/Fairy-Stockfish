@@ -1227,9 +1227,10 @@ universalclean:
 	@rm -rf $(TEMP_DIR)
 	@rm -f universal/network_dump.inc
 
-# evaluation network (nnue)
+# KOTH legacy evaluation network. The exact owner-authored artifact is an
+# external runtime input: builds must not fetch, copy, or embed it.
 net:
-	@$(SHELL) ../scripts/net.sh
+	@echo "KOTH external NNUE: no download or embedding"
 
 format:
 	$(CLANG-FORMAT) -i $(SRCS) $(OTHER_SRCS) $(HEADERS) -style=file

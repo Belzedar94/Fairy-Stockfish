@@ -20,7 +20,7 @@ class ConformanceFailure(RuntimeError):
 
 
 class EngineSession:
-    def __init__(self, executable: Path) -> None:
+    def __init__(self, executable: Path, network: Path) -> None:
         self.process = subprocess.Popen(
             [str(executable)],
             stdin=subprocess.PIPE,
@@ -37,6 +37,9 @@ class EngineSession:
         self.stdin = self.process.stdin
         self.stdout = self.process.stdout
         self.uci_output = self.transact("uci", terminal="uciok")
+        loaded = self.transact(f"setoption name EvalFile value {network}")
+        if not any("network loaded=true" in line for line in loaded):
+            raise ConformanceFailure(f"legacy network did not load: {loaded!r}")
 
     def transact(self, *commands: str, terminal: str = "readyok") -> list[str]:
         for command in commands:
@@ -146,7 +149,12 @@ class Suite:
             "option name UCI_Variant type combo default kingofthehill var kingofthehill"
         )
         self.check(exact_variant in option_lines, self.joined(option_lines))
-        for forbidden in ("UCI_Chess960", "UCI_ShowWDL", "Syzygy", "EvalFile"):
+        exact_eval_file = (
+            "option name EvalFile type string "
+            "default kingofthehill-978b86d0e6a4.nnue"
+        )
+        self.check(exact_eval_file in option_lines, self.joined(option_lines))
+        for forbidden in ("UCI_Chess960", "UCI_ShowWDL", "Syzygy"):
             self.check(
                 not any(forbidden in line for line in option_lines),
                 f"forbidden option exposed: {forbidden}",
@@ -368,32 +376,50 @@ class Suite:
 
         blocked_search = self.engine.transact("go depth 1")
         self.check(
-            any("code=KOTH_EVALUATOR_NOT_AUTHENTICATED" in line for line in blocked_search),
+            any("code=KOTH_SEARCH_NOT_CERTIFIED" in line for line in blocked_search),
             self.joined(blocked_search),
         )
         self.check("bestmove (none)" in blocked_search, self.joined(blocked_search))
 
-        for command in ("bench", "speedtest", "eval", "export_net", "flip"):
+        for command in ("bench", "speedtest"):
             blocked = self.engine.transact(command)
             self.check(
-                any(
-                    "code=KOTH_EVALUATOR_NOT_AUTHENTICATED" in line
-                    or "code=UNSUPPORTED_KOTH_COMMAND" in line
-                    for line in blocked
-                ),
+                any("code=KOTH_SEARCH_NOT_CERTIFIED" in line for line in blocked),
                 f"unsafe command was not blocked: {command}\n{self.joined(blocked)}",
             )
+
+        evaluation = self.engine.transact("eval")
+        self.check(
+            any("NNUE evaluation" in line for line in evaluation),
+            f"authenticated evaluator did not trace: {self.joined(evaluation)}",
+        )
+
+        export = self.engine.transact("export_net")
+        self.check(
+            any("code=KOTH_NET_EXPORT_LICENSE_UNRESOLVED" in line for line in export),
+            self.joined(export),
+        )
+
+        flipped = self.engine.transact("flip")
+        self.check(
+            any("code=UNSUPPORTED_KOTH_COMMAND" in line for line in flipped),
+            self.joined(flipped),
+        )
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("engine", type=Path)
+    parser.add_argument("network", type=Path)
     args = parser.parse_args()
     executable = args.engine.resolve()
+    network = args.network.resolve()
     if not executable.is_file():
         raise ConformanceFailure(f"engine not found: {executable}")
+    if not network.is_file():
+        raise ConformanceFailure(f"network not found: {network}")
 
-    session = EngineSession(executable)
+    session = EngineSession(executable, network)
     suite = Suite(session)
     try:
         suite.run()

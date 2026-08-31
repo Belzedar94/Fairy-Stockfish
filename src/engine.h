@@ -94,14 +94,14 @@ class Engine {
 
     // network related
 
-    void                                 verify_network() const;
+    void                                 verify_network();
     std::unique_ptr<Eval::NNUE::Network> get_default_network();
     void                                 load_network(const std::filesystem::path& file);
     void save_network(const std::optional<std::filesystem::path>& file);
 
     // utility functions
 
-    void trace_eval() const;
+    void trace_eval();
 
     const OptionsMap& get_options() const;
     OptionsMap&       get_options();
@@ -112,6 +112,8 @@ class Engine {
     std::string                          koth_status() const;
     std::string                          koth_moves() const;
     std::string                          koth_selftest() const;
+    std::string                          koth_network_status() const;
+    std::string                          koth_network_eval();
     std::optional<PositionSetError>      flip();
     std::string                          visualize() const;
     std::vector<std::pair<usize, usize>> get_bound_thread_count_by_numa_node() const;

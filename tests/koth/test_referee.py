@@ -27,7 +27,7 @@ class TestFailure(RuntimeError):
 
 
 class EngineClient:
-    def __init__(self, executable: Path) -> None:
+    def __init__(self, executable: Path, network: Path) -> None:
         self.process = subprocess.Popen(
             [str(executable)],
             stdin=subprocess.PIPE,
@@ -43,6 +43,9 @@ class EngineClient:
         self.stdin = self.process.stdin
         self.stdout = self.process.stdout
         self.transact("uci", terminal="uciok")
+        loaded = self.transact(f"setoption name EvalFile value {network}")
+        if not any("network loaded=true" in line for line in loaded):
+            raise TestFailure(f"legacy network did not load: {loaded!r}")
 
     def transact(self, *commands: str, terminal: str = "readyok") -> list[str]:
         for command in commands:
@@ -400,12 +403,16 @@ class Suite:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("engine", type=Path)
+    parser.add_argument("network", type=Path)
     args = parser.parse_args()
     executable = args.engine.resolve()
+    network = args.network.resolve()
     if not executable.is_file():
         raise TestFailure(f"engine not found: {executable}")
+    if not network.is_file():
+        raise TestFailure(f"network not found: {network}")
 
-    engine = EngineClient(executable)
+    engine = EngineClient(executable, network)
     suite = Suite(engine)
     try:
         suite.run()

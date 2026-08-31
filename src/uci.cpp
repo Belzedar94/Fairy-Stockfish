@@ -140,7 +140,10 @@ void UCIEngine::loop() {
         else if (token == "ucinewgame")
             engine.search_clear();
         else if (token == "isready")
+        {
+            engine.verify_network();
             sync_cout << "readyok" << sync_endl;
+        }
 
         // Add custom non-UCI commands, mainly for debugging purposes.
         else if (token == "flip")
@@ -149,9 +152,9 @@ void UCIEngine::loop() {
                 print_info_string("error " + std::string(err->what()));
         }
         else if (token == "bench")
-            print_info_string("error code=KOTH_EVALUATOR_NOT_AUTHENTICATED command=bench");
+            print_info_string("error code=KOTH_SEARCH_NOT_CERTIFIED command=bench");
         else if (token == BenchmarkCommand)
-            print_info_string("error code=KOTH_EVALUATOR_NOT_AUTHENTICATED command=speedtest");
+            print_info_string("error code=KOTH_SEARCH_NOT_CERTIFIED command=speedtest");
         else if (token == "d")
             sync_cout << engine.visualize() << sync_endl;
         else if (token == "kothstatus")
@@ -160,12 +163,16 @@ void UCIEngine::loop() {
             print_info_string("koth " + engine.koth_moves());
         else if (token == "kothselftest")
             print_info_string("koth selftest " + engine.koth_selftest());
+        else if (token == "kothnetstatus")
+            print_info_string("koth network " + engine.koth_network_status());
+        else if (token == "kothneteval")
+            print_info_string("koth neteval " + engine.koth_network_eval());
         else if (token == "eval")
             engine.trace_eval();
         else if (token == "compiler")
             sync_cout << compiler_info() << sync_endl;
         else if (token == "export_net")
-            print_info_string("error code=KOTH_EVALUATOR_NOT_AUTHENTICATED command=export_net");
+            print_info_string("error code=KOTH_NET_EXPORT_LICENSE_UNRESOLVED command=export_net");
         else if (token == "--help" || token == "help" || token == "--license" || token == "license")
             sync_cout
               << "\nStockfish is a powerful chess engine for playing and analyzing."

@@ -78,9 +78,11 @@ struct AccumulatorCaches {
 
     template<typename Network>
     void clear(const Network& network) {
+        (void) network;
+        const std::array<BiasType, L1> zeroBiases{};
         for (auto& entries1D : entries)
             for (auto& entry : entries1D)
-                entry.clear(network.featureTransformer.biases);
+                entry.clear(zeroBiases);
     }
 
     std::array<Entry, COLOR_NB>& operator[](Square sq) { return entries[sq]; }

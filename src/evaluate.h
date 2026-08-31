@@ -29,11 +29,11 @@ class Position;
 
 namespace Eval {
 
-// The default net name MUST follow the format nn-[SHA256 first 12 digits].nnue
-// for the build process (profile-build and fishtest) to work. Do not change the
-// name of the macro or the location where this macro is defined, as it is used
-// in the Makefile/Fishtest.
-#define EvalFileDefaultName "nn-1a298aa575a0.nnue"
+// Exact owner-authored legacy compatibility identity. The bytes remain an
+// external runtime asset and are neither downloaded nor embedded by the build.
+// KOTH_v1.nnue is accepted only as a byte-identical alias by the loader; it is
+// not the default and cannot select a different model.
+#define EvalFileDefaultName "kingofthehill-978b86d0e6a4.nnue"
 
 namespace NNUE {
 class Network;

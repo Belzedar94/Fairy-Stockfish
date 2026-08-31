@@ -22,6 +22,7 @@
 #include <cassert>
 #include <charconv>
 #include <cctype>
+#include <cstdlib>
 #include <filesystem>
 #include <deque>
 #include <iosfwd>
@@ -173,6 +174,11 @@ Engine::Engine(std::optional<std::filesystem::path> path) :
 
     options.add("nodestime", Option(0, 0, 10000));
 
+    options.add("EvalFile", Option(EvalFileDefaultName, [this](const Option& o) {
+                    load_network(path_from_utf8(std::string(o)));
+                    return std::nullopt;
+                }));
+
     options.add("UCI_Variant", Option("var kingofthehill", "kingofthehill"));
 
     options.add("UCI_LimitStrength", Option(false));
@@ -197,11 +203,12 @@ void Engine::go(Search::LimitsType& limits) {
     (void) limits;
     assert(limits.perft == 0);
 
+    verify_network();
+
     const auto status = Koth::classify(pos);
     if (onVerifyNetwork)
-        onVerifyNetwork(status.terminal()
-                          ? "koth " + Koth::serialize(status)
-                          : "error code=KOTH_EVALUATOR_NOT_AUTHENTICATED command=go");
+        onVerifyNetwork(status.terminal() ? "koth " + Koth::serialize(status)
+                                          : "error code=KOTH_SEARCH_NOT_CERTIFIED command=go");
 
     if (updateContext.onBestmove)
         updateContext.onBestmove(UCIEngine::move(Move::none()), "");
@@ -343,23 +350,32 @@ void Engine::set_ponderhit(bool b) { threads.main_manager()->ponder = b; }
 
 // network related
 
-void Engine::verify_network() const {
-    if (onVerifyNetwork)
-        onVerifyNetwork("error code=KOTH_EVALUATOR_NOT_AUTHENTICATED command=verify_network");
+void Engine::verify_network() {
+    const auto requested = path_from_utf8(std::string(options["EvalFile"]));
+    if (!network->is_initialized())
+        load_network(requested);
+    network->verify(onVerifyNetwork, networkFile, requested);
 }
 
 std::unique_ptr<Eval::NNUE::Network> Engine::get_default_network() {
-
-    auto network_ = std::make_unique<NN::Network>();
-
-    network_->load(binaryDirectory, std::filesystem::path{}, networkFile);
-
-    return network_;
+    return std::make_unique<NN::Network>();
 }
 
 void Engine::load_network(const std::filesystem::path& file) {
-    network.modify_and_replicate(
-      [this, &file](NN::Network& network_) { network_.load(binaryDirectory, file, networkFile); });
+    auto candidate     = std::make_unique<NN::Network>();
+    auto candidateFile = networkFile;
+    if (auto error = candidate->load(binaryDirectory, file, candidateFile))
+    {
+        const std::string message = "error " + *error;
+        if (onVerifyNetwork)
+            onVerifyNetwork(message);
+        else
+            sync_cout << "info string " << message << sync_endl;
+        std::exit(EXIT_FAILURE);
+    }
+
+    network     = std::move(candidate);
+    networkFile = std::move(candidateFile);
     threads.clear();
     threads.ensure_network_replicated();
 }
@@ -371,9 +387,15 @@ void Engine::save_network(const std::optional<std::filesystem::path>& file) {
 
 // utility functions
 
-void Engine::trace_eval() const {
-    if (onVerifyNetwork)
-        onVerifyNetwork("error code=KOTH_EVALUATOR_NOT_AUTHENTICATED command=eval");
+void Engine::trace_eval() {
+    verify_network();
+    if (const auto status = Koth::classify(pos); status.terminal())
+    {
+        if (onVerifyNetwork)
+            onVerifyNetwork("koth " + Koth::serialize(status));
+        return;
+    }
+    sync_cout << Eval::trace(pos, *network) << sync_endl;
 }
 
 const OptionsMap& Engine::get_options() const { return options; }
@@ -424,6 +446,26 @@ std::string Engine::koth_moves() const {
 }
 
 std::string Engine::koth_selftest() const { return Koth::state_selftest(); }
+
+std::string Engine::koth_network_status() const { return network->status(networkFile); }
+
+std::string Engine::koth_network_eval() {
+    verify_network();
+    if (const auto status = Koth::classify(pos); status.terminal())
+        return "terminal=true " + Koth::serialize(status);
+
+    const auto raw = network->evaluate_raw(pos);
+    const bool lazy =
+      std::abs(raw.psqt) > NN::Network::LegacyLazyThreshold * NN::Network::LegacyOutputScale;
+    const i32 psqt = raw.psqt / NN::Network::LegacyOutputScale;
+    const i32 total =
+      lazy ? psqt : i32((i64(raw.psqt) + raw.positional) / NN::Network::LegacyOutputScale);
+    const i32 positional = total - psqt;
+    return "terminal=false bucket=" + std::to_string(raw.bucket)
+         + " lazy=" + (lazy ? "true" : "false") + " psqt_raw=" + std::to_string(raw.psqt)
+         + " positional_raw=" + std::to_string(raw.positional) + " psqt=" + std::to_string(psqt)
+         + " positional=" + std::to_string(positional) + " total=" + std::to_string(total);
+}
 
 std::optional<PositionSetError> Engine::flip() {
     return PositionSetError("code=UNSUPPORTED_KOTH_COMMAND command=flip");
