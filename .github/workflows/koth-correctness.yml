@@ -1,0 +1,101 @@
+name: KOTH Correctness
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: koth-correctness-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  windows-x86-64-sse2:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    env:
+      KOTH_NET_URL: ${{ secrets.KOTH_LEGACY_NNUE_URL }}
+      KOTH_NET_PATH: ${{ github.workspace }}\ci-input\kingofthehill-978b86d0e6a4.nnue
+      KOTH_NET_SHA256: 978B86D0E6A45E05F9F1375DCED129CEA0ACEA13041EA65960691632EDC47AF7
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: msys2/setup-msys2@e9898307ac31d1a803454791be09ab9973336e1c # v2.31.1
+        with:
+          msystem: MINGW64
+          install: mingw-w64-x86_64-gcc make
+
+      - name: Authenticate external legacy network input
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:KOTH_NET_URL)) {
+            throw "KOTH_LEGACY_NNUE_URL is not configured"
+          }
+          New-Item -ItemType Directory -Path (Split-Path $env:KOTH_NET_PATH) | Out-Null
+          curl.exe --fail --location --silent --show-error `
+            --output $env:KOTH_NET_PATH $env:KOTH_NET_URL
+          $file = Get-Item -LiteralPath $env:KOTH_NET_PATH
+          if ($file.Length -ne 47721371) {
+            throw "legacy network byte count mismatch"
+          }
+          $observed = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash
+          if ($observed -ne $env:KOTH_NET_SHA256) {
+            throw "legacy network SHA-256 mismatch"
+          }
+
+      - name: Install pinned referee dependency
+        shell: pwsh
+        run: python -m pip install --disable-pip-version-check -r tools/koth-referee-requirements.txt
+
+      - name: Build clean x86-64 SSE2 engine
+        shell: msys2 {0}
+        working-directory: src
+        run: |
+          export SOURCE_DATE_EPOCH=$(git show -s --format=%ct HEAD)
+          export TZ=UTC
+          export LC_ALL=C
+          make -j2 build ARCH=x86-64 COMP=mingw
+
+      - name: Run rule, referee, evaluator, and search contracts
+        shell: pwsh
+        run: |
+          python tests/koth/test_rule_core.py src/stockfish.exe $env:KOTH_NET_PATH
+          python tests/koth/test_referee.py src/stockfish.exe $env:KOTH_NET_PATH
+          python tests/koth/test_legacy_nnue.py src/stockfish.exe $env:KOTH_NET_PATH
+          python tests/koth/test_search.py src/stockfish.exe $env:KOTH_NET_PATH
+
+      - name: Produce deterministic bench and network-free package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path artifacts | Out-Null
+          python tools/koth_bench.py src/stockfish.exe $env:KOTH_NET_PATH --runs 3 `
+            --output artifacts/koth-bench.json
+          $commit = git rev-parse HEAD
+          $tree = git rev-parse 'HEAD^{tree}'
+          $epoch = git show -s --format=%ct HEAD
+          python tools/package_koth.py `
+            --engine src/stockfish.exe `
+            --source-root . `
+            --output artifacts/KOTH-Stockfish-windows-x86-64.zip `
+            --engine-source-commit $commit `
+            --engine-source-tree $tree `
+            --package-source-commit $commit `
+            --package-source-tree $tree `
+            --source-date-epoch $epoch
+          python tests/koth/test_package.py `
+            artifacts/KOTH-Stockfish-windows-x86-64.zip $env:KOTH_NET_PATH
+
+      - name: Upload network-free evidence artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: KOTH-Stockfish-windows-x86-64-sse2
+          path: |
+            artifacts/koth-bench.json
+            artifacts/KOTH-Stockfish-windows-x86-64.zip
+          if-no-files-found: error
+          retention-days: 7

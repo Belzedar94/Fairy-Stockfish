@@ -332,6 +332,7 @@ def main() -> int:
     parser.add_argument("engine", type=Path)
     parser.add_argument("network", type=Path)
     parser.add_argument("--runs", type=int, default=3)
+    parser.add_argument("--output", type=Path)
     args = parser.parse_args()
 
     executable = args.engine.resolve()
@@ -383,7 +384,20 @@ def main() -> int:
         "semantic_digest": digests[0],
         "cases": runs[0],
     }
-    print(json.dumps(manifest, indent=2, sort_keys=True))
+    rendered = (json.dumps(manifest, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    if args.output is not None:
+        output = args.output.resolve()
+        if output.exists():
+            raise BenchFailure(f"output already exists: {output}")
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(rendered)
+        print(
+            "PASS koth_bench "
+            f"cases={len(CASES)} runs={args.runs} digest={digests[0]} "
+            f"output_sha256={hashlib.sha256(rendered).hexdigest().upper()}"
+        )
+    else:
+        sys.stdout.buffer.write(rendered)
     return 0
 
 
