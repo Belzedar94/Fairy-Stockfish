@@ -206,6 +206,20 @@ class Suite:
                 4,
                 "STALEMATE",
             ),
+            (
+                "7k/8/5KQ1/8/8/8/8/8 w - - 99 1",
+                "g6g7",
+                ("CHECKMATE", "RULE50_AUTO"),
+                33,
+                "CHECKMATE",
+            ),
+            (
+                "k7/8/2K5/8/1Q6/8/8/8 w - - 99 1",
+                "b4b6",
+                ("STALEMATE", "RULE50_AUTO"),
+                36,
+                "STALEMATE",
+            ),
         ]
         for fen, move, predicates, bitmask, primary in cases:
             referee = kr.Referee(fen)
@@ -228,6 +242,11 @@ class Suite:
             "7k/8/8/8/8/2K5/8/8 w - - 100 1",
         ):
             self.expect_error("TERMINAL_RAW_ROOT", lambda fen=fen: kr.Referee(fen))
+
+        self.expect_error(
+            "INVALID_FEN_STATUS",
+            lambda: kr.Referee("8/8/8/4k3/3K4/8/8/8 w - - 0 1"),
+        )
 
         attacked = kr.Referee("3r3k/8/8/8/8/2K5/8/8 w - - 0 1")
         before = attacked.record()

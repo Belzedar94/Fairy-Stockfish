@@ -274,6 +274,22 @@ class Suite:
         self.check("primary=HILL" in rule50_hill.status, rule50_hill.status)
 
         output = self.set_position(
+            "position fen 7k/8/5KQ1/8/8/8/8/8 w - - 99 1 moves g6g7"
+        )
+        self.check("error command=position" not in self.joined(output), self.joined(output))
+        mate_rule50 = self.snapshot()
+        self.check("predicates=33" in mate_rule50.status, mate_rule50.status)
+        self.check("primary=CHECKMATE" in mate_rule50.status, mate_rule50.status)
+
+        output = self.set_position(
+            "position fen k7/8/2K5/8/1Q6/8/8/8 w - - 99 1 moves b4b6"
+        )
+        self.check("error command=position" not in self.joined(output), self.joined(output))
+        stale_rule50 = self.snapshot()
+        self.check("predicates=36" in stale_rule50.status, stale_rule50.status)
+        self.check("primary=STALEMATE" in stale_rule50.status, stale_rule50.status)
+
+        output = self.set_position(
             "position startpos moves g1f3 g8f6 f3g1 f6g8 "
             "g1f3 g8f6 f3g1 f6g8"
         )
@@ -307,6 +323,7 @@ class Suite:
             "position startpos moves E2E4",
             "position startpos moves",
             "position startpos trailing",
+            "position fen 8/8/8/4k3/3K4/8/8/8 w - - 0 1",
         ]
         for command in parser_rejections:
             self.set_position("position startpos")
