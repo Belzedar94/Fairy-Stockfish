@@ -54,9 +54,28 @@ void OptionsMap::setoption(std::istringstream& is) {
         value += (value.empty() ? "" : " ") + token;
 
     if (options_map.count(name))
-        options_map[name] = value;
+    {
+        auto& option = options_map[name];
+        if (!option.is_valid(value))
+        {
+            const std::string message = "error code=INVALID_OPTION_VALUE name=" + name
+                                      + " value=" + (value.empty() ? "<empty>" : value);
+            if (info)
+                info(message);
+            else
+                sync_cout << message << sync_endl;
+            return;
+        }
+        option = value;
+    }
     else
-        sync_cout << "No such option: " << name << sync_endl;
+    {
+        const std::string message = "error code=UNKNOWN_OPTION name=" + name;
+        if (info)
+            info(message);
+        else
+            sync_cout << message << sync_endl;
+    }
 }
 
 const Option& OptionsMap::operator[](const std::string& name) const {
@@ -145,6 +164,36 @@ static bool value_in_range(const std::string& v, int min, int max) {
     return result >= min && result <= max;
 }
 
+bool Option::is_valid(const std::string& v) const {
+    if (type == "button")
+        return v.empty();
+    if (type == "string")
+        return true;
+    if (type == "check")
+        return v == "true" || v == "false";
+    if (type == "spin")
+        return value_in_range(v, min, max);
+    if (type == "combo")
+    {
+        std::string        token;
+        std::istringstream stream(defaultValue);
+        bool               valueFollows = false;
+        while (stream >> token)
+        {
+            if (token == "var")
+            {
+                valueFollows = true;
+                continue;
+            }
+            if (valueFollows && token == v)
+                return true;
+            valueFollows = false;
+        }
+        return false;
+    }
+    return false;
+}
+
 // Updates currentValue and triggers on_change() action. It's up to
 // the GUI to check for option's limits, but we could receive the new value
 // from the user by console window, so let's check the bounds anyway.
@@ -152,21 +201,8 @@ Option& Option::operator=(const std::string& v) {
 
     assert(!type.empty());
 
-    if ((type != "button" && type != "string" && v.empty())
-        || (type == "check" && v != "true" && v != "false")
-        || (type == "spin" && !value_in_range(v, min, max)))
+    if (!is_valid(v))
         return *this;
-
-    if (type == "combo")
-    {
-        OptionsMap         comboMap;  // To have case insensitive compare
-        std::string        token;
-        std::istringstream ss(defaultValue);
-        while (ss >> token)
-            comboMap.add(token, Option());
-        if (!comboMap.count(v) || v == "var")
-            return *this;
-    }
 
     if (type == "string")
         currentValue = v == "<empty>" ? "" : v;
@@ -192,8 +228,11 @@ std::ostream& operator<<(std::ostream& os, const OptionsMap& om) {
                 const Option& o = it.second;
                 os << "\noption name " << it.first << " type " << o.type;
 
-                if (o.type == "check" || o.type == "combo")
+                if (o.type == "check")
                     os << " default " << o.defaultValue;
+
+                else if (o.type == "combo")
+                    os << " default " << o.currentValue << " " << o.defaultValue;
 
                 else if (o.type == "string")
                 {

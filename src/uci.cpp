@@ -27,7 +27,6 @@
 #include <optional>
 #include <sstream>
 #include <string_view>
-#include <filesystem>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -84,8 +83,7 @@ UCIEngine::UCIEngine(CommandLine cli_) :
 void UCIEngine::init_search_update_listeners() {
     engine.set_on_iter([](const auto& i) { on_iter(i); });
     engine.set_on_update_no_moves([](const auto& i) { on_update_no_moves(i); });
-    engine.set_on_update_full(
-      [this](const auto& i) { on_update_full(i, engine.get_options()["UCI_ShowWDL"]); });
+    engine.set_on_update_full([this](const auto& i) { on_update_full(i, false); });
     engine.set_on_start([]() {});
     engine.set_on_bestmove([](const auto& bm, const auto& p) { on_bestmove(bm, p); });
     engine.set_on_verify_network([](const auto& s) { print_info_string(s); });
@@ -148,9 +146,7 @@ void UCIEngine::loop() {
         else if (token == "flip")
         {
             if (auto err = engine.flip())
-            {
-                terminate_on_critical_error(err->what());
-            }
+                print_info_string("error " + std::string(err->what()));
         }
         else if (token == "bench")
             bench(is);
@@ -158,20 +154,18 @@ void UCIEngine::loop() {
             benchmark(is);
         else if (token == "d")
             sync_cout << engine.visualize() << sync_endl;
+        else if (token == "kothstatus")
+            print_info_string("koth " + engine.koth_status());
+        else if (token == "kothmoves")
+            print_info_string("koth " + engine.koth_moves());
+        else if (token == "kothselftest")
+            print_info_string("koth selftest " + engine.koth_selftest());
         else if (token == "eval")
             engine.trace_eval();
         else if (token == "compiler")
             sync_cout << compiler_info() << sync_endl;
         else if (token == "export_net")
-        {
-            std::optional<std::filesystem::path> file;
-            std::string                          filename;
-
-            if (is >> filename)
-                file = path_from_utf8(filename);
-
-            engine.save_network(file);
-        }
+            print_info_string("error code=KOTH_EVALUATOR_NOT_AUTHENTICATED command=export_net");
         else if (token == "--help" || token == "help" || token == "--license" || token == "license")
             sync_cout
               << "\nStockfish is a powerful chess engine for playing and analyzing."
@@ -249,11 +243,9 @@ void UCIEngine::bench(std::istream& args) {
     std::string token;
     u64         num, nodes = 0, cnt = 1;
     u64         nodesSearched = 0;
-    const auto& options       = engine.get_options();
-
     engine.set_on_update_full([&](const auto& i) {
         nodesSearched = i.nodes;
-        on_update_full(i, options["UCI_ShowWDL"]);
+        on_update_full(i, false);
     });
 
     std::vector<std::string> list = Benchmark::setup_bench(engine.fen(), args);
@@ -311,7 +303,7 @@ void UCIEngine::bench(std::istream& args) {
               << "\nNodes/second    : " << 1000 * nodes / elapsed << std::endl;
 
     // reset callback, to not capture a dangling reference to nodesSearched
-    engine.set_on_update_full([&](const auto& i) { on_update_full(i, options["UCI_ShowWDL"]); });
+    engine.set_on_update_full([&](const auto& i) { on_update_full(i, false); });
 }
 
 void UCIEngine::benchmark(std::istream& args) {
@@ -338,7 +330,7 @@ void UCIEngine::benchmark(std::istream& args) {
     setoption(ss);
     ss = std::istringstream("name Hash value " + std::to_string(setup.ttSize));
     setoption(ss);
-    ss = std::istringstream("name UCI_Chess960 value false");
+    ss = std::istringstream("name UCI_Variant value kingofthehill");
     setoption(ss);
 
     // Warmup
@@ -486,7 +478,7 @@ void UCIEngine::setoption(std::istringstream& is) {
 }
 
 u64 UCIEngine::perft(const Search::LimitsType& limits) {
-    auto result = engine.perft(engine.fen(), limits.perft, engine.get_options()["UCI_Chess960"]);
+    auto result = engine.perft(limits.perft, true);
     if (auto err = std::get_if<PositionSetError>(&result))
         terminate_on_critical_error(err->what());
 
@@ -496,35 +488,66 @@ u64 UCIEngine::perft(const Search::LimitsType& limits) {
 }
 
 void UCIEngine::position(std::istringstream& is) {
-    const std::string fullCommand = is.str();
+    std::vector<std::string> tokens;
+    std::string              token;
+    while (is >> token)
+        tokens.push_back(token);
 
-    std::string token, fen;
+    if (tokens.empty())
+    {
+        print_info_string("error code=INVALID_POSITION_GRAMMAR detail=missing_root");
+        return;
+    }
 
-    is >> token;
+    std::string              fen;
+    std::vector<std::string> moves;
+    std::size_t              index = 0;
 
-    if (token == "startpos")
+    if (tokens[index] == "startpos")
     {
         fen = StartFEN;
-        is >> token;  // Consume the "moves" token, if any
+        ++index;
     }
-    else if (token == "fen")
-        while (is >> token && token != "moves")
-            fen += token + " ";
-    else
-        return;
-
-    std::vector<std::string> moves;
-
-    while (is >> token)
+    else if (tokens[index] == "fen")
     {
-        moves.push_back(token);
+        if (tokens.size() < 7)
+        {
+            print_info_string("error code=INVALID_POSITION_GRAMMAR detail=fen_requires_six_fields");
+            return;
+        }
+
+        fen = tokens[1];
+        for (std::size_t field = 2; field <= 6; ++field)
+            fen += " " + tokens[field];
+        index = 7;
     }
+    else
+    {
+        print_info_string("error code=INVALID_POSITION_GRAMMAR detail=unknown_root_kind");
+        return;
+    }
+
+    if (index < tokens.size())
+    {
+        if (tokens[index] != "moves")
+        {
+            print_info_string("error code=INVALID_POSITION_GRAMMAR detail=expected_moves_keyword");
+            return;
+        }
+        ++index;
+        if (index == tokens.size())
+        {
+            print_info_string("error code=INVALID_POSITION_GRAMMAR detail=empty_moves_tail");
+            return;
+        }
+    }
+
+    for (; index < tokens.size(); ++index)
+        moves.push_back(tokens[index]);
 
     auto err = engine.set_position(fen, moves);
     if (err.has_value())
-    {
-        terminate_on_critical_error(err->what());
-    }
+        print_info_string("error command=position " + std::string(err->what()));
 }
 
 namespace {

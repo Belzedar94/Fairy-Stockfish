@@ -20,6 +20,8 @@
 
 #include <algorithm>
 #include <cassert>
+#include <charconv>
+#include <cctype>
 #include <filesystem>
 #include <deque>
 #include <iosfwd>
@@ -31,6 +33,7 @@
 #include <vector>
 
 #include "evaluate.h"
+#include "koth.h"
 #include "misc.h"
 #include "nnue/network.h"
 #include "nnue/nnue_common.h"
@@ -39,7 +42,6 @@
 #include "position.h"
 #include "search.h"
 #include "shm.h"
-#include "syzygy/tbprobe.h"
 #include "types.h"
 #include "uci.h"
 #include "ucioption.h"
@@ -55,6 +57,67 @@ int MaxThreads = std::max(1024, 4 * int(get_hardware_concurrency()));
 // history sharing and the speed loss from more cross-cache accesses (see
 // PR#6526). The user can always explicitly override this behavior.
 constexpr NumaAutoPolicy DefaultNumaPolicy = BundledL3Policy{32};
+
+namespace {
+
+bool parse_decimal(std::string_view token, int minimum, int maximum) {
+    if (token.empty())
+        return false;
+
+    int value               = 0;
+    const auto [end, error] = std::from_chars(token.data(), token.data() + token.size(), value);
+    return error == std::errc{} && end == token.data() + token.size() && value >= minimum
+        && value <= maximum;
+}
+
+std::optional<PositionSetError> canonical_koth_fen(const std::string& input,
+                                                   std::string&       canonical) {
+    std::istringstream       stream(input);
+    std::vector<std::string> fields;
+    std::string              field;
+
+    while (stream >> field)
+        fields.push_back(field);
+
+    if (fields.size() != 6)
+        return PositionSetError("code=INVALID_FEN_FIELD_COUNT expected=6 actual="
+                                + std::to_string(fields.size()));
+
+    if (fields[1] != "w" && fields[1] != "b")
+        return PositionSetError("code=INVALID_FEN_SIDE");
+
+    if (fields[2] != "-")
+    {
+        constexpr std::string_view order    = "KQkq";
+        std::size_t                previous = 0;
+        bool                       first    = true;
+        for (char right : fields[2])
+        {
+            const auto index = order.find(right);
+            if (index == std::string_view::npos || (!first && index <= previous))
+                return PositionSetError("code=INVALID_FEN_CASTLING_RIGHTS");
+            first    = false;
+            previous = index;
+        }
+    }
+
+    if (fields[3] != "-"
+        && (fields[3].size() != 2 || fields[3][0] < 'a' || fields[3][0] > 'h'
+            || (fields[3][1] != '3' && fields[3][1] != '6')))
+        return PositionSetError("code=INVALID_FEN_EP_FIELD");
+
+    if (!parse_decimal(fields[4], 0, 32767))
+        return PositionSetError("code=INVALID_FEN_HALFMOVE");
+
+    if (!parse_decimal(fields[5], 1, 100000))
+        return PositionSetError("code=INVALID_FEN_FULLMOVE");
+
+    canonical = fields[0] + " " + fields[1] + " " + fields[2] + " " + fields[3] + " " + fields[4]
+              + " " + fields[5];
+    return std::nullopt;
+}
+
+}  // namespace
 
 Engine::Engine(std::optional<std::filesystem::path> path) :
     binaryDirectory(path ? CommandLine::get_binary_directory(*path) : std::filesystem::path{}),
@@ -110,7 +173,7 @@ Engine::Engine(std::optional<std::filesystem::path> path) :
 
     options.add("nodestime", Option(0, 0, 10000));
 
-    options.add("UCI_Chess960", Option(false));
+    options.add("UCI_Variant", Option("var kingofthehill", "kingofthehill"));
 
     options.add("UCI_LimitStrength", Option(false));
 
@@ -118,43 +181,30 @@ Engine::Engine(std::optional<std::filesystem::path> path) :
                 Option(Stockfish::Search::Skill::LowestElo, Stockfish::Search::Skill::LowestElo,
                        Stockfish::Search::Skill::HighestElo));
 
-    options.add("UCI_ShowWDL", Option(false));
-
-    options.add(  //
-      "SyzygyPath", Option("", [](const Option& o) {
-          Tablebases::init(o);
-          return std::nullopt;
-      }));
-
-    options.add("SyzygyProbeDepth", Option(1, 1, 100));
-
-    options.add("Syzygy50MoveRule", Option(true));
-
-    options.add("SyzygyProbeLimit", Option(7, 0, 7));
-
-    options.add(  //
-      "EvalFile", Option(EvalFileDefaultName, [this](const Option& o) {
-          load_network(path_from_utf8(std::string(o)));
-          return std::nullopt;
-      }));
-
     threads.clear();
     threads.ensure_network_replicated();
     resize_threads();
 }
 
-std::variant<u64, PositionSetError>
-Engine::perft(const std::string& fen, Depth depth, bool isChess960) {
-    verify_network();
-
-    return Benchmark::perft(fen, depth, isChess960);
+std::variant<u64, PositionSetError> Engine::perft(Depth depth, bool gameDomain) {
+    StateInfo state;
+    Position  copy;
+    copy.clone_from(pos, state);
+    return Benchmark::perft<true>(copy, depth, gameDomain);
 }
 
 void Engine::go(Search::LimitsType& limits) {
+    (void) limits;
     assert(limits.perft == 0);
-    verify_network();
 
-    threads.start_thinking(options, pos, states, limits);
+    const auto status = Koth::classify(pos);
+    if (onVerifyNetwork)
+        onVerifyNetwork(status.terminal()
+                          ? "koth " + Koth::serialize(status)
+                          : "error code=KOTH_EVALUATOR_NOT_AUTHENTICATED command=go");
+
+    if (updateContext.onBestmove)
+        updateContext.onBestmove(UCIEngine::move(Move::none()), "");
 }
 void Engine::stop() { threads.stop = true; }
 
@@ -163,9 +213,6 @@ void Engine::search_clear() {
 
     tt.clear(threads);
     threads.clear();
-
-    // TODO: does not work with multiple instances
-    Tablebases::init(options["SyzygyPath"]);  // Free mapped files
 }
 
 void Engine::set_on_update_no_moves(std::function<void(const Engine::InfoShort&)>&& f) {
@@ -194,22 +241,55 @@ void Engine::wait_for_search_finished() { threads.main_thread()->wait_for_search
 
 std::optional<PositionSetError> Engine::set_position(const std::string&              fen,
                                                      const std::vector<std::string>& moves) {
-    // Drop the old state and create a new one
-    states   = StateListPtr(new std::deque<StateInfo>(1));
-    auto err = pos.set(fen, options["UCI_Chess960"], &states->back());
+    std::string canonicalFen;
+    if (auto err = canonical_koth_fen(fen, canonicalFen))
+        return err;
+
+    auto     candidateStates = StateListPtr(new std::deque<StateInfo>(1));
+    Position candidate;
+    auto     err = candidate.set(canonicalFen, false, &candidateStates->back());
     if (err.has_value())
         return err;
 
-    for (const auto& move : moves)
+    if (candidate.fen() != canonicalFen)
+        return PositionSetError("code=NONCANONICAL_OR_INCONSISTENT_FEN");
+
+    if (Koth::any_king_on_hill(candidate))
+        return PositionSetError("code=AMBIGUOUS_GOAL_ROOT");
+
+    if (const auto rootStatus =
+          Koth::classify(candidate, Koth::AdjudicationContext::RAW_ROOT_VALIDATION);
+        rootStatus.terminal())
+        return PositionSetError("code=TERMINAL_RAW_ROOT primary="
+                                + Koth::primary_reason_name(rootStatus.primary));
+
+    for (std::size_t index = 0; index < moves.size(); ++index)
     {
-        auto m = UCIEngine::to_move(pos, move);
+        const auto& move = moves[index];
+        if (!Koth::is_canonical_uci_move(move))
+            return PositionSetError(
+              "code=NONCANONICAL_TRAJECTORY_MOVE index=" + std::to_string(index) + " move=" + move);
+
+        if (Koth::classify(candidate).terminal())
+            return PositionSetError(
+              "code=POSTTERMINAL_TRAJECTORY_MOVE index=" + std::to_string(index) + " move=" + move);
+
+        auto m = UCIEngine::to_move(candidate, move);
 
         if (m == Move::none())
-            return PositionSetError("Illegal move: " + move);
+            return PositionSetError("code=ILLEGAL_TRAJECTORY_MOVE index=" + std::to_string(index)
+                                    + " move=" + move);
 
-        states->emplace_back();
-        pos.do_move(m, states->back());
+        candidateStates->emplace_back();
+        candidate.do_move(m, candidateStates->back());
+
+        if (Koth::classify(candidate).terminal() && index + 1 != moves.size())
+            return PositionSetError("code=POSTTERMINAL_TRAJECTORY_TAIL terminal_index="
+                                    + std::to_string(index));
     }
+
+    states = std::move(candidateStates);
+    pos.clone_from(candidate, states->back());
 
     return std::nullopt;
 }
@@ -264,38 +344,8 @@ void Engine::set_ponderhit(bool b) { threads.main_manager()->ponder = b; }
 // network related
 
 void Engine::verify_network() const {
-    const auto file = path_from_utf8(std::string(options["EvalFile"]));
-    network->verify(onVerifyNetwork, networkFile, file);
-
-    auto statuses = network.get_status_and_errors();
-    for (usize i = 0; i < statuses.size(); ++i)
-    {
-        const auto [status, error] = statuses[i];
-        std::string message        = "Network replica " + std::to_string(i + 1) + ": ";
-        if (status == SystemWideSharedConstantAllocationStatus::NoAllocation)
-        {
-            message += "No allocation.";
-        }
-        else if (status == SystemWideSharedConstantAllocationStatus::LocalMemory)
-        {
-            message += "Local memory.";
-        }
-        else if (status == SystemWideSharedConstantAllocationStatus::SharedMemory)
-        {
-            message += "Shared memory.";
-        }
-        else
-        {
-            message += "Unknown status.";
-        }
-
-        if (error.has_value())
-        {
-            message += " " + *error;
-        }
-
-        onVerifyNetwork(message);
-    }
+    if (onVerifyNetwork)
+        onVerifyNetwork("error code=KOTH_EVALUATOR_NOT_AUTHENTICATED command=verify_network");
 }
 
 std::unique_ptr<Eval::NNUE::Network> Engine::get_default_network() {
@@ -322,13 +372,8 @@ void Engine::save_network(const std::optional<std::filesystem::path>& file) {
 // utility functions
 
 void Engine::trace_eval() const {
-    StateListPtr trace_states(new std::deque<StateInfo>(1));
-    Position     p;
-    p.set(pos.fen(), options["UCI_Chess960"], &trace_states->back());
-
-    verify_network();
-
-    sync_cout << "\n" << Eval::trace(p, *network) << sync_endl;
+    if (onVerifyNetwork)
+        onVerifyNetwork("error code=KOTH_EVALUATOR_NOT_AUTHENTICATED command=eval");
 }
 
 const OptionsMap& Engine::get_options() const { return options; }
@@ -336,7 +381,53 @@ OptionsMap&       Engine::get_options() { return options; }
 
 std::string Engine::fen() const { return pos.fen(); }
 
-std::optional<PositionSetError> Engine::flip() { return pos.flip(); }
+std::string Engine::koth_status() const {
+    std::ostringstream out;
+    const auto&        transition = pos.transition();
+
+    out << Koth::serialize(Koth::classify(pos)) << " repetition_count=" << pos.repetition_count()
+        << " transition=";
+
+    switch (transition.kind)
+    {
+    case Koth::TransitionKind::ROOT :
+        out << "ROOT";
+        break;
+    case Koth::TransitionKind::ACCEPTED_MOVE :
+        out << "ACCEPTED_MOVE";
+        break;
+    case Koth::TransitionKind::SEARCH_NULL :
+        out << "SEARCH_NULL";
+        break;
+    }
+
+    out << " king_entered_hill=" << (transition.kingEnteredHill ? "true" : "false") << " fen_ep="
+        << (pos.fen_ep_square() == SQ_NONE ? "-" : UCIEngine::square(pos.fen_ep_square()))
+        << " legal_ep=" << (pos.ep_square() == SQ_NONE ? "-" : UCIEngine::square(pos.ep_square()));
+    return out.str();
+}
+
+std::string Engine::koth_moves() const {
+    const auto         physical = Koth::physical_moves(pos);
+    const auto         game     = Koth::game_moves(pos);
+    std::ostringstream out;
+
+    out << "physical_count=" << physical.size() << " game_count=" << game.size() << " physical=";
+    for (Move move : physical)
+        out << UCIEngine::move(move) << ',';
+
+    out << " game=";
+    for (Move move : game)
+        out << UCIEngine::move(move) << ',';
+
+    return out.str();
+}
+
+std::string Engine::koth_selftest() const { return Koth::state_selftest(); }
+
+std::optional<PositionSetError> Engine::flip() {
+    return PositionSetError("code=UNSUPPORTED_KOTH_COMMAND command=flip");
+}
 
 std::string Engine::visualize() const {
     std::stringstream ss;

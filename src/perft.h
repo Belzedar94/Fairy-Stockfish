@@ -23,6 +23,7 @@
 #include <variant>
 
 #include "movegen.h"
+#include "koth.h"
 #include "position.h"
 #include "types.h"
 #include "uci.h"
@@ -32,7 +33,10 @@ namespace Stockfish::Benchmark {
 // Utility to verify move generation. All the leaf nodes up
 // to the given depth are generated and counted, and the sum is returned.
 template<bool Root>
-u64 perft(Position& pos, Depth depth) {
+u64 perft(Position& pos, Depth depth, bool gameDomain = false) {
+
+    if (gameDomain && Koth::classify(pos).terminal())
+        return 0;
 
     StateInfo st;
 
@@ -46,7 +50,9 @@ u64 perft(Position& pos, Depth depth) {
         else
         {
             pos.do_move(m, st);
-            cnt = leaf ? MoveList<LEGAL>(pos).size() : perft<false>(pos, depth - 1);
+            cnt = leaf
+                  ? (gameDomain && Koth::classify(pos).terminal() ? 0 : MoveList<LEGAL>(pos).size())
+                  : perft<false>(pos, depth - 1, gameDomain);
             nodes += cnt;
             pos.undo_move(m);
         }

@@ -21,6 +21,7 @@
 
 #include <array>
 #include <cassert>
+#include <cstddef>
 #include <deque>
 #include <iosfwd>
 #include <memory>
@@ -28,9 +29,11 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 
 #include "attacks.h"
 #include "bitboard.h"
+#include "koth.h"
 #include "types.h"
 
 namespace Stockfish {
@@ -54,17 +57,24 @@ struct StateInfo {
     int    rule50;
     int    pliesFromNull;
     Square epSquare;
+    Square fenEpSquare;
 
     // Not copied when making a move (will be recomputed anyhow)
-    Key        key;
-    Bitboard   checkersBB;
-    StateInfo* previous;
-    Bitboard   blockersForKing[COLOR_NB];
-    Bitboard   pinners[COLOR_NB];
-    Bitboard   checkSquares[PIECE_TYPE_NB];
-    Piece      capturedPiece;
-    int        repetition;
+    Key                   key;
+    Bitboard              checkersBB;
+    StateInfo*            previous;
+    Bitboard              blockersForKing[COLOR_NB];
+    Bitboard              pinners[COLOR_NB];
+    Bitboard              checkSquares[PIECE_TYPE_NB];
+    Piece                 capturedPiece;
+    int                   repetition;
+    std::uint8_t          repetitionCount;
+    Koth::TransitionEvent transition;
 };
+
+static_assert(std::is_trivially_copyable_v<StateInfo>);
+static_assert(offsetof(StateInfo, repetitionCount) > offsetof(StateInfo, key));
+static_assert(offsetof(StateInfo, transition) > offsetof(StateInfo, key));
 
 
 // A list to keep track of the position states along the setup moves (from the
@@ -95,6 +105,7 @@ class Position {
     std::optional<PositionSetError> set(const std::string& fenStr, bool isChess960, StateInfo* si);
     std::optional<PositionSetError> set(const std::string& code, Color c, StateInfo* si);
     std::string                     fen() const;
+    void                            clone_from(const Position& source, StateInfo& destinationState);
 
     // Position representation
     Bitboard pieces() const;  // All pieces
@@ -106,6 +117,7 @@ class Position {
     Piece                               piece_on(Square s) const;
     const std::array<Piece, SQUARE_NB>& piece_array() const;
     Square                              ep_square() const;
+    Square                              fen_ep_square() const;
     bool                                empty(Square s) const;
     template<PieceType Pt>
     int count(Color c) const;
@@ -166,17 +178,19 @@ class Position {
     Key non_pawn_key(Color c) const;
 
     // Other properties of the position
-    Color side_to_move() const;
-    int   game_ply() const;
-    bool  is_chess960() const;
-    bool  is_draw(int ply) const;
-    bool  is_repetition(int ply) const;
-    bool  upcoming_repetition(int ply) const;
-    bool  has_repeated() const;
-    int   rule50_count() const;
-    Value non_pawn_material(Color c) const;
-    Value non_pawn_material() const;
-    bool  dtz_is_dtm() const;  // Pawnless && (3-men || 4-men-minors-only)
+    Color                        side_to_move() const;
+    int                          game_ply() const;
+    bool                         is_chess960() const;
+    bool                         is_draw(int ply) const;
+    bool                         is_repetition(int ply) const;
+    bool                         upcoming_repetition(int ply) const;
+    bool                         has_repeated() const;
+    int                          rule50_count() const;
+    int                          repetition_count() const;
+    const Koth::TransitionEvent& transition() const;
+    Value                        non_pawn_material(Color c) const;
+    Value                        non_pawn_material() const;
+    bool                         dtz_is_dtm() const;  // Pawnless && (3-men || 4-men-minors-only)
 
     // Position consistency check, for debugging
     bool                            pos_is_ok() const;
@@ -278,6 +292,8 @@ inline Square Position::square(Color c) const {
 
 inline Square Position::ep_square() const { return st->epSquare; }
 
+inline Square Position::fen_ep_square() const { return st->fenEpSquare; }
+
 inline bool Position::can_castle(CastlingRights cr) const { return st->castlingRights & cr; }
 
 inline bool Position::castling_impeded(CastlingRights cr) const {
@@ -340,6 +356,10 @@ inline Value Position::non_pawn_material() const {
 inline int Position::game_ply() const { return gamePly; }
 
 inline int Position::rule50_count() const { return st->rule50; }
+
+inline int Position::repetition_count() const { return st->repetitionCount; }
+
+inline const Koth::TransitionEvent& Position::transition() const { return st->transition; }
 
 inline bool Position::is_chess960() const { return chess960; }
 

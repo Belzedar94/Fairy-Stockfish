@@ -299,6 +299,8 @@ void ThreadPool::start_thinking(const OptionsMap&  options,
                                 StateListPtr&      states,
                                 Search::LimitsType limits) {
 
+    (void) options;
+
     main_thread()->wait_for_search_finished();
 
     main_manager()->stopOnPonderhit = stop = false;
@@ -320,7 +322,7 @@ void ThreadPool::start_thinking(const OptionsMap&  options,
         for (const auto& m : MoveList<LEGAL>(pos))
             rootMoves.emplace_back(m);
 
-    Tablebases::Config tbConfig = Tablebases::rank_root_moves(options, pos, rootMoves);
+    Tablebases::Config tbConfig{};
 
     // After ownership transfer 'states' becomes empty, so if we stop the search
     // and call 'go' again without setting a new position states.get() == nullptr.
@@ -342,9 +344,8 @@ void ThreadPool::start_thinking(const OptionsMap&  options,
             th->worker->nmpMinPly                                                = 0;
             th->worker->rootDepth                                                = 0;
             th->worker->rootMoves                                                = rootMoves;
-            th->worker->rootPos.set(pos.fen(), pos.is_chess960(), &th->worker->rootState);
-            th->worker->rootState = setupStates->back();
-            th->worker->tbConfig  = tbConfig;
+            th->worker->rootPos.clone_from(pos, th->worker->rootState);
+            th->worker->tbConfig = tbConfig;
         });
     }
 

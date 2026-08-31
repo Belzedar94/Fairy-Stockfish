@@ -33,9 +33,9 @@
 
 #include "bitboard.h"
 #include "history.h"
+#include "koth.h"
 #include "misc.h"
 #include "movegen.h"
-#include "syzygy/tbprobe.h"
 #include "tt.h"
 #include "uci.h"
 
@@ -85,19 +85,6 @@ std::ostream& operator<<(std::ostream& os, const Position& pos) {
 
     for (Bitboard b = pos.checkers(); b;)
         os << UCIEngine::square(pop_lsb(b)) << " ";
-
-    if (Tablebases::MaxCardinality >= popcount(pos.pieces()) && !pos.can_castle(ANY_CASTLING))
-    {
-        StateInfo st;
-
-        Position p;
-        p.set(pos.fen(), pos.is_chess960(), &st);
-        Tablebases::ProbeState s1, s2;
-        Tablebases::WDLScore   wdl = Tablebases::probe_wdl(p, &s1);
-        int                    dtz = Tablebases::probe_dtz(p, &s2);
-        os << "\nTablebases WDL: " << std::setw(4) << wdl << " (" << s1 << ")"
-           << "\nTablebases DTZ: " << std::setw(4) << dtz << " (" << s2 << ")";
-    }
 
     return os;
 }
@@ -208,7 +195,11 @@ Position::set(const string& fenStr, bool isChess960, StateInfo* si) {
 
     std::memset(reinterpret_cast<char*>(this), 0, sizeof(Position));
     std::memset(si, 0, sizeof(StateInfo));
-    st = si;
+    st                  = si;
+    st->epSquare        = SQ_NONE;
+    st->fenEpSquare     = SQ_NONE;
+    st->repetitionCount = 1;
+    st->transition      = {Move::none(), Koth::TransitionKind::ROOT, false};
 
     ss >> std::noskipws;
 
@@ -380,8 +371,8 @@ Position::set(const string& fenStr, bool isChess960, StateInfo* si) {
             set_castling_right(c, rsq);
     }
 
-    // 4. En passant square.
-    // Ignore if square is invalid or not on side to move relative rank 6.
+    // 4. En passant square. Keep the standard-FEN target separately from the
+    // legally actionable square used by move generation and repetition keys.
     bool          enpassant = false, legalEP = false;
     unsigned char col = '-', row;
     ss >> col;
@@ -392,23 +383,29 @@ Position::set(const string& fenStr, bool isChess960, StateInfo* si) {
 
         if ((col >= 'a' && col <= 'h') && (row == (sideToMove == WHITE ? '6' : '3')))
         {
-            st->epSquare = make_square(File(col - 'a'), Rank(row - '1'));
+            const Square rawEp  = make_square(File(col - 'a'), Rank(row - '1'));
+            const Square pawnSq = rawEp + pawn_push(~sideToMove);
+            const Square fromSq = rawEp + pawn_push(sideToMove);
 
-            Bitboard pawns = attacks_bb<PAWN>(st->epSquare, ~sideToMove) & pieces(sideToMove, PAWN);
-            Bitboard target = (pieces(~sideToMove, PAWN) & (st->epSquare + pawn_push(~sideToMove)));
-            Bitboard occ    = pieces() ^ target ^ st->epSquare;
+            Bitboard target = pieces(~sideToMove, PAWN) & pawnSq;
+            enpassant       = target && empty(rawEp) && empty(fromSq);
 
-            // En passant square will be considered only if
-            // a) side to move have a pawn threatening epSquare
-            // b) there is an enemy pawn in front of epSquare
-            // c) there is no piece on epSquare or behind epSquare
-            enpassant = pawns && target
-                     && !(pieces() & (st->epSquare | (st->epSquare + pawn_push(sideToMove))));
+            if (!enpassant)
+                return PositionSetError("Invalid FEN. Inconsistent en-passant geometry.");
 
-            // If no pawn can execute the en passant capture without leaving the king in check, don't record the epSquare
+            st->fenEpSquare = rawEp;
+
+            Bitboard pawns = attacks_bb<PAWN>(rawEp, ~sideToMove) & pieces(sideToMove, PAWN);
+            Bitboard occ   = pieces() ^ target ^ rawEp;
+
+            // Record the move-generation EP square only when at least one
+            // capture is legal. The raw FEN target remains available for lossless output.
             while (pawns)
                 legalEP |= !(attackers_to(square<KING>(sideToMove), occ ^ pop_lsb(pawns))
                              & pieces(~sideToMove) & ~target);
+
+            if (legalEP)
+                st->epSquare = rawEp;
         }
         else
             return PositionSetError("Invalid FEN. Invalid en-passant square.");
@@ -418,19 +415,24 @@ Position::set(const string& fenStr, bool isChess960, StateInfo* si) {
         st->epSquare = SQ_NONE;
 
     // 5-6. Halfmove clock and fullmove number
-    ss >> std::skipws >> st->rule50 >> gamePly;
+    int fullmoveNumber = 0;
+    if (!(ss >> std::skipws >> st->rule50 >> fullmoveNumber))
+        return PositionSetError("Invalid FEN. Invalid halfmove or fullmove field.");
+
+    ss >> std::ws;
+    if (!ss.eof())
+        return PositionSetError("Invalid FEN. Trailing data after fullmove field.");
 
     // Normally values larger than 99 would be pointless but we do support ignoring 50 move rule for TB purposes.
     // Limit at 2**15 as it's used multiplicatively with position evaluation during search.
     if (st->rule50 < 0 || st->rule50 > 32767)
         return PositionSetError("Unsupported position. Rule50 counter out of range.");
 
-    if (gamePly < 0 || gamePly > 100000)
-        return PositionSetError("Unsupported position. Game ply out of range.");
+    if (fullmoveNumber < 1 || fullmoveNumber > 100000)
+        return PositionSetError("Unsupported position. Fullmove number out of range.");
 
-    // Convert from fullmove starting from 1 to gamePly starting from 0,
-    // handle also common incorrect FEN with fullmove = 0.
-    gamePly = std::max(2 * (gamePly - 1), 0) + (sideToMove == BLACK);
+    // Convert from fullmove starting from 1 to gamePly starting from 0.
+    gamePly = 2 * (fullmoveNumber - 1) + (sideToMove == BLACK);
 
     chess960 = isChess960;
     set_state();
@@ -601,10 +603,31 @@ string Position::fen() const {
     if (!can_castle(ANY_CASTLING))
         ss << '-';
 
-    ss << (ep_square() == SQ_NONE ? " - " : " " + UCIEngine::square(ep_square()) + " ")
+    ss << (fen_ep_square() == SQ_NONE ? " - " : " " + UCIEngine::square(fen_ep_square()) + " ")
        << st->rule50 << " " << 1 + (gamePly - (sideToMove == BLACK)) / 2;
 
     return ss.str();
+}
+
+void Position::clone_from(const Position& source, StateInfo& destinationState) {
+    board     = source.board;
+    byTypeBB  = source.byTypeBB;
+    byColorBB = source.byColorBB;
+
+    std::memcpy(pieceCount, source.pieceCount, sizeof(pieceCount));
+    std::memcpy(castlingRightsMask, source.castlingRightsMask, sizeof(castlingRightsMask));
+    std::memcpy(castlingRookSquare, source.castlingRookSquare, sizeof(castlingRookSquare));
+    std::memcpy(castlingPath, source.castlingPath, sizeof(castlingPath));
+
+    destinationState = *source.st;
+    st               = &destinationState;
+    gamePly          = source.gamePly;
+    sideToMove       = source.sideToMove;
+    chess960         = source.chess960;
+
+    scratchDirties = {};
+
+    assert(pos_is_ok());
 }
 
 // Calculates st->blockersForKing[c] and st->pinners[~c],
@@ -929,6 +952,7 @@ void Position::do_move(Move                      m,
         k ^= Zobrist::enpassant[file_of(st->epSquare)];
         st->epSquare = SQ_NONE;
     }
+    st->fenEpSquare = SQ_NONE;
 
     // Update castling rights.
     k ^= Zobrist::castling[st->castlingRights];
@@ -944,6 +968,8 @@ void Position::do_move(Move                      m,
         {
             Square   epSquare = to - pawn_push(us);
             Bitboard pawns    = attacks_bb<PAWN>(epSquare, us) & pieces(them, PAWN);
+
+            st->fenEpSquare = epSquare;
 
             // If there are no pawns attacking the ep square, ep is not possible.
             if (pawns)
@@ -1041,6 +1067,8 @@ void Position::do_move(Move                      m,
 
     // Set capture piece
     st->capturedPiece = captured;
+    st->transition    = {m, Koth::TransitionKind::ACCEPTED_MOVE,
+                         type_of(pc) == KING && Koth::is_hill(to) && !Koth::is_hill(from)};
 
     // Calculate checkers bitboard (if move gives check)
     st->checkersBB = givesCheck ? attackers_to(square<KING>(them)) & pieces(us) : 0;
@@ -1053,8 +1081,9 @@ void Position::do_move(Move                      m,
     // Calculate the repetition info. It is the ply distance from the previous
     // occurrence of the same position, negative in the 3-fold case, or zero
     // if the position was not repeated.
-    st->repetition = 0;
-    int end        = std::min(st->rule50, st->pliesFromNull);
+    st->repetition      = 0;
+    st->repetitionCount = 1;
+    int end             = std::min(st->rule50, st->pliesFromNull);
     if (end >= 4)
     {
         StateInfo* stp = st->previous->previous;
@@ -1066,6 +1095,21 @@ void Position::do_move(Move                      m,
                 st->repetition = stp->repetition ? -i : i;
                 break;
             }
+        }
+    }
+
+    if (end >= 2)
+    {
+        StateInfo* stp = st->previous ? st->previous->previous : nullptr;
+        for (int i = 2; i <= end && stp; i += 2)
+        {
+            if (stp->key == st->key)
+            {
+                st->repetitionCount = std::min<int>(5, stp->repetitionCount + 1);
+                break;
+            }
+
+            stp = stp->previous ? stp->previous->previous : nullptr;
         }
     }
 
@@ -1357,17 +1401,21 @@ void Position::do_null_move(StateInfo& newSt) {
         st->epSquare = SQ_NONE;
     }
 
+    st->fenEpSquare = SQ_NONE;
+
     st->key ^= Zobrist::side;
 
     st->pliesFromNull = 0;
 
     st->capturedPiece = NO_PIECE;
+    st->transition    = {Move::none(), Koth::TransitionKind::SEARCH_NULL, false};
 
     sideToMove = ~sideToMove;
 
     set_check_info();
 
-    st->repetition = 0;
+    st->repetition      = 0;
+    st->repetitionCount = 0;
 
     assert(pos_is_ok());
 }

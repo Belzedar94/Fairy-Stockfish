@@ -64,7 +64,7 @@ class Engine {
 
     ~Engine() { wait_for_search_finished(); }
 
-    std::variant<u64, PositionSetError> perft(const std::string& fen, Depth depth, bool isChess960);
+    std::variant<u64, PositionSetError> perft(Depth depth, bool gameDomain = true);
 
     // non blocking call to start searching
     void go(Search::LimitsType&);
@@ -109,6 +109,9 @@ class Engine {
     int get_hashfull(int maxAge = 0) const;
 
     std::string                          fen() const;
+    std::string                          koth_status() const;
+    std::string                          koth_moves() const;
+    std::string                          koth_selftest() const;
     std::optional<PositionSetError>      flip();
     std::string                          visualize() const;
     std::vector<std::pair<usize, usize>> get_bound_thread_count_by_numa_node() const;

@@ -61,6 +61,7 @@ class Option {
     friend class Engine;
     friend class Tune;
 
+    bool is_valid(const std::string&) const;
 
     std::string       defaultValue, currentValue, type;
     int               min = 0, max = 0;

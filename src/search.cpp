@@ -2142,7 +2142,7 @@ void syzygy_extend_pv(const OptionsMap&         options,
 
     auto t_start      = std::chrono::steady_clock::now();
     int  moveOverhead = int(options["Move Overhead"]);
-    bool rule50       = bool(options["Syzygy50MoveRule"]);
+    bool rule50       = false;
 
     // Do not use more than moveOverhead / 2 ms, if time management is active.
     // Under 'nodestime' the pos.do_move() calls come for free.
@@ -2297,12 +2297,6 @@ void SearchManager::output_pv(Search::Worker&           worker,
         bool isTBScore = worker.tbConfig.rootInTB && !is_mate_or_mated(v);
         v              = isTBScore ? rootMoves[i].tbScore : v;
 
-        // Potentially correct and extend the PV, and in exceptional cases v.
-        // Previous PVs have already been extended. Inexact flags indicate an unreliable PV.
-        if (is_decisive(v) && !is_mate_or_mated(v) && !usePreviousScore
-            && (!rootMoves[i].is_inexact() || isTBScore))
-            syzygy_extend_pv(worker.options, worker.limits, pos, rootMoves[i], v, multiPV);
-
         std::string pv;
         for (Move m : usePreviousScore ? rootMoves[i].previousPV : rootMoves[i].pv)
             pv += UCIEngine::move(m, pos.is_chess960()) + " ";
@@ -2311,7 +2305,7 @@ void SearchManager::output_pv(Search::Worker&           worker,
         if (!pv.empty())
             pv.pop_back();
 
-        auto wdl = worker.options["UCI_ShowWDL"] ? UCIEngine::wdl(v, pos) : "";
+        auto wdl = std::string{};
 
         // Scores cannot be both exact and inexact
         assert(!(rootMoves[i].inexactLower && rootMoves[i].inexactUpper));

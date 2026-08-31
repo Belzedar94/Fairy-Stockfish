@@ -140,7 +140,7 @@ class Logger {
 //      Stockfish version
 std::string engine_version_info() {
     std::stringstream ss;
-    ss << "Stockfish " << version << std::setfill('0');
+    ss << "KOTH-Stockfish " << version << std::setfill('0');
 
     if constexpr (version == "dev")
     {
@@ -176,7 +176,7 @@ std::string engine_version_info() {
 
 std::string engine_info(bool to_uci) {
     return engine_version_info() + (to_uci ? "\nid author " : " by ")
-         + "the Stockfish developers (see AUTHORS file)";
+         + "the KOTH-Stockfish developers; based on Stockfish (see AUTHORS file)";
 }
 
 
