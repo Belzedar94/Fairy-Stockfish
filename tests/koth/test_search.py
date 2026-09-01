@@ -107,6 +107,7 @@ class EngineSession:
         go: str,
         *,
         synchronize_position: bool = True,
+        timeout: float = 30.0,
     ) -> list[str]:
         self.send(position)
         if synchronize_position:
@@ -114,7 +115,9 @@ class EngineSession:
             if any("error command=position" in line for line in positioned):
                 raise SearchFailure("\n".join(positioned))
         self.send(go)
-        return self.read_until(lambda line: line.startswith("bestmove "))
+        return self.read_until(
+            lambda line: line.startswith("bestmove "), timeout=timeout
+        )
 
     def close(self) -> None:
         if self.process.poll() is None:
@@ -171,9 +174,14 @@ class Suite:
         return "\n".join(lines)
 
     def checked_search(
-        self, engine: EngineSession, position: str, go: str
+        self,
+        engine: EngineSession,
+        position: str,
+        go: str,
+        *,
+        timeout: float = 30.0,
     ) -> list[str]:
-        output = engine.search(position, go)
+        output = engine.search(position, go, timeout=timeout)
         self.searches += 1
         self.check(
             not any("code=KOTH_INVALID_PV" in line for line in output),
@@ -420,6 +428,22 @@ class Suite:
         )
         self.check(qsearch[-1].startswith("bestmove g1g8"), joined)
 
+    def test_nonpv_qsearch_pv_lifetime(self, engine: EngineSession) -> None:
+        engine.send("ucinewgame")
+        engine.ready()
+        output = self.checked_search(
+            engine,
+            "position fen r3k2r/p1ppqpb1/bn2pnp1/2pP4/1p2P3/2N2N2/"
+            "PPQ1BPPP/R1B1K2R w KQkq - 0 10",
+            "go nodes 20000",
+            timeout=90.0,
+        )
+        joined = self.joined(output)
+        final_info = [line for line in output if line.startswith("info depth ")][-1]
+        nodes = re.search(r"\bnodes (\d+)", final_info)
+        self.check(nodes is not None and int(nodes.group(1)) >= 20000, joined)
+        self.check(output[-1].startswith("bestmove "), joined)
+
     @staticmethod
     def deterministic_signature(output: list[str]) -> tuple[str, str, str, str]:
         final_info = [line for line in output if line.startswith("info depth 3 ")][-1]
@@ -461,6 +485,7 @@ class Suite:
             self.test_terminal_precedence_in_pv(engine)
             self.test_attacked_entries_and_root_filter(engine)
             self.test_multipv_and_qsearch(engine)
+            self.test_nonpv_qsearch_pv_lifetime(engine)
             self.test_t0_determinism(engine)
         finally:
             engine.close()

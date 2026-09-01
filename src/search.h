@@ -376,7 +376,8 @@ class Worker {
     Value qsearch(Position& pos, Stack* ss, Value alpha, Value beta);
 
     std::optional<Value>
-    immediate_hill_win(Position& pos, Stack* ss, Move excludedMove = Move::none());
+    immediate_hill_win(Position& pos, Stack* ss, bool updatePv,
+                       Move excludedMove = Move::none());
 
     int reduction(bool i, Depth d, int mn, int delta) const;
 
