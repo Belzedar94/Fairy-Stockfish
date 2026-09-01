@@ -744,7 +744,7 @@ void Search::Worker::undo_move(Position& pos, const Move move) {
 void Search::Worker::undo_null_move(Position& pos) { pos.undo_null_move(); }
 
 std::optional<Value>
-Search::Worker::immediate_hill_win(Position& pos, Stack* ss, Move excludedMove) {
+Search::Worker::immediate_hill_win(Position& pos, Stack* ss, bool updatePv, Move excludedMove) {
     for (Move move : Koth::immediate_hill_moves(pos))
     {
         if (move == excludedMove)
@@ -761,8 +761,11 @@ Search::Worker::immediate_hill_win(Position& pos, Stack* ss, Move excludedMove) 
         }
         undo_move(pos, move);
 
-        if (ss->pv)
+        if (updatePv)
+        {
+            assert(ss->pv);
             ss->pv->update(move, nullptr);
+        }
 
         return mate_in(ss->ply + 1);
     }
@@ -824,7 +827,7 @@ Value Search::Worker::search(
     // cutoff or pruning, while respecting singular-search exclusion. Root
     // filtering is handled by the ordinary unpruned root loop below.
     if (!rootNode)
-        if (auto value = immediate_hill_win(pos, ss, ss->excludedMove))
+        if (auto value = immediate_hill_win(pos, ss, PvNode, ss->excludedMove))
             return *value;
 
     // Dive into quiescence search when the depth reaches zero
@@ -1766,7 +1769,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
         return status.winner ? mated_in(ss->ply) : value_draw(nodes);
     }
 
-    if (auto value = immediate_hill_win(pos, ss, ss->excludedMove))
+    if (auto value = immediate_hill_win(pos, ss, PvNode, ss->excludedMove))
         return *value;
 
     StateInfo st;
